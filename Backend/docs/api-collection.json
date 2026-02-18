@@ -1,0 +1,750 @@
+{
+  "info": {
+    "name": "Smart Maize Farming System API",
+    "description": "API collection for IoT-Based Smart Maize Farming System for Rwanda",
+    "version": "1.0.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{auth_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000/api/v1"
+    },
+    {
+      "key": "auth_token",
+      "value": ""
+    },
+    {
+      "key": "farm_id",
+      "value": "00000000-0000-0000-0000-000000000001"
+    },
+    {
+      "key": "sensor_id",
+      "value": "00000000-0000-0000-0000-000000000001"
+    },
+    {
+      "key": "device_id",
+      "value": "demo_device_001"
+    },
+    {
+      "key": "device_token",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Basic Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:3000/health",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3000",
+              "path": ["health"]
+            }
+          }
+        },
+        {
+          "name": "API Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:3000/api/health",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3000",
+              "path": ["api", "health"]
+            }
+          }
+        },
+        {
+          "name": "API Documentation",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:3000/api",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3000",
+              "path": ["api"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Get Current User",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/users/me",
+              "host": ["{{base_url}}"],
+              "path": ["users", "me"]
+            }
+          }
+        },
+        {
+          "name": "Update Current User",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"Updated Name\",\n  \"preferred_language\": \"rw\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/users/me",
+              "host": ["{{base_url}}"],
+              "path": ["users", "me"]
+            }
+          }
+        },
+        {
+          "name": "Get User Stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/users/stats",
+              "host": ["{{base_url}}"],
+              "path": ["users", "stats"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Farms",
+      "item": [
+        {
+          "name": "List My Farms",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/farms",
+              "host": ["{{base_url}}"],
+              "path": ["farms"]
+            }
+          }
+        },
+        {
+          "name": "Create Farm",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"New Maize Farm\",\n  \"district\": \"Rwamagana\",\n  \"sector\": \"Gishari\",\n  \"cell\": \"Rubona\",\n  \"village\": \"Nyarubuye\",\n  \"size_hectares\": 1.5,\n  \"location\": {\"lat\": -1.9403, \"lng\": 30.4389},\n  \"crop_type\": \"maize\",\n  \"planting_date\": \"2026-01-01\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/farms",
+              "host": ["{{base_url}}"],
+              "path": ["farms"]
+            }
+          }
+        },
+        {
+          "name": "Get Farm Details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/farms/{{farm_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["farms", "{{farm_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Farm Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/farms/{{farm_id}}/summary",
+              "host": ["{{base_url}}"],
+              "path": ["farms", "{{farm_id}}", "summary"]
+            }
+          }
+        },
+        {
+          "name": "Update Farm",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"current_growth_stage\": \"flowering\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/farms/{{farm_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["farms", "{{farm_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Districts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/farms/districts",
+              "host": ["{{base_url}}"],
+              "path": ["farms", "districts"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Sensors",
+      "item": [
+        {
+          "name": "List Farm Sensors",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/sensors/farm/{{farm_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["sensors", "farm", "{{farm_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Sensor Data",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/sensors/data/farm/{{farm_id}}?page=1&limit=50",
+              "host": ["{{base_url}}"],
+              "path": ["sensors", "data", "farm", "{{farm_id}}"],
+              "query": [
+                {"key": "page", "value": "1"},
+                {"key": "limit", "value": "50"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Latest Readings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/sensors/data/farm/{{farm_id}}/latest",
+              "host": ["{{base_url}}"],
+              "path": ["sensors", "data", "farm", "{{farm_id}}", "latest"]
+            }
+          }
+        },
+        {
+          "name": "Get Daily Aggregates",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/sensors/data/farm/{{farm_id}}/aggregates?days=7",
+              "host": ["{{base_url}}"],
+              "path": ["sensors", "data", "farm", "{{farm_id}}", "aggregates"],
+              "query": [
+                {"key": "days", "value": "7"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "IoT: Ingest Sensor Data",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Device-ID",
+                "value": "{{device_id}}"
+              },
+              {
+                "key": "X-Device-Token",
+                "value": "{{device_token}}"
+              },
+              {
+                "key": "X-Timestamp",
+                "value": "{{$timestamp}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"readings\": [\n    {\n      \"sensorType\": \"soil_moisture\",\n      \"value\": 42.5,\n      \"unit\": \"percent\"\n    },\n    {\n      \"sensorType\": \"soil_temperature\",\n      \"value\": 24.3,\n      \"unit\": \"celsius\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/sensors/data/ingest",
+              "host": ["{{base_url}}"],
+              "path": ["sensors", "data", "ingest"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Recommendations",
+      "item": [
+        {
+          "name": "List Farm Recommendations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/recommendations/farm/{{farm_id}}?page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["recommendations", "farm", "{{farm_id}}"],
+              "query": [
+                {"key": "page", "value": "1"},
+                {"key": "limit", "value": "20"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Active Recommendations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/recommendations/farm/{{farm_id}}/active",
+              "host": ["{{base_url}}"],
+              "path": ["recommendations", "farm", "{{farm_id}}", "active"]
+            }
+          }
+        },
+        {
+          "name": "Respond to Recommendation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"accept\",\n  \"reason\": \"Will implement today\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/recommendations/:recommendationId/respond",
+              "host": ["{{base_url}}"],
+              "path": ["recommendations", ":recommendationId", "respond"],
+              "variable": [
+                {
+                  "key": "recommendationId",
+                  "value": "{{recommendation_id}}"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Pest Detection",
+      "item": [
+        {
+          "name": "Upload Pest Image",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "images",
+                  "type": "file",
+                  "description": "Pest image file"
+                },
+                {
+                  "key": "notes",
+                  "value": "Suspicious spots on leaves",
+                  "type": "text"
+                },
+                {
+                  "key": "severity",
+                  "value": "medium",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/pest-detection/upload/{{farm_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["pest-detection", "upload", "{{farm_id}}"]
+            }
+          }
+        },
+        {
+          "name": "List Farm Pest Detections",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/pest-detection/farm/{{farm_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["pest-detection", "farm", "{{farm_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Expert: Review Detection",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"confirmedPest\": \"Fall Armyworm\",\n  \"confirmedSeverity\": \"high\",\n  \"status\": \"confirmed\",\n  \"expertNotes\": \"Confirmed FAW infestation, recommend immediate treatment\",\n  \"treatmentRecommendations\": [\"Apply recommended pesticide\", \"Monitor surrounding areas\"]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/pest-detection/:detectionId/review",
+              "host": ["{{base_url}}"],
+              "path": ["pest-detection", ":detectionId", "review"],
+              "variable": [
+                {
+                  "key": "detectionId",
+                  "value": "{{detection_id}}"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Weather",
+      "item": [
+        {
+          "name": "Get Current Weather",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/weather/farm/{{farm_id}}/current",
+              "host": ["{{base_url}}"],
+              "path": ["weather", "farm", "{{farm_id}}", "current"]
+            }
+          }
+        },
+        {
+          "name": "Get Weather Forecast",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/weather/farm/{{farm_id}}/forecast?days=5",
+              "host": ["{{base_url}}"],
+              "path": ["weather", "farm", "{{farm_id}}", "forecast"],
+              "query": [
+                {"key": "days", "value": "5"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Farming Conditions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/weather/farm/{{farm_id}}/farming-conditions",
+              "host": ["{{base_url}}"],
+              "path": ["weather", "farm", "{{farm_id}}", "farming-conditions"]
+            }
+          }
+        },
+        {
+          "name": "Get Irrigation Window",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/weather/farm/{{farm_id}}/irrigation-window",
+              "host": ["{{base_url}}"],
+              "path": ["weather", "farm", "{{farm_id}}", "irrigation-window"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Analytics",
+      "item": [
+        {
+          "name": "Get Farmer Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/analytics/farm/{{farm_id}}/dashboard",
+              "host": ["{{base_url}}"],
+              "path": ["analytics", "farm", "{{farm_id}}", "dashboard"]
+            }
+          }
+        },
+        {
+          "name": "Get Sensor Trends",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/analytics/farm/{{farm_id}}/sensor-trends?days=7",
+              "host": ["{{base_url}}"],
+              "path": ["analytics", "farm", "{{farm_id}}", "sensor-trends"],
+              "query": [
+                {"key": "days", "value": "7"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Admin: System Overview",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/analytics/system/overview",
+              "host": ["{{base_url}}"],
+              "path": ["analytics", "system", "overview"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "USSD",
+      "item": [
+        {
+          "name": "USSD Health Check",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/ussd/health",
+              "host": ["{{base_url}}"],
+              "path": ["ussd", "health"]
+            }
+          }
+        },
+        {
+          "name": "USSD Callback (Initial)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {"key": "sessionId", "value": "test-session-123"},
+                {"key": "serviceCode", "value": "*123#"},
+                {"key": "phoneNumber", "value": "+250788000001"},
+                {"key": "text", "value": ""}
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/ussd/callback",
+              "host": ["{{base_url}}"],
+              "path": ["ussd", "callback"]
+            }
+          }
+        },
+        {
+          "name": "USSD Callback (Menu Selection)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {"key": "sessionId", "value": "test-session-123"},
+                {"key": "serviceCode", "value": "*123#"},
+                {"key": "phoneNumber", "value": "+250788000001"},
+                {"key": "text", "value": "1"}
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/ussd/callback",
+              "host": ["{{base_url}}"],
+              "path": ["ussd", "callback"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Get System Config",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/config",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "config"]
+            }
+          }
+        },
+        {
+          "name": "Update Config",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": \"0.80\",\n  \"description\": \"Updated confidence threshold\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/config/ai.pest_detection.confidence_threshold",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "config", "ai.pest_detection.confidence_threshold"]
+            }
+          }
+        },
+        {
+          "name": "Get System Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/health",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "health"]
+            }
+          }
+        },
+        {
+          "name": "Get System Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/metrics?period=24h",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "metrics"],
+              "query": [
+                {"key": "period", "value": "24h"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Audit Logs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/audit-logs?page=1&limit=50",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "audit-logs"],
+              "query": [
+                {"key": "page", "value": "1"},
+                {"key": "limit", "value": "50"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Generate Device Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"farmId\": \"{{farm_id}}\",\n  \"deviceName\": \"New IoT Node\",\n  \"expiresInDays\": 365\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/devices/generate",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "devices", "generate"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

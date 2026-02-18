@@ -1,0 +1,8 @@
+{
+  "name": "RwandaBeyond - Smart Maize Farming",
+  "description": "A premium, eco-conscious AgTech platform for farmers in Rwamagana, featuring IoT monitoring, AI pest detection, and a conversational voice assistant powered by Gemini 2.5 Live API.",
+  "requestFramePermissions": [
+    "microphone",
+    "camera"
+  ]
+}
