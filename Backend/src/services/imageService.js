@@ -15,6 +15,18 @@ import config from '../config/index.js';
 import logger from '../utils/logger.js';
 import { BadRequestError } from '../utils/errors.js';
 
+const bufferToDataUrl = (imageData, mimeType = 'image/jpeg') => {
+  if (typeof imageData === 'string' && imageData.startsWith('data:image/')) {
+    return imageData;
+  }
+
+  if (Buffer.isBuffer(imageData)) {
+    return `data:${mimeType};base64,${imageData.toString('base64')}`;
+  }
+
+  return null;
+};
+
 // Configure Cloudinary
 cloudinary.config({
   cloud_name: config.cloudinary.cloudName,
@@ -78,7 +90,8 @@ export const uploadImage = async (imageData, options = {}) => {
   const {
     farmId = 'unassigned',
     folder = 'pest_detections',
-    transformation = []
+    transformation = [],
+    mimeType = 'image/jpeg'
   } = options;
 
   try {
@@ -113,6 +126,23 @@ export const uploadImage = async (imageData, options = {}) => {
 
   } catch (error) {
     logger.error('Cloudinary upload failed:', error);
+
+    if (config.server.isDevelopment) {
+      const fallbackUrl = bufferToDataUrl(imageData, mimeType);
+
+      if (fallbackUrl) {
+        logger.warn('Falling back to in-memory data URL image storage for development');
+        return {
+          url: fallbackUrl,
+          publicId: undefined,
+          width: undefined,
+          height: undefined,
+          format: mimeType.split('/')[1] || 'jpeg',
+          bytes: Buffer.isBuffer(imageData) ? imageData.byteLength : undefined
+        };
+      }
+    }
+
     throw new Error('Image upload failed');
   }
 };

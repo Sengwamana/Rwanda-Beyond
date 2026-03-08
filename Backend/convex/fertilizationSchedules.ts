@@ -58,6 +58,15 @@ export const update = mutation({
   },
 });
 
+export const remove = mutation({
+  args: { id: v.id("fertilization_schedules") },
+  returns: v.null(),
+  handler: async (ctx, { id }) => {
+    await ctx.db.delete(id);
+    return null;
+  },
+});
+
 export const getHistory = query({
   args: { farmId: v.id("farms"), since: v.optional(v.string()) },
   returns: v.any(),

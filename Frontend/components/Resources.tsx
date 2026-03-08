@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { ArrowUpRight, Video, FileText, Calendar } from 'lucide-react';
 import { Language, translations } from '../utils/translations';
+import { useQuery } from '@tanstack/react-query';
+import { contentService } from '../services/content';
 
 interface ResourcesProps {
     language?: Language;
@@ -10,52 +12,16 @@ export const Resources: React.FC<ResourcesProps> = ({ language = 'en' }) => {
     const t = translations[language].resources;
     const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
-    const posts = [
-        {
-            category: "Guides",
-            title: "Maximizing Maize Yields in Highland Terrain",
-            image: "https://images.unsplash.com/photo-1551754655-cd27e38d2076?q=80&w=800&auto=format&fit=crop",
-            desc: "Learn the best practices for soil conservation and crop spacing in Rwamagana's unique topography.",
-            type: "article",
-            date: "Aug 12, 2024"
-        },
-        {
-            category: "Tech",
-            title: "How to Use the IoT Soil Sensor",
-            image: "https://images.unsplash.com/photo-1581092335397-9583eb92d232?q=80&w=800&auto=format&fit=crop",
-            desc: "A step-by-step video guide on installing and maintaining your LoRaWAN sensors.",
-            type: "video",
-            date: "Aug 10, 2024"
-        },
-        {
-            category: "Stories",
-            title: "Success Story: Cooperative Abahuza",
-            image: "https://images.unsplash.com/photo-1595841696677-6489ff3f8cd1?q=80&w=800&auto=format&fit=crop",
-            desc: "How a local cooperative increased their harvest by 40% using SmartTani's data insights.",
-            type: "article",
-            date: "Aug 05, 2024"
-        },
-        {
-            category: "News",
-            title: "New Government Subsidies for 2025",
-            image: "https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=800&auto=format&fit=crop",
-            desc: "Find out if you are eligible for the new equipment grants for solar-powered irrigation.",
-            type: "article",
-            date: "July 28, 2024"
-        }
-    ];
+    const { data, isLoading, isError, refetch } = useQuery({
+        queryKey: ['content', 'resources'],
+        queryFn: () => contentService.getResources(),
+        staleTime: 60 * 1000,
+    });
 
-    // Map localized categories back to English data keys if needed, 
-    // or mostly rely on index since t.categories is an array
-    const categoryMap: Record<string, string> = {
-        'Guides': 'Guides', 'Inyandiko': 'Guides',
-        'News': 'News', 'Amakuru': 'News', 'Actu': 'News',
-        'Tech': 'Tech', 'Ikoranabuhanga': 'Tech',
-        'Stories': 'Stories', 'Ubuhamya': 'Stories', 'Histoires': 'Stories'
-    };
-
+    const posts = data?.data?.items || [];
+    const categories = data?.data?.categories || [];
     const filteredPosts = activeCategory 
-        ? posts.filter(post => post.category === categoryMap[activeCategory] || post.category === activeCategory)
+        ? posts.filter(post => post.category === activeCategory)
         : posts;
 
     return (
@@ -80,7 +46,7 @@ export const Resources: React.FC<ResourcesProps> = ({ language = 'en' }) => {
                         >
                             All
                         </button>
-                        {t.categories.map((cat: string, i: number) => (
+                        {categories.map((cat: string, i: number) => (
                             <button 
                                 key={i} 
                                 onClick={() => setActiveCategory(cat)}
@@ -91,6 +57,21 @@ export const Resources: React.FC<ResourcesProps> = ({ language = 'en' }) => {
                         ))}
                     </div>
                 </div>
+
+                {isLoading && (
+                    <div className="text-center text-slate-500 dark:text-slate-400 mb-8">Loading resources...</div>
+                )}
+                {isError && (
+                    <div className="text-center mb-8">
+                        <p className="text-red-500 mb-3">Failed to load resources.</p>
+                        <button
+                            onClick={() => refetch()}
+                            className="px-4 py-2 rounded-full bg-[#0F5132] text-white text-sm font-bold"
+                        >
+                            Retry
+                        </button>
+                    </div>
+                )}
 
                 {/* Grid */}
                 <div className="grid md:grid-cols-3 gap-8">
@@ -103,9 +84,9 @@ export const Resources: React.FC<ResourcesProps> = ({ language = 'en' }) => {
                                 </div>
                             </div>
                             <div className="p-8 flex-1 flex flex-col">
-                                <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase mb-4">
-                                    <Calendar size={12} /> {post.date}
-                                </div>
+                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase mb-4">
+                                        <Calendar size={12} /> {post.date}
+                                    </div>
                                 <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-4 group-hover:text-[#0F5132] dark:group-hover:text-emerald-400 transition-colors leading-tight">{post.title}</h3>
                                 <p className="text-slate-500 dark:text-slate-400 text-sm mb-8 flex-1 leading-relaxed">
                                     {post.desc}
@@ -123,6 +104,11 @@ export const Resources: React.FC<ResourcesProps> = ({ language = 'en' }) => {
                         </div>
                     ))}
                 </div>
+                {!isLoading && !isError && filteredPosts.length === 0 && (
+                    <div className="text-center text-slate-500 dark:text-slate-400 mt-8">
+                        No resources available yet.
+                    </div>
+                )}
 
             </div>
         </div>

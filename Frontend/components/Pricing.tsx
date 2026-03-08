@@ -1,120 +1,100 @@
 import React from 'react';
-import { Check, ArrowRight } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { Check } from 'lucide-react';
+import { contentService } from '../services/content';
 
 export const Pricing: React.FC = () => {
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['content', 'pricing'],
+    queryFn: () => contentService.getPricing(),
+    staleTime: 60 * 1000,
+  });
+
+  const hero = data?.data?.hero || {};
+  const plans = data?.data?.plans || [];
+  const footnote = data?.data?.footnote || '';
+
   return (
     <div className="bg-[#FAFAF9] dark:bg-slate-900 min-h-screen pt-24 pb-20 animate-fade-in font-sans text-slate-900 dark:text-white transition-colors duration-300">
       <div className="max-w-7xl mx-auto px-6">
-        
-        {/* Header */}
         <div className="text-center max-w-3xl mx-auto mb-20">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-100 dark:border-emerald-800 text-[#0F5132] dark:text-emerald-400 text-xs font-bold uppercase tracking-wider mb-6">
-                Plans & Pricing
-            </div>
-            <h1 className="text-5xl md:text-7xl font-bold text-slate-900 dark:text-white mb-6 leading-[1.1] tracking-tight">
-                Fair Pricing for <br/> Every Scale.
-            </h1>
-            <p className="text-xl text-slate-500 dark:text-slate-400 leading-relaxed">
-                Choose a plan that fits your land size and technology needs. <br/> Pay easily via Mobile Money (MoMo).
-            </p>
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-100 dark:border-emerald-800 text-[#0F5132] dark:text-emerald-400 text-xs font-bold uppercase tracking-wider mb-6">
+            {hero.badge || 'Plans'}
+          </div>
+          <h1 className="text-5xl md:text-7xl font-bold text-slate-900 dark:text-white mb-6 leading-[1.1] tracking-tight">
+            {hero.title}
+          </h1>
+          <p className="text-xl text-slate-500 dark:text-slate-400 leading-relaxed">
+            {hero.subtitle}
+          </p>
         </div>
 
-        {/* Pricing Grid */}
+        {isLoading && <div className="text-center text-slate-500 dark:text-slate-400 mb-8">Loading pricing...</div>}
+        {isError && (
+          <div className="text-center mb-8">
+            <p className="text-red-500 mb-3">Failed to load pricing content.</p>
+            <button onClick={() => refetch()} className="px-4 py-2 rounded-full bg-[#0F5132] text-white text-sm font-bold">
+              Retry
+            </button>
+          </div>
+        )}
+
         <div className="grid md:grid-cols-3 gap-6 lg:gap-8 items-start">
-            
-            {/* Basic Plan */}
-            <div className="bg-white dark:bg-slate-800 rounded-[2.5rem] p-8 lg:p-10 border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-xl transition-all duration-300">
-                <div className="mb-8">
-                    <span className="text-xs font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-3 py-1.5 rounded-full uppercase tracking-wider">Urumuri</span>
-                    <h3 className="text-2xl font-bold text-slate-900 dark:text-white mt-4 mb-2">Starter</h3>
-                    <div className="flex items-baseline gap-1">
-                        <span className="text-5xl font-bold text-slate-900 dark:text-white tracking-tight">Free</span>
+          {plans.map((plan, idx) => (
+            <div
+              key={plan.id || `${plan.name}-${idx}`}
+              className={`rounded-[2.5rem] p-8 lg:p-10 border shadow-sm transition-all duration-300 ${
+                plan.featured
+                  ? 'bg-[#0F5132] text-white border-[#0F5132] shadow-2xl'
+                  : 'bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700 hover:shadow-xl'
+              }`}
+            >
+              {plan.badge && (
+                <span className={`text-xs font-bold px-3 py-1.5 rounded-full uppercase tracking-wider ${plan.featured ? 'bg-white/10 text-emerald-200 border border-white/10' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+                  {plan.badge}
+                </span>
+              )}
+
+              <h3 className={`text-2xl font-bold mt-4 mb-2 ${plan.featured ? 'text-white' : 'text-slate-900 dark:text-white'}`}>{plan.name}</h3>
+              <div className="flex items-baseline gap-1 mb-4">
+                <span className={`text-5xl font-bold tracking-tight ${plan.featured ? 'text-white' : 'text-slate-900 dark:text-white'}`}>{plan.price}</span>
+                {plan.period && <span className={plan.featured ? 'text-emerald-200' : 'text-slate-500 dark:text-slate-400'}>{plan.period}</span>}
+              </div>
+              <p className={`text-sm mb-8 leading-relaxed ${plan.featured ? 'text-emerald-100/90' : 'text-slate-500 dark:text-slate-400'}`}>{plan.description}</p>
+
+              <div className={`h-px w-full mb-8 ${plan.featured ? 'bg-white/10' : 'bg-slate-100 dark:bg-slate-700'}`}></div>
+
+              <ul className="space-y-4 mb-8">
+                {plan.features.map((item, i) => (
+                  <li key={`${item}-${i}`} className={`flex items-start gap-3 text-sm font-medium ${plan.featured ? 'text-emerald-50' : 'text-slate-600 dark:text-slate-300'}`}>
+                    <div className={`rounded-full p-0.5 mt-0.5 ${plan.featured ? 'bg-[#10B981] text-black' : 'bg-emerald-50 dark:bg-emerald-900/30'}`}>
+                      <Check size={12} className={plan.featured ? '' : 'text-[#0F5132] dark:text-emerald-400'} />
                     </div>
-                    <p className="text-slate-500 dark:text-slate-400 text-sm mt-4 leading-relaxed">Perfect for subsistence farmers starting their digital journey.</p>
-                </div>
-                
-                <div className="h-px bg-slate-100 dark:bg-slate-700 w-full mb-8"></div>
+                    {item}
+                  </li>
+                ))}
+              </ul>
 
-                <ul className="space-y-4 mb-8">
-                    {['USSD Access (*775#)', 'Daily Weather SMS', 'Community Marketplace', 'Basic Market Prices'].map((item, i) => (
-                        <li key={i} className="flex items-start gap-3 text-sm text-slate-600 dark:text-slate-300 font-medium">
-                            <div className="bg-emerald-50 dark:bg-emerald-900/30 rounded-full p-0.5 mt-0.5"><Check size={12} className="text-[#0F5132] dark:text-emerald-400" /></div> 
-                            {item}
-                        </li>
-                    ))}
-                </ul>
-                <button className="w-full py-4 rounded-full border-2 border-slate-100 dark:border-slate-700 text-slate-900 dark:text-white font-bold hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
-                    Get Started
-                </button>
+              <button className={`w-full py-4 rounded-full font-bold transition-colors ${
+                plan.featured
+                  ? 'bg-white text-[#0F5132] hover:bg-emerald-50 shadow-lg'
+                  : 'border-2 border-slate-100 dark:border-slate-700 text-slate-900 dark:text-white hover:bg-slate-50 dark:hover:bg-slate-700'
+              }`}>
+                {plan.cta || 'Select Plan'}
+              </button>
             </div>
-
-            {/* Pro Plan (Featured) */}
-            <div className="bg-[#0F5132] rounded-[2.5rem] p-8 lg:p-10 text-white shadow-2xl relative overflow-hidden transform md:-translate-y-6">
-                <div className="absolute top-6 right-6 bg-[#10B981] text-black text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">Most Popular</div>
-                
-                <div className="mb-8 relative z-10">
-                    <span className="text-xs font-bold bg-white/10 text-emerald-200 px-3 py-1.5 rounded-full uppercase tracking-wider border border-white/10">Isuka</span>
-                    <h3 className="text-2xl font-bold mt-4 mb-2">Professional</h3>
-                    <div className="flex items-baseline gap-1">
-                        <span className="text-5xl font-bold tracking-tight">5K</span>
-                        <span className="text-emerald-200 font-medium">RWF / mo</span>
-                    </div>
-                    <p className="text-emerald-100 text-sm mt-4 leading-relaxed opacity-90">For progressive farmers and small cooperatives.</p>
-                </div>
-
-                <div className="h-px bg-white/10 w-full mb-8"></div>
-
-                <ul className="space-y-4 mb-8 relative z-10">
-                    {['Everything in Free', 'Smart Dashboard Access', '1 IoT Sensor Lease Included', 'AI Pest Detection (Unlimited)', 'Auto-Irrigation Control'].map((item, i) => (
-                        <li key={i} className="flex items-start gap-3 text-sm text-emerald-50 font-medium">
-                            <div className="bg-[#10B981] rounded-full p-0.5 text-black mt-0.5"><Check size={12} /></div> 
-                            {item}
-                        </li>
-                    ))}
-                </ul>
-                <button className="w-full py-4 rounded-full bg-white text-[#0F5132] font-bold hover:bg-emerald-50 transition-colors shadow-lg relative z-10">
-                    Start Free Trial
-                </button>
-                
-                {/* Background Decor */}
-                <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
-                <div className="absolute bottom-0 left-0 w-64 h-64 bg-black/20 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2"></div>
-            </div>
-
-            {/* Enterprise Plan */}
-            <div className="bg-white dark:bg-slate-800 rounded-[2.5rem] p-8 lg:p-10 border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-xl transition-all duration-300">
-                <div className="mb-8">
-                    <span className="text-xs font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-3 py-1.5 rounded-full uppercase tracking-wider">Igisubizo</span>
-                    <h3 className="text-2xl font-bold text-slate-900 dark:text-white mt-4 mb-2">Enterprise</h3>
-                    <div className="flex items-baseline gap-1">
-                        <span className="text-4xl font-bold text-slate-900 dark:text-white tracking-tight">Custom</span>
-                    </div>
-                    <p className="text-slate-500 dark:text-slate-400 text-sm mt-4 leading-relaxed">For large cooperatives, NGOs, and Government bodies.</p>
-                </div>
-
-                <div className="h-px bg-slate-100 dark:bg-slate-700 w-full mb-8"></div>
-
-                <ul className="space-y-4 mb-8">
-                    {['Multi-Farm Management', 'Advanced Analytics & Reporting', 'API Access', 'Dedicated Support Agronomist', 'White-label Options'].map((item, i) => (
-                        <li key={i} className="flex items-start gap-3 text-sm text-slate-600 dark:text-slate-300 font-medium">
-                            <div className="bg-emerald-50 dark:bg-emerald-900/30 rounded-full p-0.5 mt-0.5"><Check size={12} className="text-[#0F5132] dark:text-emerald-400" /></div> 
-                            {item}
-                        </li>
-                    ))}
-                </ul>
-                <button className="w-full py-4 rounded-full border-2 border-slate-100 dark:border-slate-700 text-slate-900 dark:text-white font-bold hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
-                    Contact Sales
-                </button>
-            </div>
-
+          ))}
         </div>
 
-        <div className="mt-20 text-center">
-            <p className="text-slate-400 text-sm font-medium">
-                Prices include VAT. Cancel anytime. <a href="#" className="underline hover:text-[#0F5132] dark:hover:text-emerald-400 transition-colors">Read our terms</a>.
-            </p>
-        </div>
+        {footnote && (
+          <div className="mt-20 text-center">
+            <p className="text-slate-400 text-sm font-medium">{footnote}</p>
+          </div>
+        )}
 
+        {!isLoading && !isError && plans.length === 0 && (
+          <div className="mt-10 text-center text-slate-500 dark:text-slate-400">No pricing plans configured yet.</div>
+        )}
       </div>
     </div>
   );

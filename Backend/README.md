@@ -64,7 +64,7 @@ This backend system serves as the core infrastructure for the Smart Maize Farmin
 |-----------|------------|
 | Runtime | Node.js 18+ |
 | Framework | Express.js |
-| Database | Supabase (PostgreSQL) |
+| Database | Convex |
 | Authentication | Clerk |
 | File Storage | Cloudinary |
 | SMS/USSD | Africa's Talking |
@@ -79,7 +79,7 @@ Backend/
 │   ├── config/
 │   │   └── index.js           # Centralized configuration
 │   ├── database/
-│   │   ├── supabase.js        # Supabase client setup
+│   │   ├── convex.js          # Convex client setup
 │   │   ├── schema.sql         # Database schema
 │   │   └── migrate.js         # Migration runner
 │   ├── middleware/
@@ -127,7 +127,7 @@ Backend/
 
 - Node.js 18+ 
 - npm or yarn
-- Supabase account
+- Convex deployment
 - Clerk account
 - Cloudinary account
 - Africa's Talking account
@@ -153,9 +153,8 @@ Backend/
 
 4. **Initialize database**
    ```bash
-   # Run the schema.sql in your Supabase SQL editor
-   # Or use the migration runner:
-   npm run migrate
+   # Set CONVEX_URL and deploy Convex functions/schema
+   npx convex dev
    ```
 
 5. **Start development server**
@@ -176,14 +175,13 @@ NODE_ENV=development
 PORT=3000
 API_VERSION=v1
 
-# Supabase Configuration
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_ANON_KEY=your-anon-key
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+# Convex Configuration
+CONVEX_URL=https://your-team.your-project.convex.cloud
 
 # Clerk Authentication
 CLERK_PUBLISHABLE_KEY=pk_test_xxx
 CLERK_SECRET_KEY=sk_test_xxx
+ADMIN_BOOTSTRAP_EMAILS=admin@your-domain.com
 
 # Cloudinary Configuration
 CLOUDINARY_CLOUD_NAME=your-cloud-name
@@ -549,3 +547,4 @@ For technical support or questions about the Smart Maize Farming System:
 **Built for Rwanda's smallholder farmers** 🇷🇼
 
 *Empowering agricultural decision-making through technology*
+

@@ -16,12 +16,34 @@ const apiClient: AxiosInstance = axios.create({
   },
 });
 
+type TokenGetter = () => Promise<string | null>;
+
+let tokenGetter: TokenGetter | null = null;
+let tokenRefresher: TokenGetter | null = null;
+
+export const configureApiAuth = (
+  getToken: TokenGetter,
+  refreshToken?: TokenGetter
+): void => {
+  tokenGetter = getToken;
+  tokenRefresher = refreshToken || getToken;
+};
+
+const getLiveToken = async (): Promise<string | null> => {
+  if (tokenGetter) {
+    try {
+      return await tokenGetter();
+    } catch {
+      return null;
+    }
+  }
+  return localStorage.getItem('clerk-token');
+};
+
 // Request interceptor for adding auth token
 apiClient.interceptors.request.use(
   async (config: InternalAxiosRequestConfig) => {
-    // Get token from Clerk session
-    // The token will be set by the ClerkProvider
-    const token = localStorage.getItem('clerk-token');
+    const token = await getLiveToken();
     
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -39,12 +61,24 @@ apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     const originalRequest = error.config;
+    const requestWithRetry = originalRequest as (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined;
     
-    // Handle 401 Unauthorized - token expired
-    if (error.response?.status === 401 && originalRequest) {
-      // Clear stored token and redirect to login
-      localStorage.removeItem('clerk-token');
-      window.location.href = '/login';
+    // Handle 401 Unauthorized - attempt one silent token refresh and retry once.
+    if (error.response?.status === 401 && requestWithRetry && !requestWithRetry._retry) {
+      requestWithRetry._retry = true;
+      if (tokenRefresher) {
+        try {
+          const refreshed = await tokenRefresher();
+          if (refreshed) {
+            setAuthToken(refreshed);
+            requestWithRetry.headers = requestWithRetry.headers || {};
+            requestWithRetry.headers.Authorization = `Bearer ${refreshed}`;
+            return apiClient(requestWithRetry);
+          }
+        } catch {
+          // Fall through to surface original error.
+        }
+      }
     }
     
     // Handle 403 Forbidden - insufficient permissions
@@ -59,7 +93,11 @@ apiClient.interceptors.response.use(
     
     // Handle 500+ Server Errors
     if (error.response?.status && error.response.status >= 500) {
-      console.error('Server error. Please try again later.');
+      if (error.response.status === 503) {
+        console.error('Backend database service unavailable.');
+      } else {
+        console.error('Server error. Please try again later.');
+      }
     }
     
     return Promise.reject(error);
@@ -101,6 +139,8 @@ export const handleApiError = (error: unknown): string => {
         return 'Resource not found.';
       case 429:
         return 'Too many requests. Please try again later.';
+      case 503:
+        return 'Backend database service is unavailable. Start Convex or point the backend to a live Convex deployment.';
       case 500:
         return 'Server error. Please try again later.';
       default:

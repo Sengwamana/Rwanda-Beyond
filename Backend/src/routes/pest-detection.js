@@ -81,46 +81,71 @@ router.post('/upload/:farmId',
 
     const { location, notes, severity } = req.body;
     const farmId = req.params.farmId;
+    const farm = await db.farms.getById(farmId);
+
+    if (!farm || farm.is_active === false) {
+      return res.status(404).json({
+        success: false,
+        message: 'Farm not found',
+        code: 'NOT_FOUND'
+      });
+    }
 
     // Upload images to Cloudinary
     const uploadPromises = req.files.map(file =>
-      imageService.uploadPestImage(file.buffer, farmId, {
-        description: notes
+      imageService.uploadImage(file.buffer, {
+        farmId,
+        folder: 'pest_detections'
       })
     );
 
     const uploadResults = await Promise.all(uploadPromises);
     const imageUrls = uploadResults.map(r => r.url);
+    const primaryUpload = uploadResults[0];
+    const parsedLocation = location ? JSON.parse(location) : null;
 
     // Run AI analysis on first image
     const analysisResult = await aiService.analyzePestImage(
       imageUrls[0],
-      { farmId, location, notes }
+      { farmId, location: parsedLocation, notes }
     );
 
     // Create pest detection record
     const detection = await db.pestDetections.create({
       farm_id: farmId,
+      reported_by: req.user.id,
       image_url: imageUrls[0],
-      additional_images: imageUrls.slice(1),
-      location: location ? JSON.parse(location) : null,
-      detected_pest: analysisResult.detectedPest,
-      confidence: analysisResult.confidence,
-      severity: severity || analysisResult.severity || 'unknown',
-      ai_analysis: analysisResult,
-      status: analysisResult.confidence >= 0.8 ? 'confirmed' : 'pending_review',
-      reported_by: req.user._id,
-      notes
+      cloudinary_public_id: primaryUpload.publicId,
+      thumbnail_url: primaryUpload.publicId
+        ? imageService.getThumbnailUrl(primaryUpload.publicId)
+        : imageUrls[0],
+      pest_detected: analysisResult.pestDetected,
+      pest_type: analysisResult.pestType,
+      severity: severity || analysisResult.severity || 'none',
+      confidence_score: analysisResult.confidenceScore,
+      affected_area_percentage: analysisResult.affectedAreaPercentage,
+      model_version: analysisResult.modelVersion,
+      detection_metadata: {
+        analysis: analysisResult,
+        additional_image_urls: imageUrls.slice(1),
+        location: parsedLocation,
+        notes,
+      },
+      location_description: notes,
+      latitude: parsedLocation?.lat,
+      longitude: parsedLocation?.lng,
     });
 
     // Create pest alert recommendation if detected
-    if (analysisResult.detectedPest && analysisResult.confidence >= 0.6) {
-      await recommendationService.createPestAlert(farmId, {
-        pestName: analysisResult.detectedPest,
+    if (analysisResult.pestDetected && analysisResult.confidenceScore >= 0.6) {
+      await recommendationService.createPestAlertRecommendation(farmId, {
+        pestDetectionId: detection._id,
+        pestType: analysisResult.pestType,
         severity: analysisResult.severity,
-        detectionId: detection._id,
+        confidence: analysisResult.confidenceScore,
+        affectedArea: analysisResult.affectedAreaPercentage,
+        imageUrl: imageUrls[0],
         recommendations: analysisResult.recommendations,
-        affectedArea: analysisResult.estimatedArea
       });
     }
 
@@ -359,46 +384,6 @@ router.get('/scans/:scanId',
 );
 
 /**
- * @route GET /api/v1/pest-detection/:detectionId
- * @desc Get pest detection by ID
- * @access Owner, Admin, Expert
- */
-router.get('/:detectionId',
-  authenticate,
-  ...validateUUID('detectionId'),
-  handleValidationErrors,
-  asyncHandler(async (req, res) => {
-    const detection = await db.pestDetections.getById(req.params.detectionId);
-
-    if (!detection) {
-      return res.status(404).json({
-        success: false,
-        message: 'Detection not found',
-        code: 'NOT_FOUND'
-      });
-    }
-
-    // Check ownership for farmers
-    if (req.user.role === ROLES.FARMER) {
-      const farmUserId = await db.farms.getUserId(detection.farm_id);
-      if (farmUserId !== req.user._id) {
-        return res.status(403).json({
-          success: false,
-          message: 'Access denied',
-          code: 'FORBIDDEN'
-        });
-      }
-    }
-
-    return successResponse(res, detection, 'Detection retrieved successfully');
-  })
-);
-
-// =====================================================
-// EXPERT REVIEW ROUTES
-// =====================================================
-
-/**
  * @route GET /api/v1/pest-detection/pending-review
  * @desc Get detections pending expert review
  * @access Admin, Expert
@@ -425,56 +410,6 @@ router.get('/pending-review',
     return paginatedResponse(res, data, parseInt(page), parseInt(limit), count, 'Pending reviews retrieved successfully');
   })
 );
-
-/**
- * @route POST /api/v1/pest-detection/:detectionId/review
- * @desc Submit expert review for a detection
- * @access Admin, Expert
- */
-router.post('/:detectionId/review',
-  authenticate,
-  requireMinimumRole(ROLES.EXPERT),
-  ...validateUUID('detectionId'),
-  handleValidationErrors,
-  asyncHandler(async (req, res) => {
-    const { detectionId } = req.params;
-    const { 
-      confirmedPest, 
-      confirmedSeverity, 
-      status, 
-      expertNotes, 
-      treatmentRecommendations 
-    } = req.body;
-
-    const detection = await db.pestDetections.update(detectionId, {
-      detected_pest: confirmedPest,
-      severity: confirmedSeverity,
-      status: status || 'confirmed',
-      expert_notes: expertNotes,
-      treatment_recommendations: treatmentRecommendations,
-      reviewed_by: req.user._id,
-      reviewed_at: new Date().toISOString()
-    });
-
-    // Create or update recommendation based on expert review
-    if (confirmedPest && status === 'confirmed') {
-      await recommendationService.createPestAlert(detection.farm_id, {
-        pestName: confirmedPest,
-        severity: confirmedSeverity,
-        detectionId: detection._id,
-        recommendations: treatmentRecommendations,
-        expertVerified: true,
-        expertId: req.user.id
-      });
-    }
-
-    return successResponse(res, detection, 'Detection reviewed successfully');
-  })
-);
-
-// =====================================================
-// STATISTICS & REPORTING
-// =====================================================
 
 /**
  * @route GET /api/v1/pest-detection/stats
@@ -532,7 +467,7 @@ router.get('/outbreak-map',
     startDate.setDate(startDate.getDate() - parseInt(days));
 
     const opts = {
-      since: startDate.toISOString(),
+      since: startDate.getTime(),
       status: ['confirmed', 'pending_review']
     };
 
@@ -559,17 +494,17 @@ router.get('/outbreak-map',
 );
 
 // =====================================================
-// ADDITIONAL DETECTION PARAM ROUTES
+// PARAMETERIZED DETECTION ROUTES
+// Must be defined AFTER all named routes above
 // =====================================================
 
 /**
- * @route DELETE /api/v1/pest-detection/:detectionId
- * @desc Delete (soft-delete) a pest detection
- * @access Admin, Expert
+ * @route GET /api/v1/pest-detection/:detectionId
+ * @desc Get pest detection by ID
+ * @access Owner, Admin, Expert
  */
-router.delete('/:detectionId',
+router.get('/:detectionId',
   authenticate,
-  requireMinimumRole(ROLES.EXPERT),
   ...validateUUID('detectionId'),
   handleValidationErrors,
   asyncHandler(async (req, res) => {
@@ -583,12 +518,98 @@ router.delete('/:detectionId',
       });
     }
 
-    await db.pestDetections.update(req.params.detectionId, {
-      status: 'deleted',
-      deleted_at: new Date().toISOString(),
-      deleted_by: req.user._id
+    // Check ownership for farmers
+    if (req.user.role === ROLES.FARMER) {
+      const farmUserId = await db.farms.getUserId(detection.farm_id);
+      if (farmUserId !== req.user._id) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied',
+          code: 'FORBIDDEN'
+        });
+      }
+    }
+
+    return successResponse(res, detection, 'Detection retrieved successfully');
+  })
+);
+
+// =====================================================
+// EXPERT REVIEW ROUTES (param-based, must be after named routes)
+// =====================================================
+
+/**
+ * @route POST /api/v1/pest-detection/:detectionId/review
+ * @desc Submit expert review for a detection
+ * @access Admin, Expert
+ */
+router.post('/:detectionId/review',
+  authenticate,
+  requireMinimumRole(ROLES.EXPERT),
+  ...validateUUID('detectionId'),
+  handleValidationErrors,
+  asyncHandler(async (req, res) => {
+    const { detectionId } = req.params;
+    const { 
+      confirmedPest, 
+      confirmedSeverity, 
+      status, 
+      expertNotes, 
+      treatmentRecommendations 
+    } = req.body;
+
+    const detection = await db.pestDetections.update(detectionId, {
+      detected_pest: confirmedPest,
+      severity: confirmedSeverity,
+      status: status || 'confirmed',
+      expert_notes: expertNotes,
+      treatment_recommendations: treatmentRecommendations,
+      reviewed_by: req.user._id,
+      reviewed_at: new Date().toISOString()
     });
 
+    // Create or update recommendation based on expert review
+    if (confirmedPest && status === 'confirmed') {
+      await recommendationService.createPestAlert(detection.farm_id, {
+        pestName: confirmedPest,
+        severity: confirmedSeverity,
+        detectionId: detection._id,
+        recommendations: treatmentRecommendations,
+        expertVerified: true,
+        expertId: req.user.id
+      });
+    }
+
+    return successResponse(res, detection, 'Detection reviewed successfully');
+  })
+);
+
+// =====================================================
+// ADDITIONAL DETECTION PARAM ROUTES
+// =====================================================
+
+/**
+ * @route DELETE /api/v1/pest-detection/:detectionId
+ * @desc Delete a pest detection
+ * @access Owner, Admin, Expert
+ */
+router.delete('/:detectionId',
+  authenticate,
+  ...validateUUID('detectionId'),
+  handleValidationErrors,
+  requireOwnership(getDetectionUserId),
+  asyncHandler(async (req, res) => {
+    const detection = await db.pestDetections.getById(req.params.detectionId);
+
+    if (!detection) {
+      return res.status(404).json({
+        success: false,
+        message: 'Detection not found',
+        code: 'NOT_FOUND'
+      });
+    }
+
+    await db.pestDetections.remove(req.params.detectionId);
     return successResponse(res, { id: req.params.detectionId }, 'Pest detection deleted successfully');
   })
 );

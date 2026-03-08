@@ -118,6 +118,7 @@ export const create = mutation({
     location_description: v.optional(v.string()),
     latitude: v.optional(v.number()),
     longitude: v.optional(v.number()),
+    firmware_version: v.optional(v.string()),
     metadata: v.optional(v.any()),
   },
   returns: v.any(),
@@ -132,6 +133,7 @@ export const create = mutation({
       latitude: args.latitude,
       longitude: args.longitude,
       status: "active",
+      firmware_version: args.firmware_version,
       metadata: args.metadata ?? {},
       created_at: now,
       updated_at: now,
@@ -146,6 +148,15 @@ export const update = mutation({
   handler: async (ctx, { id, updates }) => {
     await ctx.db.patch(id, { ...updates, updated_at: Date.now() });
     return await ctx.db.get(id);
+  },
+});
+
+export const remove = mutation({
+  args: { id: v.id("sensors") },
+  returns: v.null(),
+  handler: async (ctx, { id }) => {
+    await ctx.db.delete(id);
+    return null;
   },
 });
 

@@ -5,7 +5,8 @@
 
 import React, { useEffect, useCallback, createContext, useContext } from 'react';
 import { useAuth, useUser } from '@clerk/clerk-react';
-import { configureAuth, setAuthToken } from '../services/apiClient';
+import { configureAuth } from '../services/apiClient';
+import { setAuthToken } from '../services/api';
 import wsManager from '../services/websocket';
 import { useAuthStore } from '../store';
 
@@ -86,7 +87,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
             setAuthToken(token);
 
             // Extract user role from metadata (set in Clerk Dashboard or via API)
-            const role = (clerkUser.publicMetadata?.role as string) || 'farmer';
+            const roleFromMetadata = (clerkUser.publicMetadata?.role as string) || 'farmer';
+            const role: 'farmer' | 'expert' | 'admin' =
+              roleFromMetadata === 'admin' || roleFromMetadata === 'expert' || roleFromMetadata === 'farmer'
+                ? roleFromMetadata
+                : 'farmer';
 
             // Update user in store
             setUser({
@@ -95,11 +100,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
               email: clerkUser.primaryEmailAddress?.emailAddress || '',
               firstName: clerkUser.firstName || '',
               lastName: clerkUser.lastName || '',
-              phone: clerkUser.primaryPhoneNumber?.phoneNumber || '',
-              profileImage: clerkUser.imageUrl || '',
-              role: role as 'farmer' | 'expert' | 'admin',
+              phoneNumber: clerkUser.primaryPhoneNumber?.phoneNumber || '',
+              profileImageUrl: clerkUser.imageUrl || '',
+              role,
+              preferredLanguage: 'en',
               isActive: true,
               isVerified: clerkUser.primaryEmailAddress?.verification?.status === 'verified',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
             });
 
             // Connect WebSocket
@@ -121,14 +129,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   // Listen for auth:logout events (triggered by API client on 401)
   useEffect(() => {
-    const handleLogout = async (event: CustomEvent) => {
-      console.log('Auth logout triggered:', event.detail);
+    const handleLogout = async (event: Event) => {
+      const customEvent = event as CustomEvent<{ reason?: string }>;
+      console.log('Auth logout triggered:', customEvent.detail);
       await signOut();
     };
 
-    window.addEventListener('auth:logout', handleLogout as EventListener);
+    window.addEventListener('auth:logout', handleLogout);
     return () => {
-      window.removeEventListener('auth:logout', handleLogout as EventListener);
+      window.removeEventListener('auth:logout', handleLogout);
     };
   }, [signOut]);
 

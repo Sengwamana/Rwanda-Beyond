@@ -187,8 +187,7 @@ router.get('/farm/:farmId/farming-conditions',
       weatherService.getForecast(farmId, 3)
     ]);
 
-    // Assess farming conditions
-    const conditions = assessFarmingConditions(current, forecast);
+    const conditions = weatherService.analyzeWeatherImpact(forecast);
 
     return successResponse(res, {
       current,
@@ -271,18 +270,20 @@ router.get('/farm/:farmId/irrigation-window',
     // Find optimal irrigation windows (no rain, moderate temperature)
     const windows = forecast
       .filter(f => {
-        const isRainy = f.weather?.[0]?.main?.toLowerCase().includes('rain');
-        const temp = f.temperature || 25;
+        const isRainy = String(f.condition || '').toLowerCase().includes('rain');
+        const temp = f.temperatureMax || f.temperatureAvg || 25;
         return !isRainy && temp < 32 && temp > 15;
       })
       .map(f => ({
         date: f.date,
         conditions: {
-          temperature: f.temperature,
-          humidity: f.humidity,
-          weather: f.weather?.[0]?.description
+          temperature: f.temperatureMax || f.temperatureAvg,
+          humidity: f.humidityAvg,
+          weather: f.condition
         },
-        recommendation: f.temperature > 28 ? 'Evening irrigation recommended' : 'Morning irrigation recommended'
+        recommendation: (f.temperatureMax || f.temperatureAvg || 0) > 28
+          ? 'Evening irrigation recommended'
+          : 'Morning irrigation recommended'
       }));
 
     return successResponse(res, {

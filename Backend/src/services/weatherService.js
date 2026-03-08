@@ -397,12 +397,63 @@ export const clearWeatherCache = () => {
   logger.info('Weather cache cleared');
 };
 
+export const getCurrentWeather = async (farmId) => {
+  const weather = await getWeatherForFarm(farmId, 1);
+  return weather.current;
+};
+
+export const getForecast = async (farmId, days = 5) => {
+  const weather = await getWeatherForFarm(farmId, days);
+  return weather.forecast;
+};
+
+export const getWeatherAlerts = async (farmId) => {
+  const forecast = await getForecast(farmId, 3);
+  const alerts = forecast.flatMap((day) => {
+    const results = [];
+    if ((day.precipitationProbability || 0) >= 70) {
+      results.push({
+        type: 'rain',
+        severity: 'high',
+        title: 'Heavy rain expected',
+        description: `${day.precipitationProbability}% chance of rain on ${day.date}.`,
+        startTime: day.date,
+      });
+    }
+    if ((day.temperatureMax || 0) >= 35) {
+      results.push({
+        type: 'heat',
+        severity: 'medium',
+        title: 'High temperature expected',
+        description: `Temperature may reach ${Math.round(day.temperatureMax)} C on ${day.date}.`,
+        startTime: day.date,
+      });
+    }
+    return results;
+  });
+
+  return alerts;
+};
+
+export const getWeatherByCoordinates = async (lat, lon) => {
+  return fetchCurrentWeather(lat, lon);
+};
+
+export const getWeatherByDistrict = async (_district) => {
+  return fetchCurrentWeather(-1.9403, 29.8739);
+};
+
 export default {
   fetchCurrentWeather,
   fetchWeatherForecast,
   storeWeatherData,
   getStoredWeather,
   getWeatherForFarm,
+  getCurrentWeather,
+  getForecast,
+  getWeatherAlerts,
+  getWeatherByCoordinates,
+  getWeatherByDistrict,
   analyzeWeatherImpact,
   updateAllDistrictsWeather,
   clearWeatherCache

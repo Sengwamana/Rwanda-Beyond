@@ -1,6 +1,9 @@
-import { Blob } from '@google/genai';
+export interface RealtimeAudioBlob {
+  data: string;
+  mimeType: string;
+}
 
-export function createBlob(data: Float32Array): Blob {
+export function createBlob(data: Float32Array): RealtimeAudioBlob {
   const l = data.length;
   const int16 = new Int16Array(l);
   for (let i = 0; i < l; i++) {

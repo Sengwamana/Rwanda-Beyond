@@ -41,6 +41,7 @@ router.get('/farm/:farmId/dashboard',
   requireOwnership(getFarmUserId),
   asyncHandler(async (req, res) => {
     const farmId = req.params.farmId;
+    const recentSince = Date.now() - 7 * 24 * 60 * 60 * 1000;
 
     // Parallel queries for dashboard data
     const [
@@ -58,12 +59,12 @@ router.get('/farm/:farmId/dashboard',
       db.sensorData.getLatestByFarm(farmId, false),
       
       // Active recommendations
-      db.recommendations.getByFarm(farmId, { status: ['pending', 'accepted'], limit: 5 }),
+      db.recommendations.getByFarm(farmId, { statuses: ['pending', 'accepted'], limit: 5 }),
       
       // Recent alerts (high priority recommendations)
       db.recommendations.getByFarm(farmId, { 
-        priority: ['critical', 'high'],
-        since: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+        priorities: ['critical', 'high'],
+        since: recentSince,
         limit: 5
       }),
       
@@ -103,7 +104,7 @@ router.get('/farm/:farmId/sensor-trends',
 
     // Get daily aggregates
     try {
-      const data = await db.sensorData.getDailyAggregates(farmId, startDate.toISOString().split('T')[0]);
+      const data = await db.sensorData.getDailyAggregates(farmId, startDate.getTime());
 
       return successResponse(res, {
         farmId,
@@ -140,7 +141,7 @@ router.get('/farm/:farmId/recommendation-history',
     startDate.setDate(startDate.getDate() - parseInt(days));
 
     const data = await db.recommendations.getByFarm(farmId, {
-      since: startDate.toISOString()
+      since: startDate.getTime()
     });
 
     // Calculate statistics
@@ -194,6 +195,7 @@ router.get('/system/overview',
   authenticate,
   requireMinimumRole(ROLES.EXPERT),
   asyncHandler(async (req, res) => {
+    const since = Date.now() - 30 * 24 * 60 * 60 * 1000;
     const [
       userStats,
       farmStats,
@@ -212,12 +214,12 @@ router.get('/system/overview',
       
       // Recent recommendations
       db.recommendations.getStats({
-        since: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+        since
       }),
       
       // Pest detections
       db.pestDetections.getStats({
-        since: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+        since
       })
     ]);
 
@@ -262,7 +264,7 @@ router.get('/system/activity',
   asyncHandler(async (req, res) => {
     const { hours = 24 } = req.query;
     const startTime = new Date(Date.now() - parseInt(hours) * 60 * 60 * 1000);
-    const since = startTime.toISOString();
+    const since = startTime.getTime();
 
     const [
       newUsers,
@@ -310,15 +312,23 @@ router.get('/district/:district',
   requireMinimumRole(ROLES.EXPERT),
   asyncHandler(async (req, res) => {
     const { district } = req.params;
-    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const since = Date.now() - 30 * 24 * 60 * 60 * 1000;
 
     const [farms, pestDetections, recommendations] = await Promise.all([
-      db.farms.list({ district }),
-      db.pestDetections.getStats({ district, since }),
-      db.recommendations.getStats({ district, since })
+      db.farms.list({ page: 1, limit: 1000 }),
+      db.pestDetections.getOutbreakMap({ since, statuses: ['detected'] }),
+      db.recommendations.list({ page: 1, limit: 1000, since })
     ]);
 
-    const farmsList = farms?.data || farms || [];
+    const farmsList = (farms?.data || farms || []).filter((farm) => {
+      const districtName = farm?.district?.name || farm?.district || '';
+      return districtName === district;
+    });
+    const districtFarmIds = new Set(farmsList.map((farm) => String(farm.id || farm._id)));
+    const pestList = (pestDetections || []).filter((item) => districtFarmIds.has(String(item?.farm?.id || item?.farm_id)));
+    const recList = (recommendations?.data || recommendations || []).filter((item) =>
+      districtFarmIds.has(String(item?.farm?.id || item?.farm_id))
+    );
 
     return successResponse(res, {
       district,
@@ -327,14 +337,14 @@ router.get('/district/:district',
         list: farmsList
       },
       pestDetections: {
-        total: pestDetections?.length || 0,
-        bySeverity: processStats(pestDetections, 'severity'),
-        byPest: processStats(pestDetections, 'detected_pest')
+        total: pestList.length,
+        bySeverity: processStats(pestList, 'severity'),
+        byPest: processStats(pestList, 'pest_type')
       },
       recommendations: {
-        total: recommendations?.length || 0,
-        byType: processStats(recommendations, 'type'),
-        byStatus: processStats(recommendations, 'status')
+        total: recList.length,
+        byType: processStats(recList, 'type'),
+        byStatus: processStats(recList, 'status')
       }
     }, 'District analytics retrieved successfully');
   })
@@ -353,6 +363,7 @@ router.get('/overview',
   authenticate,
   requireMinimumRole(ROLES.EXPERT),
   asyncHandler(async (req, res) => {
+    const since = Date.now() - 30 * 24 * 60 * 60 * 1000;
     const [
       userStats,
       farmStats,
@@ -363,12 +374,8 @@ router.get('/overview',
       db.users.listAll(),
       db.farms.listActive(),
       db.sensors.listAllStats(),
-      db.recommendations.getStats({
-        since: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
-      }),
-      db.pestDetections.getStats({
-        since: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
-      })
+      db.recommendations.getStats({ since }),
+      db.pestDetections.getStats({ since })
     ]);
 
     const overview = {
@@ -411,7 +418,7 @@ router.get('/activity',
   asyncHandler(async (req, res) => {
     const { hours = 24 } = req.query;
     const startTime = new Date(Date.now() - parseInt(hours) * 60 * 60 * 1000);
-    const since = startTime.toISOString();
+    const since = startTime.getTime();
 
     const [
       newUsers,
@@ -466,7 +473,7 @@ router.get('/farm/:farmId/recommendations',
     startDate.setDate(startDate.getDate() - parseInt(days));
 
     const data = await db.recommendations.getByFarm(farmId, {
-      since: startDate.toISOString()
+      since: startDate.getTime()
     });
 
     const stats = {
@@ -515,24 +522,25 @@ router.get('/districts',
   authenticate,
   requireMinimumRole(ROLES.EXPERT),
   asyncHandler(async (req, res) => {
-    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const since = Date.now() - 30 * 24 * 60 * 60 * 1000;
 
     const [districts, farms, pestDetections, recommendations] = await Promise.all([
       db.districts.list(),
-      db.farms.listActive(),
-      db.pestDetections.getStats({ since }),
-      db.recommendations.getStats({ since })
+      db.farms.list({ page: 1, limit: 1000 }),
+      db.pestDetections.getOutbreakMap({ since, statuses: ['detected'] }),
+      db.recommendations.list({ page: 1, limit: 1000, since })
     ]);
 
-    const farmsList = farms || [];
+    const farmsList = farms?.data || farms || [];
     const pestList = pestDetections || [];
-    const recList = recommendations || [];
+    const recList = recommendations?.data || recommendations || [];
 
     const districtAnalytics = (districts || []).map(district => {
       const districtName = district.name || district;
-      const districtFarms = farmsList.filter(f => f.district === districtName);
-      const districtPests = pestList.filter(p => p.district === districtName || districtFarms.some(f => f._id === p.farm_id));
-      const districtRecs = recList.filter(r => r.district === districtName || districtFarms.some(f => f._id === r.farm_id));
+      const districtFarms = farmsList.filter((f) => (f?.district?.name || f?.district) === districtName);
+      const districtFarmIds = new Set(districtFarms.map((f) => String(f.id || f._id)));
+      const districtPests = pestList.filter((p) => districtFarmIds.has(String(p?.farm?.id || p?.farm_id)));
+      const districtRecs = recList.filter((r) => districtFarmIds.has(String(r?.farm?.id || r?.farm_id)));
 
       return {
         district: districtName,
@@ -557,11 +565,38 @@ router.get('/export',
   authenticate,
   requireMinimumRole(ROLES.ADMIN),
   asyncHandler(async (req, res) => {
-    return res.status(501).json({
-      success: false,
-      message: 'Export functionality is not yet implemented',
-      code: 'NOT_IMPLEMENTED'
-    });
+    const { format = 'json', startDate, endDate } = req.query;
+
+    // Gather analytics data
+    const [farms, users, sensors, recommendations] = await Promise.all([
+      db.farms.list({ page: 1, limit: 1000 }),
+      db.users.list({ page: 1, limit: 1000 }),
+      db.sensorData.list({ page: 1, limit: 1 }),
+      db.recommendations.list({ page: 1, limit: 1 }),
+    ]);
+
+    const exportData = {
+      exportedAt: new Date().toISOString(),
+      period: { startDate: startDate || null, endDate: endDate || null },
+      summary: {
+        totalFarms: (farms.data || farms).length || farms.total || 0,
+        totalUsers: (users.data || users).length || users.total || 0,
+        totalSensorReadings: sensors.total || 0,
+        totalRecommendations: recommendations.total || 0,
+      },
+    };
+
+    if (format === 'csv') {
+      const header = 'metric,value\n';
+      const rows = Object.entries(exportData.summary)
+        .map(([k, v]) => `${k},${v}`)
+        .join('\n');
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename=analytics-export.csv');
+      return res.send(header + rows);
+    }
+
+    return successResponse(res, exportData, 'Analytics exported successfully');
   })
 );
 
@@ -576,6 +611,7 @@ router.get('/dashboard',
     const { farmId } = req.query;
 
     if (farmId) {
+      const recentSince = Date.now() - 7 * 24 * 60 * 60 * 1000;
       // Proxy to farm dashboard logic
       const [
         farm,
@@ -587,10 +623,10 @@ router.get('/dashboard',
       ] = await Promise.all([
         db.farms.getById(farmId),
         db.sensorData.getLatestByFarm(farmId, false),
-        db.recommendations.getByFarm(farmId, { status: ['pending', 'accepted'], limit: 5 }),
+        db.recommendations.getByFarm(farmId, { statuses: ['pending', 'accepted'], limit: 5 }),
         db.recommendations.getByFarm(farmId, {
-          priority: ['critical', 'high'],
-          since: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+          priorities: ['critical', 'high'],
+          since: recentSince,
           limit: 5
         }),
         db.irrigationSchedules.getUpcoming(farmId, new Date().toISOString().split('T')[0], 7),
@@ -608,7 +644,7 @@ router.get('/dashboard',
     }
 
     // If no farmId, return system-level summary for admin/expert
-    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const since = Date.now() - 30 * 24 * 60 * 60 * 1000;
 
     const [
       userStats,

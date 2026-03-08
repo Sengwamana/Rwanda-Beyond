@@ -28,6 +28,38 @@ export const ROLES = {
  */
 const ROLE_HIERARCHY = [ROLES.FARMER, ROLES.EXPERT, ROLES.ADMIN];
 
+const normalizeRole = (role, fallback = ROLES.FARMER) => {
+  if (role === ROLES.ADMIN || role === ROLES.EXPERT || role === ROLES.FARMER) {
+    return role;
+  }
+  return fallback;
+};
+
+const normalizeEmail = (email) => {
+  if (typeof email !== 'string') return '';
+  return email.trim().toLowerCase();
+};
+
+const isBootstrapAdminEmail = (email) => {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return false;
+  return config.auth.bootstrapAdminEmails.includes(normalized);
+};
+
+const toApiUser = (user) => {
+  if (!user) return null;
+  return {
+    ...user,
+    id: user._id || user.id,
+  };
+};
+
+const isDatabaseUnavailableError = (error) => {
+  const code = error?.cause?.code || error?.code;
+  const message = String(error?.message || '').toLowerCase();
+  return code === 'ECONNREFUSED' || code === 'ENOTFOUND' || message.includes('fetch failed');
+};
+
 /**
  * Extract and verify JWT token from Authorization header
  * @param {Request} req - Express request object
@@ -37,7 +69,7 @@ const extractAndVerifyToken = async (req) => {
   const authHeader = req.headers.authorization;
   
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    throw new UnauthorizedError('Missing or invalid authorization header');
+    throw new UnauthorizedError('Missing or invalid authorization header', 'AUTH_FAILED');
   }
 
   const token = authHeader.split(' ')[1];
@@ -49,7 +81,7 @@ const extractAndVerifyToken = async (req) => {
     return payload;
   } catch (error) {
     logger.warn('Token verification failed:', error.message);
-    throw new UnauthorizedError('Invalid or expired token');
+    throw new UnauthorizedError('Invalid or expired token', 'AUTH_FAILED');
   }
 };
 
@@ -58,39 +90,119 @@ const extractAndVerifyToken = async (req) => {
  * @param {string} clerkId - Clerk user ID
  * @returns {Promise<Object>} User object from database
  */
-const getOrCreateUser = async (clerkId) => {
+const getOrCreateUser = async (clerkId, tokenPayload = {}) => {
   // First, try to find existing user
   let user = await db.users.getByClerkId(clerkId);
 
   // If user doesn't exist, create from Clerk data
   if (!user) {
+    const metadataRole = tokenPayload?.metadata?.role
+      || tokenPayload?.publicMetadata?.role
+      || tokenPayload?.unsafeMetadata?.role;
+    const inferredProfile = {
+      email: tokenPayload?.email || undefined,
+      phone_number: tokenPayload?.phone_number || undefined,
+      first_name: tokenPayload?.given_name || tokenPayload?.first_name || undefined,
+      last_name: tokenPayload?.family_name || tokenPayload?.last_name || undefined,
+      profile_image_url: tokenPayload?.picture || undefined,
+      is_verified: Boolean(tokenPayload?.email_verified),
+    };
+
+    let clerkProfile = {};
     try {
       const clerkUser = await clerkClient.users.getUser(clerkId);
-      
-      const newUser = {
-        clerk_id: clerkId,
+      clerkProfile = {
         email: clerkUser.emailAddresses[0]?.emailAddress,
         phone_number: clerkUser.phoneNumbers[0]?.phoneNumber,
         first_name: clerkUser.firstName,
         last_name: clerkUser.lastName,
         profile_image_url: clerkUser.imageUrl,
-        role: 'farmer', // Default role
-        is_active: true,
-        is_verified: clerkUser.emailAddresses[0]?.verification?.status === 'verified'
+        is_verified: clerkUser.emailAddresses[0]?.verification?.status === 'verified',
+        role: clerkUser?.publicMetadata?.role || clerkUser?.unsafeMetadata?.role,
       };
+    } catch (clerkError) {
+      // Do not hard-fail bootstrap when Clerk profile fetch is unavailable.
+      logger.warn('Failed to fetch Clerk user during bootstrap, using token claims only:', clerkError.message);
+    }
 
+    const newUser = {
+      clerk_id: clerkId,
+      email: clerkProfile.email || inferredProfile.email,
+      phone_number: clerkProfile.phone_number || inferredProfile.phone_number,
+      first_name: clerkProfile.first_name || inferredProfile.first_name,
+      last_name: clerkProfile.last_name || inferredProfile.last_name,
+      profile_image_url: clerkProfile.profile_image_url || inferredProfile.profile_image_url,
+      role: (() => {
+        const requestedRole = normalizeRole(clerkProfile.role || metadataRole, ROLES.FARMER);
+        const email = clerkProfile.email || inferredProfile.email;
+
+        if (isBootstrapAdminEmail(email)) {
+          return ROLES.ADMIN;
+        }
+
+        // Prevent open self-assignment of admin through client-managed metadata.
+        if (requestedRole === ROLES.ADMIN) {
+          logger.warn(`Blocked unauthorized admin bootstrap for ${clerkId} (${email || 'unknown-email'})`);
+          return ROLES.FARMER;
+        }
+
+        return requestedRole;
+      })(),
+      preferred_language: tokenPayload?.locale || 'en',
+      metadata: {
+        is_verified: Boolean(clerkProfile.is_verified ?? inferredProfile.is_verified),
+      },
+    };
+
+    try {
       user = await db.users.create(newUser);
       logger.info(`New user created: ${user._id} (${user.email})`);
+    } catch (createError) {
+      // Handle race condition where another request created this user first.
+      logger.warn('User bootstrap create failed, retrying lookup:', createError.message);
+      user = await db.users.getByClerkId(clerkId);
+      if (!user) {
+        throw createError;
+      }
+    }
+  } else {
+    try {
+      const clerkUser = await clerkClient.users.getUser(clerkId);
+      const metadataRole = clerkUser?.publicMetadata?.role || clerkUser?.unsafeMetadata?.role;
+      const normalizedRole = normalizeRole(metadataRole, user.role);
+      const clerkEmail = clerkUser?.emailAddresses?.[0]?.emailAddress || user.email;
+
+      let nextRole = normalizedRole;
+
+      if (isBootstrapAdminEmail(clerkEmail)) {
+        nextRole = ROLES.ADMIN;
+      }
+
+      // Allow admin elevation from Clerk metadata only for configured bootstrap emails.
+      if (normalizedRole === ROLES.ADMIN && user.role !== ROLES.ADMIN && !isBootstrapAdminEmail(clerkEmail)) {
+        logger.warn(`Ignoring unauthorized admin role sync for ${clerkId} (${clerkEmail || 'unknown-email'})`);
+        nextRole = user.role;
+      }
+
+      if (nextRole !== user.role) {
+        user = await db.users.update(user._id, {
+          role: nextRole,
+          updated_at: Date.now(),
+        });
+      }
     } catch (clerkError) {
-      logger.error('Failed to fetch Clerk user:', clerkError);
-      throw new UnauthorizedError('Failed to verify user identity');
+      logger.warn('Failed to sync user role from Clerk metadata:', clerkError.message);
     }
   }
 
-  // Update last login
-  await db.users.update(user._id, { last_login_at: new Date().toISOString() });
+  // Update last login (best effort)
+  try {
+    await db.users.update(user._id, { last_login_at: Date.now() });
+  } catch (lastLoginError) {
+    logger.warn('Failed to update last login timestamp:', lastLoginError.message);
+  }
 
-  return user;
+  return toApiUser(user);
 };
 
 /**
@@ -100,7 +212,7 @@ const getOrCreateUser = async (clerkId) => {
 export const authenticate = async (req, res, next) => {
   try {
     const payload = await extractAndVerifyToken(req);
-    const user = await getOrCreateUser(payload.sub);
+    const user = await getOrCreateUser(payload.sub, payload);
 
     if (!user.is_active) {
       throw new ForbiddenError('User account is deactivated');
@@ -119,11 +231,21 @@ export const authenticate = async (req, res, next) => {
         code: error.code
       });
     }
-    
-    return res.status(401).json({
+
+    if (isDatabaseUnavailableError(error)) {
+      logger.error('Authentication middleware database unavailable:', error);
+      return res.status(503).json({
+        success: false,
+        message: 'Database service unavailable',
+        code: 'DB_UNAVAILABLE'
+      });
+    }
+
+    logger.error('Authentication middleware internal failure:', error);
+    return res.status(500).json({
       success: false,
-      message: 'Authentication failed',
-      code: 'AUTH_FAILED'
+      message: 'Authentication service unavailable',
+      code: 'AUTH_INTERNAL'
     });
   }
 };
@@ -141,7 +263,7 @@ export const optionalAuth = async (req, res, next) => {
 
   try {
     const payload = await extractAndVerifyToken(req);
-    const user = await getOrCreateUser(payload.sub);
+    const user = await getOrCreateUser(payload.sub, payload);
     req.user = user;
     req.clerkId = payload.sub;
   } catch (error) {
@@ -236,8 +358,12 @@ export const requireOwnership = (getResourceUserId) => {
 
     try {
       const resourceUserId = await getResourceUserId(req);
+      const normalizedResourceUserId =
+        resourceUserId && typeof resourceUserId === 'object'
+          ? (resourceUserId.user_id || resourceUserId.userId || resourceUserId.id || resourceUserId._id)
+          : resourceUserId;
       
-      if (resourceUserId !== req.user.id) {
+      if (!normalizedResourceUserId || String(normalizedResourceUserId) !== String(req.user.id)) {
         return res.status(403).json({
           success: false,
           message: 'Access denied to this resource',

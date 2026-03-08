@@ -13,6 +13,9 @@ import {
   adminService,
   handleApiError 
 } from '../services';
+import { analyticsService } from '../services/analytics';
+import aiService, { AgriculturalAdviceRequest, ChatRequest, ChatMessage } from '../services/ai';
+import { contentService } from '../services/content';
 import { 
   Farm, 
   Sensor, 
@@ -70,7 +73,26 @@ export const queryKeys = {
   systemOverview: ['systemOverview'] as const,
   auditLogs: ['auditLogs'] as const,
   analytics: ['analytics'] as const,
-};
+  adminConfigs: ['adminConfigs'] as const,
+  adminDevices: ['adminDevices'] as const,
+  systemHealth: ['systemHealth'] as const,
+  systemMetrics: ['systemMetrics'] as const,
+
+  // Analytics
+  analyticsDashboard: (farmId?: string) => ['analyticsDashboard', farmId] as const,
+  systemAnalytics: ['systemAnalytics'] as const,
+  districtAnalytics: (district: string) => ['districtAnalytics', district] as const,
+  allDistrictsAnalytics: ['allDistrictsAnalytics'] as const,
+  farmSensorTrendsAnalytics: (id: string) => ['farmSensorTrendsAnalytics', id] as const,
+
+  // AI
+  aiCapabilities: ['aiCapabilities'] as const,
+  aiHealth: ['aiHealth'] as const,
+
+  // Content
+  contentResources: ['contentResources'] as const,
+  contentFAQ: ['contentFAQ'] as const,
+}
 
 // ===== Auth Hooks =====
 
@@ -195,6 +217,80 @@ export function useFertilizationSchedules(
   });
 }
 
+export function useCreateFertilization() {
+  const queryClient = useQueryClient();
+  const { addNotification } = useNotificationStore();
+
+  return useMutation({
+    mutationFn: ({ farmId, data }: { farmId: string; data: Parameters<typeof farmService.createFertilizationSchedule>[1] }) =>
+      farmService.createFertilizationSchedule(farmId, data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.farmFertilization(variables.farmId) });
+      addNotification({ type: 'success', title: 'Fertilization schedule created successfully' });
+    },
+    onError: (error) => {
+      addNotification({ type: 'error', title: 'Failed to create fertilization schedule', message: handleApiError(error) });
+    },
+  });
+}
+
+export function useUpdateFertilization() {
+  const queryClient = useQueryClient();
+  const { addNotification } = useNotificationStore();
+
+  return useMutation({
+    mutationFn: ({ farmId, scheduleId, data }: {
+      farmId: string;
+      scheduleId: string;
+      data: Parameters<typeof farmService.updateFertilizationSchedule>[2];
+    }) => farmService.updateFertilizationSchedule(farmId, scheduleId, data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.farmFertilization(variables.farmId) });
+      addNotification({ type: 'success', title: 'Fertilization schedule updated successfully' });
+    },
+    onError: (error) => {
+      addNotification({ type: 'error', title: 'Failed to update fertilization schedule', message: handleApiError(error) });
+    },
+  });
+}
+
+export function useDeleteFertilization() {
+  const queryClient = useQueryClient();
+  const { addNotification } = useNotificationStore();
+
+  return useMutation({
+    mutationFn: ({ farmId, scheduleId }: { farmId: string; scheduleId: string }) =>
+      farmService.deleteFertilizationSchedule(farmId, scheduleId),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.farmFertilization(variables.farmId) });
+      addNotification({ type: 'success', title: 'Fertilization schedule deleted successfully' });
+    },
+    onError: (error) => {
+      addNotification({ type: 'error', title: 'Failed to delete fertilization schedule', message: handleApiError(error) });
+    },
+  });
+}
+
+export function useExecuteFertilization() {
+  const queryClient = useQueryClient();
+  const { addNotification } = useNotificationStore();
+
+  return useMutation({
+    mutationFn: ({ farmId, scheduleId, data }: {
+      farmId: string;
+      scheduleId: string;
+      data?: Parameters<typeof farmService.executeFertilization>[2];
+    }) => farmService.executeFertilization(farmId, scheduleId, data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.farmFertilization(variables.farmId) });
+      addNotification({ type: 'success', title: 'Fertilization marked as executed' });
+    },
+    onError: (error) => {
+      addNotification({ type: 'error', title: 'Failed to update fertilization status', message: handleApiError(error) });
+    },
+  });
+}
+
 export function useCreateFarm() {
   const queryClient = useQueryClient();
   const { addNotification } = useNotificationStore();
@@ -288,9 +384,26 @@ export function useSensors(params?: Parameters<typeof sensorService.getAll>[0]) 
   return useQuery({
     queryKey: [...queryKeys.sensors, params],
     queryFn: async () => {
+      if (!params?.farmId) {
+        return {
+          success: true,
+          message: 'No farm selected',
+          data: [],
+          pagination: {
+            page: 1,
+            limit: 0,
+            total: 0,
+            totalPages: 0,
+            hasNextPage: false,
+            hasPrevPage: false,
+          },
+          timestamp: new Date().toISOString(),
+        };
+      }
       const response = await sensorService.getAll(params);
       return response;
     },
+    enabled: !!params?.farmId,
   });
 }
 
@@ -373,8 +486,71 @@ export function usePestDetections(params?: Parameters<typeof pestDetectionServic
   return useQuery({
     queryKey: [...queryKeys.pestDetections, params],
     queryFn: async () => {
-      const response = await pestDetectionService.getAll(params);
+      const response = params?.farmId
+        ? await pestDetectionService.getByFarm(params.farmId, {
+            page: params.page,
+            limit: params.limit,
+            pestDetected: params.pestDetected,
+            severity: params.severity,
+            isConfirmed: params.isConfirmed,
+            startDate: params.startDate,
+            endDate: params.endDate,
+          })
+        : await pestDetectionService.getAll(params);
       return response;
+    },
+  });
+}
+
+export function useCreateSensor() {
+  const queryClient = useQueryClient();
+  const { addNotification } = useNotificationStore();
+
+  return useMutation({
+    mutationFn: sensorService.register,
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: [...queryKeys.sensors, 'farm', variables.farmId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.sensors });
+      addNotification({ type: 'success', title: 'Sensor registered successfully' });
+    },
+    onError: (error) => {
+      addNotification({ type: 'error', title: 'Failed to register sensor', message: handleApiError(error) });
+    },
+  });
+}
+
+export function useUpdateSensor() {
+  const queryClient = useQueryClient();
+  const { addNotification } = useNotificationStore();
+
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Parameters<typeof sensorService.update>[1] }) =>
+      sensorService.update(id, data),
+    onSuccess: (response) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.sensors });
+      queryClient.invalidateQueries({ queryKey: queryKeys.sensor(response.data.id) });
+      addNotification({ type: 'success', title: 'Sensor updated successfully' });
+    },
+    onError: (error) => {
+      addNotification({ type: 'error', title: 'Failed to update sensor', message: handleApiError(error) });
+    },
+  });
+}
+
+export function useDeleteSensor() {
+  const queryClient = useQueryClient();
+  const { addNotification } = useNotificationStore();
+
+  return useMutation({
+    mutationFn: ({ id }: { id: string; farmId: string }) => sensorService.delete(id),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.sensors });
+      queryClient.invalidateQueries({ queryKey: [...queryKeys.sensors, 'farm', variables.farmId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.farmSensorData(variables.farmId) });
+      addNotification({ type: 'success', title: 'Sensor deleted successfully' });
+    },
+    onError: (error) => {
+      addNotification({ type: 'error', title: 'Failed to delete sensor', message: handleApiError(error) });
     },
   });
 }
@@ -426,6 +602,22 @@ export function useAnalyzePest() {
   });
 }
 
+export function useDeletePestDetection() {
+  const queryClient = useQueryClient();
+  const { addNotification } = useNotificationStore();
+
+  return useMutation({
+    mutationFn: pestDetectionService.delete,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.pestDetections });
+      addNotification({ type: 'success', title: 'Pest detection deleted successfully' });
+    },
+    onError: (error) => {
+      addNotification({ type: 'error', title: 'Failed to delete pest detection', message: handleApiError(error) });
+    },
+  });
+}
+
 export function useReviewPestDetection() {
   const queryClient = useQueryClient();
   const { addNotification } = useNotificationStore();
@@ -472,9 +664,11 @@ export function useActiveRecommendations(farmId?: string) {
   return useQuery({
     queryKey: [...queryKeys.activeRecommendations, farmId],
     queryFn: async () => {
+      if (!farmId) return [];
       const response = await recommendationService.getActive(farmId);
       return response.data;
     },
+    enabled: !!farmId,
     refetchInterval: 60000, // Refresh every minute
   });
 }
@@ -516,13 +710,14 @@ export function useGenerateRecommendations() {
 
 // ===== Admin Hooks =====
 
-export function useUsers(params?: Parameters<typeof adminService.getUsers>[0]) {
+export function useUsers(params?: Parameters<typeof adminService.getUsers>[0], enabled = true) {
   return useQuery({
     queryKey: [...queryKeys.users, params],
     queryFn: async () => {
       const response = await adminService.getUsers(params);
       return response;
     },
+    enabled,
   });
 }
 
@@ -537,7 +732,7 @@ export function useUser(id: string) {
   });
 }
 
-export function useSystemOverview() {
+export function useSystemOverview(enabled = true) {
   return useQuery({
     queryKey: queryKeys.systemOverview,
     queryFn: async () => {
@@ -545,26 +740,81 @@ export function useSystemOverview() {
       return response.data;
     },
     refetchInterval: 60000, // Refresh every minute
+    enabled,
   });
 }
 
-export function useAuditLogs(params?: Parameters<typeof adminService.getAuditLogs>[0]) {
+export function useAuditLogs(params?: Parameters<typeof adminService.getAuditLogs>[0], enabled = true) {
   return useQuery({
     queryKey: [...queryKeys.auditLogs, params],
     queryFn: async () => {
       const response = await adminService.getAuditLogs(params);
       return response;
     },
+    enabled,
   });
 }
 
-export function useAdminAnalytics(params?: Parameters<typeof adminService.getAnalytics>[0]) {
+export function useAdminAnalytics(params?: Parameters<typeof adminService.getAnalytics>[0], enabled = true) {
   return useQuery({
     queryKey: [...queryKeys.analytics, params],
     queryFn: async () => {
       const response = await adminService.getAnalytics(params);
       return response.data;
     },
+    enabled,
+  });
+}
+
+export function useAdminConfigs(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.adminConfigs,
+    queryFn: async () => {
+      const response = await adminService.getConfigs();
+      return response.data;
+    },
+    enabled,
+  });
+}
+
+export function useAdminDevices(
+  params?: Parameters<typeof adminService.getDevices>[0],
+  enabled = true
+) {
+  return useQuery({
+    queryKey: [...queryKeys.adminDevices, params],
+    queryFn: async () => {
+      const response = await adminService.getDevices(params);
+      return response;
+    },
+    enabled,
+  });
+}
+
+export function useSystemHealth(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.systemHealth,
+    queryFn: async () => {
+      const response = await adminService.getSystemHealth();
+      return response.data;
+    },
+    enabled,
+    refetchInterval: 60000,
+  });
+}
+
+export function useSystemMetrics(
+  params?: Parameters<typeof adminService.getSystemMetrics>[0],
+  enabled = true
+) {
+  return useQuery({
+    queryKey: [...queryKeys.systemMetrics, params],
+    queryFn: async () => {
+      const response = await adminService.getSystemMetrics(params);
+      return response.data;
+    },
+    enabled,
+    refetchInterval: 60000,
   });
 }
 
@@ -582,6 +832,235 @@ export function useUpdateUser() {
     },
     onError: (error) => {
       addNotification({ type: 'error', title: 'Failed to update user', message: handleApiError(error) });
+    },
+  });
+}
+
+export function useUpdateSystemConfig() {
+  const queryClient = useQueryClient();
+  const { addNotification } = useNotificationStore();
+
+  return useMutation({
+    mutationFn: ({ key, data }: { key: string; data: Parameters<typeof adminService.updateConfig>[1] }) =>
+      adminService.updateConfig(key, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.adminConfigs });
+      addNotification({ type: 'success', title: 'Configuration updated successfully' });
+    },
+    onError: (error) => {
+      addNotification({ type: 'error', title: 'Failed to update configuration', message: handleApiError(error) });
+    },
+  });
+}
+
+export function useGenerateDeviceToken() {
+  const queryClient = useQueryClient();
+  const { addNotification } = useNotificationStore();
+
+  return useMutation({
+    mutationFn: adminService.generateDeviceToken,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.adminDevices });
+      addNotification({ type: 'success', title: 'Device token generated successfully' });
+    },
+    onError: (error) => {
+      addNotification({ type: 'error', title: 'Failed to generate device token', message: handleApiError(error) });
+    },
+  });
+}
+
+export function useRevokeDeviceToken() {
+  const queryClient = useQueryClient();
+  const { addNotification } = useNotificationStore();
+
+  return useMutation({
+    mutationFn: adminService.revokeDeviceToken,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.adminDevices });
+      addNotification({ type: 'success', title: 'Device token revoked successfully' });
+    },
+    onError: (error) => {
+      addNotification({ type: 'error', title: 'Failed to revoke device token', message: handleApiError(error) });
+    },
+  });
+}
+
+export function useSendBroadcast() {
+  const { addNotification } = useNotificationStore();
+
+  return useMutation({
+    mutationFn: adminService.sendBroadcast,
+    onSuccess: () => {
+      addNotification({ type: 'success', title: 'Broadcast queued successfully' });
+    },
+    onError: (error) => {
+      addNotification({ type: 'error', title: 'Failed to send broadcast', message: handleApiError(error) });
+    },
+  });
+}
+
+export function useGenerateAdminReport() {
+  const { addNotification } = useNotificationStore();
+
+  return useMutation({
+    mutationFn: adminService.generateReport,
+    onSuccess: () => {
+      addNotification({ type: 'success', title: 'Report generated successfully' });
+    },
+    onError: (error) => {
+      addNotification({ type: 'error', title: 'Failed to generate report', message: handleApiError(error) });
+    },
+  });
+}
+
+// ===== Analytics Hooks =====
+
+export function useAnalyticsDashboard(farmId?: string) {
+  return useQuery({
+    queryKey: queryKeys.analyticsDashboard(farmId),
+    queryFn: async () => {
+      const response = await analyticsService.getDashboard(farmId ? { farmId } : undefined);
+      return response.data;
+    },
+    staleTime: 2 * 60 * 1000,
+  });
+}
+
+export function useSystemAnalytics() {
+  return useQuery({
+    queryKey: queryKeys.systemAnalytics,
+    queryFn: async () => {
+      const response = await analyticsService.getSystemOverview();
+      return response.data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useDistrictAnalytics(district: string) {
+  return useQuery({
+    queryKey: queryKeys.districtAnalytics(district),
+    queryFn: async () => {
+      const response = await analyticsService.getDistrictAnalytics(district);
+      return response.data;
+    },
+    enabled: !!district,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useAllDistrictsAnalytics() {
+  return useQuery({
+    queryKey: queryKeys.allDistrictsAnalytics,
+    queryFn: async () => {
+      const response = await analyticsService.getAllDistrictsAnalytics();
+      return response.data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useFarmSensorTrendsAnalytics(
+  farmId: string,
+  params?: { startDate?: string; endDate?: string; interval?: 'hour' | 'day' | 'week' }
+) {
+  return useQuery({
+    queryKey: [...queryKeys.farmSensorTrendsAnalytics(farmId), params],
+    queryFn: async () => {
+      const response = await analyticsService.getSensorTrends(farmId, params);
+      return response.data;
+    },
+    enabled: !!farmId,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useExportAnalyticsData() {
+  const { addNotification } = useNotificationStore();
+
+  return useMutation({
+    mutationFn: analyticsService.exportData,
+    onError: (error) => {
+      addNotification({ type: 'error', title: 'Failed to export data', message: handleApiError(error) });
+    },
+  });
+}
+
+// ===== AI Hooks =====
+
+export function useAiAdvice() {
+  const { addNotification } = useNotificationStore();
+
+  return useMutation({
+    mutationFn: (request: AgriculturalAdviceRequest) => aiService.getAgriculturalAdvice(request),
+    onError: (error) => {
+      addNotification({ type: 'error', title: 'Failed to get AI advice', message: handleApiError(error) });
+    },
+  });
+}
+
+export function useAiChat() {
+  const { addNotification } = useNotificationStore();
+
+  return useMutation({
+    mutationFn: (request: ChatRequest) => aiService.sendChatMessage(request),
+    onError: (error) => {
+      addNotification({ type: 'error', title: 'AI chat error', message: handleApiError(error) });
+    },
+  });
+}
+
+export function useAiCapabilities() {
+  return useQuery({
+    queryKey: queryKeys.aiCapabilities,
+    queryFn: () => aiService.getCapabilities(),
+    staleTime: 60 * 60 * 1000, // 1 hour
+  });
+}
+
+export function useAiHealth() {
+  return useQuery({
+    queryKey: queryKeys.aiHealth,
+    queryFn: () => aiService.checkHealth(),
+    refetchInterval: 60 * 1000,
+  });
+}
+
+// ===== Content Hooks =====
+
+export function useContentResources() {
+  return useQuery({
+    queryKey: queryKeys.contentResources,
+    queryFn: async () => {
+      const response = await contentService.getResources();
+      return response.data;
+    },
+    staleTime: 10 * 60 * 1000,
+  });
+}
+
+export function useContentFAQ() {
+  return useQuery({
+    queryKey: queryKeys.contentFAQ,
+    queryFn: async () => {
+      const response = await contentService.getFAQ();
+      return response.data;
+    },
+    staleTime: 10 * 60 * 1000,
+  });
+}
+
+export function useSubmitCareerInterest() {
+  const { addNotification } = useNotificationStore();
+
+  return useMutation({
+    mutationFn: ({ positionId, positionTitle }: { positionId?: string; positionTitle: string }) =>
+      contentService.submitCareerInterest(positionId, positionTitle),
+    onSuccess: () => {
+      addNotification({ type: 'success', title: 'Career interest submitted!' });
+    },
+    onError: (error) => {
+      addNotification({ type: 'error', title: 'Failed to submit interest', message: handleApiError(error) });
     },
   });
 }

@@ -14,7 +14,7 @@ import * as recommendationService from './recommendationService.js';
 /**
  * USSD Menu translations
  */
-const TRANSLATIONS = {
+export const TRANSLATIONS = {
   en: {
     welcome: 'Welcome to SmartMaize\n\n1. View Recommendations\n2. Farm Status\n3. Weather Forecast\n4. Report Pest\n5. Settings\n0. Exit',
     welcomeRegistered: 'Welcome back, {name}!\n\n1. View Recommendations ({count} pending)\n2. Farm Status\n3. Weather Forecast\n4. Report Pest\n5. Settings\n0. Exit',
@@ -180,7 +180,14 @@ const getLatestReadings = async (farmId) => {
 export const handleUssdRequest = async ({ sessionId, phoneNumber, text, language: preferredLang }) => {
   try {
     const session = getSession(sessionId);
-    const user = await getUserByPhone(phoneNumber);
+    let user = null;
+
+    try {
+      user = await getUserByPhone(phoneNumber);
+    } catch (lookupError) {
+      logger.warn('USSD user lookup failed, continuing as guest:', lookupError.message);
+    }
+
     const lang = user?.preferred_language || preferredLang || 'rw';
     
     // Update session with user info
@@ -201,7 +208,11 @@ export const handleUssdRequest = async ({ sessionId, phoneNumber, text, language
     return response;
   } catch (error) {
     logger.error('USSD handling error:', error);
-    return `END ${t('error', 'rw')}`;
+    const fallbackLang = preferredLang || 'rw';
+    if (!text) {
+      return `CON ${t('welcome', fallbackLang)}`;
+    }
+    return `END ${t('error', fallbackLang)}`;
   }
 };
 

@@ -4,6 +4,8 @@
  * Global configuration for test environment.
  */
 
+import { jest } from '@jest/globals';
+
 // Set test environment
 process.env.NODE_ENV = 'test';
 

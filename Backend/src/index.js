@@ -13,6 +13,8 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
+import { fileURLToPath } from 'url';
+import path from 'path';
 import { createServer } from 'http';
 import config from './config/index.js';
 import logger from './utils/logger.js';
@@ -32,6 +34,7 @@ import analyticsRoutes from './routes/analytics.js';
 import adminRoutes from './routes/admin.js';
 import ussdRoutes from './routes/ussd.js';
 import aiRoutes from './routes/ai.js';
+import contentRoutes from './routes/content.js';
 
 // Create Express application
 const app = express();
@@ -61,7 +64,16 @@ app.use(cors({
   origin: config.security.corsOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Device-ID', 'X-Device-Token', 'X-Timestamp', 'X-Signature']
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Device-ID',
+    'X-Device-Token',
+    'X-Timestamp',
+    'X-Signature',
+    'X-Request-ID',
+    'X-Request-Time',
+  ]
 }));
 
 // Body parsing
@@ -123,6 +135,9 @@ app.get('/api/health', async (req, res) => {
     const { testConnection } = await import('./database/convex.js');
     const connected = await testConnection();
     health.database = connected ? 'connected' : 'unhealthy';
+    if (!connected) {
+      health.status = 'degraded';
+    }
   } catch (e) {
     health.database = 'disconnected';
     health.status = 'degraded';
@@ -166,6 +181,9 @@ app.use(`${API_VERSION}/ussd`, ussdRoutes);
 
 // AI/Gemini powered services
 app.use(`${API_VERSION}/ai`, aiRoutes);
+
+// Public dynamic content
+app.use(`${API_VERSION}/content`, contentRoutes);
 
 // =====================================================
 // API DOCUMENTATION ENDPOINT
@@ -356,9 +374,15 @@ async function startServer() {
   }
 }
 
-// Start the server
-startServer();
+const isDirectRun = process.argv[1]
+  ? path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+  : false;
+
+// Start the server only when executed directly, not when imported in tests
+if (isDirectRun) {
+  startServer();
+}
 
 // Export for testing
-export { app, httpServer, wsManager };
+export { app, httpServer, wsManager, startServer };
 export default app;

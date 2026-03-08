@@ -174,6 +174,13 @@ export interface DistrictAnalytics {
   irrigationEfficiency: number;
 }
 
+export interface DashboardAnalyticsSummary {
+  users?: { total: number };
+  farms?: { total: number };
+  recommendations?: { total: number };
+  pestDetections?: { total: number };
+}
+
 // Analytics service functions
 export const analyticsService = {
   /**
@@ -262,6 +269,19 @@ export const analyticsService = {
   getAllDistrictsAnalytics: async (): Promise<ApiResponse<DistrictAnalytics[]>> => {
     const response = await apiClient.get<ApiResponse<DistrictAnalytics[]>>(
       '/analytics/districts'
+    );
+    return response.data;
+  },
+
+  /**
+   * Get dashboard analytics (farm-level when farmId is provided, otherwise system summary)
+   */
+  getDashboard: async (params?: {
+    farmId?: string;
+  }): Promise<ApiResponse<FarmDashboardAnalytics | DashboardAnalyticsSummary>> => {
+    const response = await apiClient.get<ApiResponse<FarmDashboardAnalytics | DashboardAnalyticsSummary>>(
+      '/analytics/dashboard',
+      { params }
     );
     return response.data;
   },

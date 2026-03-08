@@ -16,7 +16,7 @@ import * as recommendationService from './recommendationService.js';
 /**
  * Nutrient sufficiency ranges for maize by growth stage (mg/kg)
  */
-const NUTRIENT_RANGES = {
+export const NUTRIENT_RANGES = {
   germination: {
     nitrogen: { min: 100, max: 150, optimal: 125 },
     phosphorus: { min: 20, max: 35, optimal: 28 },
@@ -47,7 +47,7 @@ const NUTRIENT_RANGES = {
 /**
  * Common fertilizer types and their NPK ratios
  */
-const FERTILIZER_TYPES = {
+export const FERTILIZER_TYPES = {
   'DAP': { n: 18, p: 46, k: 0, name: 'Di-ammonium Phosphate', useCase: 'Phosphorus deficiency, planting' },
   'NPK_17-17-17': { n: 17, p: 17, k: 17, name: 'NPK Balanced', useCase: 'General purpose' },
   'NPK_20-10-10': { n: 20, p: 10, k: 10, name: 'NPK High Nitrogen', useCase: 'Vegetative growth' },

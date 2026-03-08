@@ -86,12 +86,6 @@ export const registerSensor = async (sensorData) => {
     metadata = {}
   } = sensorData;
 
-  // Build coordinates point if lat/lng provided
-  let coordinates = null;
-  if (latitude !== undefined && longitude !== undefined) {
-    coordinates = `POINT(${longitude} ${latitude})`;
-  }
-
   try {
     const data = await db.sensors.create({
       device_id: deviceId,
@@ -99,9 +93,9 @@ export const registerSensor = async (sensorData) => {
       sensor_type: sensorType,
       name: name || `${sensorType}_${deviceId.slice(-6)}`,
       location_description: locationDescription,
-      coordinates,
+      latitude,
+      longitude,
       firmware_version: firmwareVersion,
-      status: 'active',
       metadata
     });
 

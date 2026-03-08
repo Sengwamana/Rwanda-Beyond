@@ -1,9 +1,9 @@
 // =====================================================
 // Connected Farmer Dashboard - Smart Maize Farming System
-// With real API integration and state management
+// With real API integration and actionable frontend interactions
 // =====================================================
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Droplets,
   Thermometer,
@@ -22,68 +22,81 @@ import {
   RefreshCw,
   Camera,
   Plus,
-  ChevronRight
 } from 'lucide-react';
 import { Card, CardHeader, CardContent, CardTitle, CardDescription } from './ui/Card';
 import { Button } from './ui/Button';
 import { Badge } from './ui/Badge';
 import { Spinner, LoadingState, ErrorState, EmptyState } from './ui/Spinner';
-import { 
-  LineChart, 
-  Line, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
+import {
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
   ResponsiveContainer,
   AreaChart,
-  Area
+  Area,
 } from 'recharts';
 
-// Import hooks
-import { 
-  useFarms, 
-  useFarmDashboard, 
-  useFarmSensorData, 
-  useWeather, 
+import {
+  useFarms,
+  useFarmSensorData,
+  useWeather,
   useForecast,
   useActiveRecommendations,
   useRespondToRecommendation,
   useCreateIrrigation,
-  useAnalyzePest
+  useAnalyzePest,
+  useCreateFarm,
+  useGenerateRecommendations,
+  useIrrigationSchedules,
+  useExecuteIrrigation,
+  useUpdateFarm,
+  useDeleteFarm,
+  useFarmingConditions,
+  useFertilizationSchedules,
+  useCreateFertilization,
+  useUpdateFertilization,
+  useDeleteFertilization,
+  useExecuteFertilization,
+  useSensorsByFarm,
+  useCreateSensor,
+  useUpdateSensor,
+  useDeleteSensor,
+  usePestDetections,
+  useDeletePestDetection,
+  useAnalyticsDashboard,
+  useFarmSensorTrendsAnalytics,
+  useAiChat,
+  useAiAdvice,
 } from '../hooks/useApi';
 import { useAuthStore, useFarmStore } from '../store';
-import { Language, translations } from '../utils/translations';
-import { 
-  Farm, 
-  SensorData, 
-  Recommendation, 
-  WeatherData, 
-  WeatherForecast,
-  RecommendationPriority 
-} from '../types';
+import { Language } from '../utils/translations';
+import { Farm, Recommendation, WeatherData, WeatherForecast, RecommendationPriority, GrowthStage, Sensor, FertilizationSchedule, PestDetection } from '../types';
 
 interface ConnectedFarmerDashboardProps {
   language: Language;
+  searchQuery?: string;
+  activeTab?: string;
 }
 
-// Helper to format dates
-const formatDate = (dateString: string) => {
-  return new Date(dateString).toLocaleDateString('en-US', {
+const localeByLanguage: Record<Language, string> = {
+  en: 'en-US',
+  rw: 'rw-RW',
+  fr: 'fr-FR',
+};
+
+const formatDate = (dateString: string, locale: string) =>
+  new Date(dateString).toLocaleDateString(locale, {
     month: 'short',
     day: 'numeric',
   });
-};
 
-// Helper to format time
-const formatTime = (dateString: string) => {
-  return new Date(dateString).toLocaleTimeString('en-US', {
+const formatTime = (dateString: string, locale: string) =>
+  new Date(dateString).toLocaleTimeString(locale, {
     hour: '2-digit',
     minute: '2-digit',
   });
-};
 
-// Priority badge colors
 const priorityColors: Record<RecommendationPriority, string> = {
   critical: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
   high: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400',
@@ -91,15 +104,43 @@ const priorityColors: Record<RecommendationPriority, string> = {
   low: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
 };
 
-// Sensor Card Component
-function SensorCard({ 
-  icon: Icon, 
-  label, 
-  value, 
-  unit, 
-  status, 
-  trend 
-}: { 
+const growthStages: GrowthStage[] = ['germination', 'vegetative', 'flowering', 'grain_filling', 'maturity'];
+
+const farmerTabCopy: Record<string, { title: string; description: string }> = {
+  overview: {
+    title: 'Farm Dashboard',
+    description: 'Monitor your farm health and run quick actions directly from this page.',
+  },
+  sensors: {
+    title: 'Sensors',
+    description: 'Review registered devices and the latest readings for the selected farm.',
+  },
+  fertilization: {
+    title: 'Fertilization',
+    description: 'Track planned and completed fertilization events for the selected farm.',
+  },
+  'pest-history': {
+    title: 'Pest History',
+    description: 'Review previous pest scans, findings, and follow-up recommendations.',
+  },
+  analytics: {
+    title: 'Analytics',
+    description: 'Inspect trends, forecasts, and farm performance metrics.',
+  },
+  'ai-chat': {
+    title: 'AI Assistant',
+    description: 'Ask questions about the selected farm and get contextual guidance.',
+  },
+};
+
+function SensorCard({
+  icon: Icon,
+  label,
+  value,
+  unit,
+  status,
+  trend,
+}: {
   icon: React.ElementType;
   label: string;
   value: number | string;
@@ -132,10 +173,7 @@ function SensorCard({
             </div>
           </div>
           {TrendIcon && (
-            <TrendIcon 
-              size={16} 
-              className={trend === 'up' ? 'text-green-500' : 'text-red-500'} 
-            />
+            <TrendIcon size={16} className={trend === 'up' ? 'text-green-500' : 'text-red-500'} />
           )}
         </div>
       </CardContent>
@@ -143,28 +181,34 @@ function SensorCard({
   );
 }
 
-// Recommendation Card Component
-function RecommendationCard({ 
+function RecommendationCard({
   recommendation,
   onAccept,
   onReject,
-  isLoading
-}: { 
+  onDefer,
+  isLoading,
+}: {
   recommendation: Recommendation;
   onAccept: () => void;
   onReject: () => void;
+  onDefer: () => void;
   isLoading: boolean;
 }) {
   const getIcon = () => {
     switch (recommendation.type) {
-      case 'irrigation': return Droplets;
-      case 'fertilization': return Sprout;
-      case 'pest_alert': return AlertTriangle;
-      case 'weather_alert': return Cloud;
-      default: return CheckCircle;
+      case 'irrigation':
+        return Droplets;
+      case 'fertilization':
+        return Sprout;
+      case 'pest_alert':
+        return AlertTriangle;
+      case 'weather_alert':
+        return Cloud;
+      default:
+        return CheckCircle;
     }
   };
-  
+
   const Icon = getIcon();
 
   return (
@@ -177,34 +221,24 @@ function RecommendationCard({
           <div className="flex-1">
             <div className="flex items-center justify-between">
               <h4 className="font-semibold text-sm">{recommendation.title}</h4>
-              <Badge className={priorityColors[recommendation.priority]}>
-                {recommendation.priority}
-              </Badge>
+              <Badge className={priorityColors[recommendation.priority]}>{recommendation.priority}</Badge>
             </div>
-            <p className="text-sm text-muted-foreground mt-1">
-              {recommendation.description}
-            </p>
+            <p className="text-sm text-muted-foreground mt-1">{recommendation.description}</p>
             {recommendation.actionDeadline && (
               <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
                 <Clock size={12} />
-                Action needed by {formatDate(recommendation.actionDeadline)}
+                Action needed by {new Date(recommendation.actionDeadline).toLocaleDateString()}
               </p>
             )}
             <div className="flex gap-2 mt-3">
-              <Button 
-                size="sm" 
-                onClick={onAccept}
-                disabled={isLoading}
-              >
+              <Button size="sm" onClick={onAccept} disabled={isLoading}>
                 {isLoading ? <Spinner size="sm" /> : 'Accept'}
               </Button>
-              <Button 
-                size="sm" 
-                variant="outline"
-                onClick={onReject}
-                disabled={isLoading}
-              >
+              <Button size="sm" variant="outline" onClick={onReject} disabled={isLoading}>
                 Dismiss
+              </Button>
+              <Button size="sm" variant="outline" onClick={onDefer} disabled={isLoading}>
+                Defer
               </Button>
             </div>
           </div>
@@ -214,8 +248,13 @@ function RecommendationCard({
   );
 }
 
-// Weather Card Component
-function WeatherCard({ weather, forecast }: { weather?: WeatherData; forecast?: WeatherForecast[] }) {
+function WeatherCard({
+  weather,
+  forecast,
+}: {
+  weather?: WeatherData;
+  forecast?: WeatherForecast[];
+}) {
   if (!weather) {
     return (
       <Card>
@@ -233,8 +272,9 @@ function WeatherCard({ weather, forecast }: { weather?: WeatherData; forecast?: 
   }
 
   const getWeatherIcon = (condition: string) => {
-    if (condition.toLowerCase().includes('rain')) return CloudRain;
-    if (condition.toLowerCase().includes('cloud')) return Cloud;
+    const normalized = condition.toLowerCase();
+    if (normalized.includes('rain')) return CloudRain;
+    if (normalized.includes('cloud')) return Cloud;
     return Sun;
   };
 
@@ -251,10 +291,9 @@ function WeatherCard({ weather, forecast }: { weather?: WeatherData; forecast?: 
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
-          {/* Current Weather */}
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-3xl font-bold">{Math.round(weather.temperature)}°C</p>
+              <p className="text-3xl font-bold">{Math.round(weather.temperature)} C</p>
               <p className="text-sm text-muted-foreground capitalize">{weather.description}</p>
             </div>
             <div className="text-right text-sm text-muted-foreground">
@@ -263,7 +302,6 @@ function WeatherCard({ weather, forecast }: { weather?: WeatherData; forecast?: 
             </div>
           </div>
 
-          {/* Forecast */}
           {forecast && forecast.length > 0 && (
             <div className="border-t pt-4">
               <p className="text-sm font-medium mb-2">5-Day Forecast</p>
@@ -276,9 +314,7 @@ function WeatherCard({ weather, forecast }: { weather?: WeatherData; forecast?: 
                         {new Date(day.date).toLocaleDateString('en-US', { weekday: 'short' })}
                       </p>
                       <DayIcon size={16} className="mx-auto my-1" />
-                      <p className="text-xs">
-                        {Math.round(day.temperatureMax)}°
-                      </p>
+                      <p className="text-xs">{Math.round(day.temperatureMax)} C</p>
                     </div>
                   );
                 })}
@@ -291,28 +327,39 @@ function WeatherCard({ weather, forecast }: { weather?: WeatherData; forecast?: 
   );
 }
 
-// Farm Selector Component
-function FarmSelector({ 
-  farms, 
-  selectedFarm, 
-  onSelect 
-}: { 
+function FarmSelector({
+  farms,
+  selectedFarm,
+  onSelect,
+  onAddFarm,
+  isAddingFarm,
+  emptyTitle = 'No Farms Yet',
+  emptyMessage = 'Register your first farm to start monitoring',
+}: {
   farms: Farm[];
   selectedFarm: Farm | null;
   onSelect: (farm: Farm) => void;
+  onAddFarm: () => void;
+  isAddingFarm: boolean;
+  emptyTitle?: string;
+  emptyMessage?: string;
 }) {
   if (farms.length === 0) {
     return (
       <Card className="border-dashed">
         <CardContent className="p-6 text-center">
           <Sprout className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-          <h3 className="font-semibold mb-2">No Farms Yet</h3>
-          <p className="text-sm text-muted-foreground mb-4">
-            Register your first farm to start monitoring
-          </p>
-          <Button>
-            <Plus size={16} className="mr-2" />
-            Add Farm
+          <h3 className="font-semibold mb-2">{emptyTitle}</h3>
+          <p className="text-sm text-muted-foreground mb-4">{emptyMessage}</p>
+          <Button onClick={onAddFarm} disabled={isAddingFarm}>
+            {isAddingFarm ? (
+              <Spinner size="sm" />
+            ) : (
+              <>
+                <Plus size={16} className="mr-2" />
+                Add Farm
+              </>
+            )}
           </Button>
         </CardContent>
       </Card>
@@ -335,61 +382,451 @@ function FarmSelector({
             <MapPin size={14} />
             <span className="font-medium">{farm.name}</span>
           </div>
-          {farm.sizeHectares && (
-            <p className="text-xs opacity-80">{farm.sizeHectares} ha</p>
-          )}
+          {farm.sizeHectares && <p className="text-xs opacity-80">{farm.sizeHectares} ha</p>}
         </button>
       ))}
-      <Button variant="outline" size="sm" className="flex-shrink-0">
-        <Plus size={14} className="mr-1" />
-        Add Farm
+      <Button variant="outline" size="sm" className="flex-shrink-0" onClick={onAddFarm} disabled={isAddingFarm}>
+        {isAddingFarm ? (
+          <Spinner size="sm" />
+        ) : (
+          <>
+            <Plus size={14} className="mr-1" />
+            Add Farm
+          </>
+        )}
       </Button>
     </div>
   );
 }
 
-// Main Connected Dashboard Component
-export function ConnectedFarmerDashboard({ language }: ConnectedFarmerDashboardProps) {
+export function ConnectedFarmerDashboard({
+  language,
+  searchQuery = '',
+  activeTab = 'overview',
+}: ConnectedFarmerDashboardProps) {
+  const locale = localeByLanguage[language] || 'en-US';
+  const pestFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [showAddFarmForm, setShowAddFarmForm] = useState(false);
+  const [showIrrigationPlanner, setShowIrrigationPlanner] = useState(false);
+  const [farmNameInput, setFarmNameInput] = useState('');
+  const [farmCropInput, setFarmCropInput] = useState('Maize');
+  const [farmLocationInput, setFarmLocationInput] = useState('');
+  const [farmSizeInput, setFarmSizeInput] = useState('');
+  const [irrigationDateInput, setIrrigationDateInput] = useState(() => new Date().toISOString().slice(0, 10));
+  const [irrigationTimeInput, setIrrigationTimeInput] = useState('06:00');
+  const [irrigationDurationInput, setIrrigationDurationInput] = useState('30');
+  const [irrigationVolumeInput, setIrrigationVolumeInput] = useState('');
+  const [farmEditName, setFarmEditName] = useState('');
+  const [farmEditStage, setFarmEditStage] = useState<GrowthStage>('vegetative');
+  const [farmEditSize, setFarmEditSize] = useState('');
+  const [latestPestAnalysis, setLatestPestAnalysis] = useState<any>(null);
+
   const { user } = useAuthStore();
-  const { farms, selectedFarm, setFarms, setSelectedFarm } = useFarmStore();
-  
-  // API Queries
-  const { data: farmsData, isLoading: farmsLoading, error: farmsError, refetch: refetchFarms } = useFarms();
-  const { data: dashboardData, isLoading: dashboardLoading } = useFarmDashboard(selectedFarm?.id || '');
-  const { data: sensorData } = useFarmSensorData(selectedFarm?.id || '', { limit: 50 });
-  const { data: weather } = useWeather(selectedFarm?.id || '');
-  const { data: forecast } = useForecast(selectedFarm?.id || '', 5);
-  const { data: recommendations } = useActiveRecommendations(selectedFarm?.id);
-  
-  // Mutations
+  const { farms, selectedFarm, setFarms, addFarm, updateFarm, removeFarm, setSelectedFarm } = useFarmStore();
+  const selectedFarmId = selectedFarm?.id || null;
+
+  const {
+    data: farmsData,
+    isLoading: farmsLoading,
+    error: farmsError,
+    refetch: refetchFarms,
+  } = useFarms({ isActive: true });
+  const { data: sensorData, refetch: refetchSensorData } = useFarmSensorData(selectedFarm?.id || '', { limit: 50 });
+  const { data: weather, refetch: refetchWeather } = useWeather(selectedFarm?.id || '');
+  const { data: forecast, refetch: refetchForecast } = useForecast(selectedFarm?.id || '', 5);
+  const { data: farmingConditions, refetch: refetchFarmingConditions } = useFarmingConditions(selectedFarm?.id || '');
+  const { data: recommendations, refetch: refetchRecommendations } = useActiveRecommendations(selectedFarm?.id);
+  const { data: irrigationSchedules, refetch: refetchSchedules } = useIrrigationSchedules(
+    selectedFarm?.id || '',
+    { isExecuted: false }
+  );
+
+  const createFarmMutation = useCreateFarm();
+  const updateFarmMutation = useUpdateFarm();
+  const deleteFarmMutation = useDeleteFarm();
   const respondMutation = useRespondToRecommendation();
   const irrigationMutation = useCreateIrrigation();
+  const executeIrrigationMutation = useExecuteIrrigation();
+  const analyzePestMutation = useAnalyzePest();
+  const generateRecommendationsMutation = useGenerateRecommendations();
 
-  // Update store when farms data changes
   useEffect(() => {
-    if (farmsData?.data) {
-      setFarms(farmsData.data);
-      if (!selectedFarm && farmsData.data.length > 0) {
-        setSelectedFarm(farmsData.data[0]);
-      }
+    if (!farmsData?.data) return;
+
+    setFarms(farmsData.data);
+
+    if (!selectedFarm && farmsData.data.length > 0) {
+      setSelectedFarm(farmsData.data[0]);
+      return;
+    }
+
+    if (selectedFarm && !farmsData.data.some((farm) => farm.id === selectedFarm.id)) {
+      setSelectedFarm(farmsData.data[0] || null);
     }
   }, [farmsData, selectedFarm, setFarms, setSelectedFarm]);
 
-  // Transform sensor data for charts
-  const chartData = sensorData?.map((reading) => ({
-    time: formatTime(reading.readingTimestamp),
-    date: formatDate(reading.readingTimestamp),
-    moisture: reading.soilMoisture || 0,
-    temperature: reading.airTemperature || reading.soilTemperature || 0,
-    humidity: reading.humidity || 0,
-  })).reverse() || [];
+  useEffect(() => {
+    if (!selectedFarm) return;
+    setFarmEditName(selectedFarm.name || '');
+    setFarmEditStage(selectedFarm.currentGrowthStage || 'vegetative');
+    setFarmEditSize(
+      typeof selectedFarm.sizeHectares === 'number' && !Number.isNaN(selectedFarm.sizeHectares)
+        ? String(selectedFarm.sizeHectares)
+        : ''
+    );
+  }, [selectedFarm?.id]);
 
-  // Handle recommendation response
+  useEffect(() => {
+    setLatestPestAnalysis(null);
+  }, [selectedFarm?.id]);
+
+  const chartData = useMemo(
+    () =>
+      (sensorData || [])
+        .map((reading) => ({
+          time: formatTime(reading.readingTimestamp, locale),
+          date: formatDate(reading.readingTimestamp, locale),
+          moisture: reading.soilMoisture || 0,
+          temperature: reading.airTemperature || reading.soilTemperature || 0,
+          humidity: reading.humidity || 0,
+        }))
+        .reverse(),
+    [sensorData, locale]
+  );
+
+  const upcomingSchedules = useMemo(
+    () =>
+      [...(irrigationSchedules || [])].sort(
+        (a, b) => new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime()
+      ),
+    [irrigationSchedules]
+  );
+
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+
+  const filteredRecommendations = useMemo(() => {
+    if (!recommendations) return [];
+    if (!normalizedSearch) return recommendations;
+
+    return recommendations.filter((recommendation) => {
+      const haystack = [
+        recommendation.title,
+        recommendation.description,
+        recommendation.type,
+        recommendation.priority,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(normalizedSearch);
+    });
+  }, [recommendations, normalizedSearch]);
+
+  const filteredFarms = useMemo(() => {
+    if (!normalizedSearch) return farms;
+
+    return farms.filter((farm) => {
+      const haystack = [farm.name, farm.locationName, farm.district?.name, farm.cropVariety]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(normalizedSearch);
+    });
+  }, [farms, normalizedSearch]);
+
+  const filteredSchedules = useMemo(() => {
+    if (!normalizedSearch) return upcomingSchedules;
+
+    return upcomingSchedules.filter((schedule) => {
+      const haystack = [
+        schedule.triggerSource,
+        schedule.notes,
+        schedule.scheduledDate,
+        schedule.scheduledTime,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(normalizedSearch);
+    });
+  }, [upcomingSchedules, normalizedSearch]);
+
+  const dueSchedules = useMemo(() => {
+    const now = Date.now();
+    return upcomingSchedules.filter((schedule) => {
+      if (schedule.isExecuted) return false;
+      const scheduleTime = new Date(schedule.scheduledDate).getTime();
+      return Number.isFinite(scheduleTime) && scheduleTime <= now;
+    });
+  }, [upcomingSchedules]);
+
   const handleRecommendationResponse = (id: string, status: 'accepted' | 'rejected') => {
     respondMutation.mutate({ id, data: { status } });
   };
 
-  // Loading state
+  const handleRefreshAll = () => {
+    refetchFarms();
+    refetchSensorData();
+    refetchWeather();
+    refetchForecast();
+    refetchFarmingConditions();
+    refetchRecommendations();
+    refetchSchedules();
+  };
+
+  const handleExportSensorCsv = () => {
+    if (!sensorData || sensorData.length === 0) return;
+
+    const headers = [
+      'timestamp',
+      'soilMoisture',
+      'soilTemperature',
+      'airTemperature',
+      'humidity',
+      'nitrogen',
+      'phosphorus',
+      'potassium',
+      'rainfallMm',
+    ];
+    const rows = sensorData.map((reading) => [
+      reading.readingTimestamp,
+      reading.soilMoisture ?? '',
+      reading.soilTemperature ?? '',
+      reading.airTemperature ?? '',
+      reading.humidity ?? '',
+      reading.nitrogen ?? '',
+      reading.phosphorus ?? '',
+      reading.potassium ?? '',
+      reading.rainfallMm ?? '',
+    ]);
+
+    const csv = [headers, ...rows]
+      .map((row) =>
+        row
+          .map((value) => `"${String(value).replace(/"/g, '""')}"`)
+          .join(',')
+      )
+      .join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `farm-${selectedFarm?.id || 'sensors'}-readings.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDeferRecommendation = (id: string) => {
+    const deferUntil = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    respondMutation.mutate({ id, data: { status: 'deferred', deferredUntil: deferUntil } });
+  };
+
+  const handleAddFarm = async () => {
+    setShowAddFarmForm(true);
+  };
+
+  const handleCreateFarmSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!farmNameInput.trim()) return;
+
+    const parsedSize = farmSizeInput.trim() ? Number(farmSizeInput) : undefined;
+
+    try {
+      const response = await createFarmMutation.mutateAsync({
+        name: farmNameInput.trim(),
+        cropVariety: farmCropInput.trim() || 'Maize',
+        locationName: farmLocationInput.trim() || undefined,
+        sizeHectares: typeof parsedSize === 'number' && !Number.isNaN(parsedSize) ? parsedSize : undefined,
+      });
+
+      if (response?.data) {
+        addFarm(response.data);
+        setSelectedFarm(response.data);
+        setShowAddFarmForm(false);
+        setFarmNameInput('');
+        setFarmCropInput('Maize');
+        setFarmLocationInput('');
+        setFarmSizeInput('');
+      }
+    } catch {
+      // Error notifications are already handled by the mutation hook.
+    }
+  };
+
+  const handleScheduleIrrigation = async () => {
+    if (!selectedFarm) return;
+
+    const moisture = sensorData?.[0]?.soilMoisture;
+    const suggestedDuration =
+      typeof moisture === 'number' ? (moisture < 30 ? 45 : moisture < 50 ? 30 : 20) : 30;
+
+    try {
+      await irrigationMutation.mutateAsync({
+        farmId: selectedFarm.id,
+        data: {
+          scheduledDate: new Date().toISOString(),
+          durationMinutes: suggestedDuration,
+          triggerSource: 'manual',
+          notes: 'Created from farmer dashboard quick action',
+        },
+      });
+
+      setShowSchedule(true);
+      refetchSchedules();
+    } catch {
+      // Error notifications are already handled by the mutation hook.
+    }
+  };
+
+  const handleCreateIrrigationPlan = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedFarm) return;
+
+    const duration = Number(irrigationDurationInput);
+    if (!Number.isFinite(duration) || duration <= 0) return;
+
+    const scheduledDate = new Date(`${irrigationDateInput}T${irrigationTimeInput || '06:00'}`);
+    const volume = irrigationVolumeInput.trim() ? Number(irrigationVolumeInput) : undefined;
+
+    try {
+      await irrigationMutation.mutateAsync({
+        farmId: selectedFarm.id,
+        data: {
+          scheduledDate: scheduledDate.toISOString(),
+          scheduledTime: irrigationTimeInput || undefined,
+          durationMinutes: duration,
+          waterVolumeLiters:
+            typeof volume === 'number' && Number.isFinite(volume) ? volume : undefined,
+          triggerSource: 'manual',
+          notes: 'Planned from farmer irrigation planner',
+        },
+      });
+
+      setShowSchedule(true);
+      setShowIrrigationPlanner(false);
+      setIrrigationDurationInput('30');
+      setIrrigationVolumeInput('');
+      refetchSchedules();
+    } catch {
+      // Error notifications are already handled by the mutation hook.
+    }
+  };
+
+  const handleGenerateRecommendations = () => {
+    if (!selectedFarm) return;
+    generateRecommendationsMutation.mutate(selectedFarm.id);
+  };
+
+  const handleSaveFarmProfile = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedFarm) return;
+
+    const parsedSize = farmEditSize.trim() ? Number(farmEditSize) : undefined;
+    try {
+      const response = await updateFarmMutation.mutateAsync({
+        id: selectedFarm.id,
+        data: {
+          name: farmEditName.trim() || selectedFarm.name,
+          currentGrowthStage: farmEditStage,
+          sizeHectares:
+            typeof parsedSize === 'number' && !Number.isNaN(parsedSize) ? parsedSize : undefined,
+        },
+      });
+      if (response?.data) {
+        updateFarm(selectedFarm.id, response.data);
+      } else {
+        updateFarm(selectedFarm.id, {
+          name: farmEditName.trim() || selectedFarm.name,
+          currentGrowthStage: farmEditStage,
+          sizeHectares:
+            typeof parsedSize === 'number' && !Number.isNaN(parsedSize)
+              ? parsedSize
+              : selectedFarm.sizeHectares,
+        });
+      }
+    } catch {
+      // Error notifications are already handled by the mutation hook.
+    }
+  };
+
+  const handleDeleteSelectedFarm = async () => {
+    if (!selectedFarm) return;
+    const confirmed = typeof window === 'undefined'
+      ? true
+      : window.confirm(`Delete farm "${selectedFarm.name}"?`);
+    if (!confirmed) return;
+
+    try {
+      await deleteFarmMutation.mutateAsync(selectedFarm.id);
+      removeFarm(selectedFarm.id);
+    } catch {
+      // Error notifications are already handled by the mutation hook.
+    }
+  };
+
+  const handleExecuteIrrigation = async (scheduleId: string) => {
+    if (!selectedFarm) return;
+    try {
+      await executeIrrigationMutation.mutateAsync({
+        farmId: selectedFarm.id,
+        scheduleId,
+      });
+      refetchSchedules();
+    } catch {
+      // Error notifications are already handled by the mutation hook.
+    }
+  };
+
+  const handleExecuteDueIrrigation = async () => {
+    if (!selectedFarm || dueSchedules.length === 0) return;
+
+    const confirmed = typeof window === 'undefined'
+      ? true
+      : window.confirm(`Execute ${dueSchedules.length} due irrigation schedule(s)?`);
+    if (!confirmed) return;
+
+    for (const schedule of dueSchedules) {
+      try {
+        await executeIrrigationMutation.mutateAsync({
+          farmId: selectedFarm.id,
+          scheduleId: schedule.id,
+        });
+      } catch {
+        // Error notifications are already handled by the mutation hook.
+      }
+    }
+    refetchSchedules();
+  };
+
+  const handlePestScanClick = () => {
+    if (!selectedFarm) return;
+    pestFileInputRef.current?.click();
+  };
+
+  const handlePestImageSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || !selectedFarm) return;
+
+    try {
+      const response = await analyzePestMutation.mutateAsync({
+        farmId: selectedFarm.id,
+        image: file,
+        locationDescription: `Dashboard upload for ${selectedFarm.name}`,
+      });
+      setLatestPestAnalysis({
+        detection: response.data,
+        analysis: (response as any).analysis || response.data?.detectionMetadata?.analysis,
+      });
+    } catch {
+      // Error notifications are already handled by the mutation hook.
+    }
+  };
+
   if (farmsLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -398,83 +835,388 @@ export function ConnectedFarmerDashboard({ language }: ConnectedFarmerDashboardP
     );
   }
 
-  // Error state
   if (farmsError) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <ErrorState 
+        <ErrorState
           title="Failed to load farms"
-          message="We couldn't load your farm data. Please try again."
+          message="We could not load your farm data. Please try again."
           onRetry={() => refetchFarms()}
         />
       </div>
     );
   }
 
+  const latestReading = sensorData?.[0];
+  const moistureStatus: 'normal' | 'warning' | 'critical' =
+    typeof latestReading?.soilMoisture === 'number'
+      ? latestReading.soilMoisture < 30
+        ? 'critical'
+        : latestReading.soilMoisture < 50
+          ? 'warning'
+          : 'normal'
+      : 'normal';
+
+  const moistureTrend: 'up' | 'down' | 'stable' | undefined =
+    chartData.length > 1
+      ? chartData[chartData.length - 1].moisture > chartData[chartData.length - 2].moisture
+        ? 'up'
+        : chartData[chartData.length - 1].moisture < chartData[chartData.length - 2].moisture
+          ? 'down'
+          : 'stable'
+      : undefined;
+  const isOverviewTab = activeTab === 'overview';
+  const activeTabCopy = farmerTabCopy[activeTab] || farmerTabCopy.overview;
+
   return (
     <div className="p-6 space-y-6 bg-background min-h-screen">
-      {/* Header */}
+      <input
+        ref={pestFileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handlePestImageSelected}
+      />
+
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">
-            {user?.firstName ? `Hello, ${user.firstName}! 👋` : 'Farm Dashboard'}
-          </h1>
-          <p className="text-muted-foreground">
-            Monitor your farm's health and get AI-powered recommendations
-          </p>
+          <h1 className="text-2xl font-bold">{isOverviewTab && user?.firstName ? `Hello, ${user.firstName}!` : activeTabCopy.title}</h1>
+          <p className="text-muted-foreground">{activeTabCopy.description}</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => refetchFarms()}>
             <RefreshCw size={14} className="mr-2" />
             Refresh
           </Button>
-          <Button size="sm">
-            <Camera size={14} className="mr-2" />
-            Scan for Pests
+          <Button variant="outline" size="sm" onClick={handleRefreshAll}>
+            <RefreshCw size={14} className="mr-2" />
+            Refresh All
           </Button>
+          {activeTab === 'sensors' && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportSensorCsv}
+              disabled={!sensorData || sensorData.length === 0}
+            >
+              Export Sensors
+            </Button>
+          )}
+          {(isOverviewTab || activeTab === 'pest-history') && (
+            <Button
+              size="sm"
+              onClick={handlePestScanClick}
+              disabled={!selectedFarm || analyzePestMutation.isPending}
+            >
+              {analyzePestMutation.isPending ? (
+                <Spinner size="sm" />
+              ) : (
+                <>
+                  <Camera size={14} className="mr-2" />
+                  Scan for Pests
+                </>
+              )}
+            </Button>
+          )}
         </div>
       </div>
 
-      {/* Farm Selector */}
-      <FarmSelector 
-        farms={farms} 
-        selectedFarm={selectedFarm} 
-        onSelect={setSelectedFarm} 
+      <FarmSelector
+        farms={filteredFarms}
+        selectedFarm={selectedFarm}
+        onSelect={setSelectedFarm}
+        onAddFarm={handleAddFarm}
+        isAddingFarm={createFarmMutation.isPending}
+        emptyTitle={normalizedSearch ? 'No matching farms' : 'No Farms Yet'}
+        emptyMessage={
+          normalizedSearch
+            ? `No farms match "${searchQuery}".`
+            : 'Register your first farm to start monitoring'
+        }
       />
 
-      {selectedFarm && (
+      {!isOverviewTab && (
+        <Card className="border-l-4 border-l-primary/50">
+          <CardContent className="p-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="font-semibold">{activeTabCopy.title}</p>
+              <p className="text-sm text-muted-foreground">
+                {selectedFarm
+                  ? `Viewing ${selectedFarm.name}${selectedFarm.locationName ? ` in ${selectedFarm.locationName}` : ''}.`
+                  : 'Select a farm to load this section.'}
+              </p>
+            </div>
+            {selectedFarm && (
+              <Badge variant="outline">
+                {selectedFarm.cropVariety || 'Maize'}
+              </Badge>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {isOverviewTab && latestPestAnalysis?.detection && (
+        <Card className="border-l-4 border-l-amber-500">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Camera size={20} className="text-amber-600" />
+              Latest Pest Scan
+            </CardTitle>
+            <CardDescription>
+              Result from the most recent uploaded image for {selectedFarm?.name}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+              <div className="space-y-1">
+                <p className="font-semibold">
+                  {latestPestAnalysis.detection.pestType || 'No specific pest identified'}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Severity: {latestPestAnalysis.detection.severity || 'none'}
+                  {typeof latestPestAnalysis.detection.confidenceScore === 'number'
+                    ? ` | Confidence: ${Math.round(latestPestAnalysis.detection.confidenceScore * 100)}%`
+                    : ''}
+                </p>
+                {typeof latestPestAnalysis.detection.affectedAreaPercentage === 'number' && (
+                  <p className="text-sm text-muted-foreground">
+                    Affected area: {latestPestAnalysis.detection.affectedAreaPercentage}%
+                  </p>
+                )}
+              </div>
+              <Badge variant={latestPestAnalysis.detection.pestDetected ? 'default' : 'secondary'}>
+                {latestPestAnalysis.detection.pestDetected ? 'Pest detected' : 'No pest detected'}
+              </Badge>
+            </div>
+
+            {Array.isArray(latestPestAnalysis.analysis?.symptoms) && latestPestAnalysis.analysis.symptoms.length > 0 && (
+              <div>
+                <p className="text-sm font-medium mb-1">Observed symptoms</p>
+                <p className="text-sm text-muted-foreground">
+                  {latestPestAnalysis.analysis.symptoms.join(', ')}
+                </p>
+              </div>
+            )}
+
+            {Array.isArray(latestPestAnalysis.analysis?.recommendations) && latestPestAnalysis.analysis.recommendations.length > 0 && (
+              <div>
+                <p className="text-sm font-medium mb-1">Recommendations</p>
+                <div className="space-y-1">
+                  {latestPestAnalysis.analysis.recommendations.slice(0, 4).map((item: string, index: number) => (
+                    <p key={`${item}-${index}`} className="text-sm text-muted-foreground">
+                      {index + 1}. {item}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end">
+              <Button size="sm" variant="outline" onClick={() => setLatestPestAnalysis(null)}>
+                Dismiss
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {showAddFarmForm && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Add Farm</CardTitle>
+            <CardDescription>Create a farm profile to start monitoring and recommendations</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form className="grid grid-cols-1 md:grid-cols-5 gap-3" onSubmit={handleCreateFarmSubmit}>
+              <input
+                value={farmNameInput}
+                onChange={(event) => setFarmNameInput(event.target.value)}
+                placeholder="Farm name"
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm md:col-span-2"
+                required
+              />
+              <input
+                value={farmCropInput}
+                onChange={(event) => setFarmCropInput(event.target.value)}
+                placeholder="Crop variety"
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              />
+              <input
+                value={farmLocationInput}
+                onChange={(event) => setFarmLocationInput(event.target.value)}
+                placeholder="Location"
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              />
+              <input
+                value={farmSizeInput}
+                onChange={(event) => setFarmSizeInput(event.target.value)}
+                placeholder="Size (ha)"
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                inputMode="decimal"
+              />
+              <div className="md:col-span-5 flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowAddFarmForm(false)}
+                  disabled={createFarmMutation.isPending}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={createFarmMutation.isPending || !farmNameInput.trim()}>
+                  {createFarmMutation.isPending ? <Spinner size="sm" /> : 'Create Farm'}
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
+
+      {activeTab === 'overview' && selectedFarm && (
         <>
-          {/* Sensor Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {showIrrigationPlanner && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Plan Irrigation</CardTitle>
+                <CardDescription>Create a scheduled irrigation task with custom timing and volume</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form className="grid grid-cols-1 md:grid-cols-5 gap-3" onSubmit={handleCreateIrrigationPlan}>
+                  <input
+                    type="date"
+                    value={irrigationDateInput}
+                    onChange={(event) => setIrrigationDateInput(event.target.value)}
+                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                    required
+                  />
+                  <input
+                    type="time"
+                    value={irrigationTimeInput}
+                    onChange={(event) => setIrrigationTimeInput(event.target.value)}
+                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                    required
+                  />
+                  <input
+                    type="number"
+                    min={1}
+                    value={irrigationDurationInput}
+                    onChange={(event) => setIrrigationDurationInput(event.target.value)}
+                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                    placeholder="Duration (min)"
+                    required
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    value={irrigationVolumeInput}
+                    onChange={(event) => setIrrigationVolumeInput(event.target.value)}
+                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                    placeholder="Water (L, optional)"
+                  />
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setShowIrrigationPlanner(false)}
+                      disabled={irrigationMutation.isPending}
+                    >
+                      Cancel
+                    </Button>
+                    <Button type="submit" disabled={irrigationMutation.isPending}>
+                      {irrigationMutation.isPending ? <Spinner size="sm" /> : 'Save Plan'}
+                    </Button>
+                  </div>
+                </form>
+              </CardContent>
+            </Card>
+          )}
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Farm Profile</CardTitle>
+              <CardDescription>Update core farm details and growth stage</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form className="grid grid-cols-1 md:grid-cols-4 gap-3" onSubmit={handleSaveFarmProfile}>
+                <input
+                  value={farmEditName}
+                  onChange={(event) => setFarmEditName(event.target.value)}
+                  placeholder="Farm name"
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm md:col-span-2"
+                  required
+                />
+                <select
+                  value={farmEditStage}
+                  onChange={(event) => setFarmEditStage(event.target.value as GrowthStage)}
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  {growthStages.map((stage) => (
+                    <option key={stage} value={stage}>
+                      {stage}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  value={farmEditSize}
+                  onChange={(event) => setFarmEditSize(event.target.value)}
+                  placeholder="Size (ha)"
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  inputMode="decimal"
+                />
+                <div className="md:col-span-4 flex items-center justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleDeleteSelectedFarm}
+                    disabled={deleteFarmMutation.isPending}
+                    className="border-red-300 text-red-700 hover:bg-red-50"
+                  >
+                    {deleteFarmMutation.isPending ? <Spinner size="sm" /> : 'Delete Farm'}
+                  </Button>
+                  <Button type="submit" disabled={updateFarmMutation.isPending || !farmEditName.trim()}>
+                    {updateFarmMutation.isPending ? <Spinner size="sm" /> : 'Save Farm'}
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <SensorCard
               icon={Droplets}
               label="Soil Moisture"
-              value={sensorData?.[0]?.soilMoisture?.toFixed(1) || '--'}
+              value={
+                typeof latestReading?.soilMoisture === 'number'
+                  ? latestReading.soilMoisture.toFixed(1)
+                  : '--'
+              }
               unit="%"
-              status={
-                sensorData?.[0]?.soilMoisture 
-                  ? sensorData[0].soilMoisture < 30 ? 'critical' 
-                    : sensorData[0].soilMoisture < 50 ? 'warning' 
-                    : 'normal'
-                  : 'normal'
-              }
-              trend={chartData.length > 1 
-                ? chartData[chartData.length - 1].moisture > chartData[chartData.length - 2].moisture 
-                  ? 'up' : 'down'
-                : undefined
-              }
+              status={moistureStatus}
+              trend={moistureTrend}
             />
             <SensorCard
               icon={Thermometer}
               label="Temperature"
-              value={sensorData?.[0]?.airTemperature?.toFixed(1) || weather?.temperature?.toFixed(1) || '--'}
-              unit="°C"
+              value={
+                typeof latestReading?.airTemperature === 'number'
+                  ? latestReading.airTemperature.toFixed(1)
+                  : typeof weather?.temperature === 'number'
+                    ? weather.temperature.toFixed(1)
+                    : '--'
+              }
+              unit="C"
               status="normal"
             />
             <SensorCard
               icon={Wind}
               label="Humidity"
-              value={sensorData?.[0]?.humidity?.toFixed(0) || weather?.humidity || '--'}
+              value={
+                typeof latestReading?.humidity === 'number'
+                  ? latestReading.humidity.toFixed(0)
+                  : typeof weather?.humidity === 'number'
+                    ? weather.humidity.toFixed(0)
+                    : '--'
+              }
               unit="%"
               status="normal"
             />
@@ -482,8 +1224,8 @@ export function ConnectedFarmerDashboard({ language }: ConnectedFarmerDashboardP
               icon={Sprout}
               label="N-P-K"
               value={
-                sensorData?.[0]?.nitrogen 
-                  ? `${sensorData[0].nitrogen}-${sensorData[0].phosphorus || 0}-${sensorData[0].potassium || 0}`
+                typeof latestReading?.nitrogen === 'number'
+                  ? `${latestReading.nitrogen}-${latestReading.phosphorus || 0}-${latestReading.potassium || 0}`
                   : '--'
               }
               unit="mg/kg"
@@ -491,13 +1233,11 @@ export function ConnectedFarmerDashboard({ language }: ConnectedFarmerDashboardP
             />
           </div>
 
-          {/* Main Content Grid */}
           <div className="grid md:grid-cols-3 gap-6">
-            {/* Chart - 2 columns */}
             <Card className="md:col-span-2">
               <CardHeader>
                 <CardTitle className="text-lg">Soil Moisture Trend</CardTitle>
-                <CardDescription>Last 24 hours</CardDescription>
+                <CardDescription>Recent readings</CardDescription>
               </CardHeader>
               <CardContent>
                 {chartData.length > 0 ? (
@@ -511,21 +1251,13 @@ export function ConnectedFarmerDashboard({ language }: ConnectedFarmerDashboardP
                           </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                        <XAxis 
-                          dataKey="time" 
-                          tick={{ fontSize: 12 }}
-                          className="text-muted-foreground"
-                        />
-                        <YAxis 
-                          tick={{ fontSize: 12 }}
-                          domain={[0, 100]}
-                          className="text-muted-foreground"
-                        />
-                        <Tooltip 
-                          contentStyle={{ 
+                        <XAxis dataKey="time" tick={{ fontSize: 12 }} className="text-muted-foreground" />
+                        <YAxis tick={{ fontSize: 12 }} domain={[0, 100]} className="text-muted-foreground" />
+                        <Tooltip
+                          contentStyle={{
                             backgroundColor: 'hsl(var(--card))',
                             border: '1px solid hsl(var(--border))',
-                            borderRadius: '8px'
+                            borderRadius: '8px',
                           }}
                         />
                         <Area
@@ -540,46 +1272,76 @@ export function ConnectedFarmerDashboard({ language }: ConnectedFarmerDashboardP
                     </ResponsiveContainer>
                   </div>
                 ) : (
-                  <EmptyState 
-                    title="No sensor data"
-                    message="Connect sensors to see moisture trends"
-                  />
+                  <EmptyState title="No sensor data" message="Connect sensors to see moisture trends." />
                 )}
               </CardContent>
             </Card>
 
-            {/* Weather - 1 column */}
             <WeatherCard weather={weather} forecast={forecast} />
           </div>
 
-          {/* Recommendations */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Farming Conditions</CardTitle>
+              <CardDescription>Current irrigation guidance from weather and field context</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {!farmingConditions ? (
+                <LoadingState text="Loading farming conditions..." size="sm" />
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-muted-foreground">Irrigation recommendation</p>
+                    <Badge variant="outline">{farmingConditions.irrigationRecommendation}</Badge>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-muted-foreground">Suggested delay</p>
+                    <p className="text-sm font-semibold">{farmingConditions.delayDays} day(s)</p>
+                  </div>
+                  {farmingConditions.reasons?.length ? (
+                    <ul className="list-disc pl-5 text-sm text-muted-foreground space-y-1">
+                      {farmingConditions.reasons.map((reason, index) => (
+                        <li key={`${reason}-${index}`}>{reason}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No additional condition notes.</p>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <AlertTriangle size={20} className="text-primary" />
                 Active Recommendations
               </CardTitle>
-              <CardDescription>
-                AI-powered suggestions for your farm
-              </CardDescription>
+              <CardDescription>AI-powered suggestions for your farm</CardDescription>
             </CardHeader>
             <CardContent>
-              {recommendations && recommendations.length > 0 ? (
+              {filteredRecommendations.length > 0 ? (
                 <div className="space-y-4">
-                  {recommendations.map((rec) => (
+                  {filteredRecommendations.map((recommendation) => (
                     <RecommendationCard
-                      key={rec.id}
-                      recommendation={rec}
-                      onAccept={() => handleRecommendationResponse(rec.id, 'accepted')}
-                      onReject={() => handleRecommendationResponse(rec.id, 'rejected')}
+                      key={recommendation.id}
+                      recommendation={recommendation}
+                      onAccept={() => handleRecommendationResponse(recommendation.id, 'accepted')}
+                      onReject={() => handleRecommendationResponse(recommendation.id, 'rejected')}
+                      onDefer={() => handleDeferRecommendation(recommendation.id)}
                       isLoading={respondMutation.isPending}
                     />
                   ))}
                 </div>
               ) : (
-                <EmptyState 
-                  title="No active recommendations"
-                  message="You're all caught up! Check back later for new insights."
+                <EmptyState
+                  title={normalizedSearch ? 'No matching recommendations' : 'No active recommendations'}
+                  message={
+                    normalizedSearch
+                      ? `No recommendations match "${searchQuery}".`
+                      : 'You are all caught up. Check back later for new insights.'
+                  }
                   icon={
                     <div className="bg-green-100 dark:bg-green-900/30 p-4 rounded-full">
                       <CheckCircle className="h-8 w-8 text-green-600 dark:text-green-400" />
@@ -590,27 +1352,920 @@ export function ConnectedFarmerDashboard({ language }: ConnectedFarmerDashboardP
             </CardContent>
           </Card>
 
-          {/* Quick Actions */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <Button variant="outline" className="h-auto py-4 flex-col gap-2">
-              <Droplets size={24} />
-              <span>Start Irrigation</span>
+            <Button
+              variant="outline"
+              className="h-auto py-4 flex-col gap-2"
+              onClick={handleScheduleIrrigation}
+              disabled={irrigationMutation.isPending}
+            >
+              {irrigationMutation.isPending ? <Spinner size="sm" /> : <Droplets size={24} />}
+              <span>{irrigationMutation.isPending ? 'Scheduling...' : 'Start Irrigation'}</span>
             </Button>
-            <Button variant="outline" className="h-auto py-4 flex-col gap-2">
-              <Camera size={24} />
-              <span>Pest Detection</span>
-            </Button>
-            <Button variant="outline" className="h-auto py-4 flex-col gap-2">
-              <Sprout size={24} />
-              <span>Fertilization</span>
-            </Button>
-            <Button variant="outline" className="h-auto py-4 flex-col gap-2">
+            <Button
+              variant="outline"
+              className="h-auto py-4 flex-col gap-2"
+              onClick={() => setShowIrrigationPlanner((previous) => !previous)}
+            >
               <Calendar size={24} />
-              <span>View Schedule</span>
+              <span>{showIrrigationPlanner ? 'Hide Planner' : 'Plan Irrigation'}</span>
+            </Button>
+            <Button
+              variant="outline"
+              className="h-auto py-4 flex-col gap-2"
+              onClick={handlePestScanClick}
+              disabled={analyzePestMutation.isPending}
+            >
+              {analyzePestMutation.isPending ? <Spinner size="sm" /> : <Camera size={24} />}
+              <span>{analyzePestMutation.isPending ? 'Analyzing...' : 'Pest Detection'}</span>
+            </Button>
+            <Button
+              variant="outline"
+              className="h-auto py-4 flex-col gap-2"
+              onClick={handleGenerateRecommendations}
+              disabled={generateRecommendationsMutation.isPending}
+            >
+              {generateRecommendationsMutation.isPending ? <Spinner size="sm" /> : <Sprout size={24} />}
+              <span>{generateRecommendationsMutation.isPending ? 'Generating...' : 'Generate Advice'}</span>
+            </Button>
+            <Button
+              variant="outline"
+              className="h-auto py-4 flex-col gap-2"
+              onClick={() => setShowSchedule((previous) => !previous)}
+            >
+              <Calendar size={24} />
+              <span>{showSchedule ? 'Hide Schedule' : 'View Schedule'}</span>
             </Button>
           </div>
+
+          {showSchedule && (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between gap-3">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Calendar size={20} />
+                    Irrigation Schedule
+                  </CardTitle>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleExecuteDueIrrigation}
+                    disabled={executeIrrigationMutation.isPending || dueSchedules.length === 0}
+                  >
+                    {executeIrrigationMutation.isPending ? <Spinner size="sm" /> : `Execute Due (${dueSchedules.length})`}
+                  </Button>
+                </div>
+                <CardDescription>Upcoming manual and automated irrigation plans</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {filteredSchedules.length === 0 ? (
+                  <EmptyState
+                    title={normalizedSearch ? 'No matching schedules' : 'No upcoming irrigation plans'}
+                    message={
+                      normalizedSearch
+                        ? `No irrigation schedules match "${searchQuery}".`
+                        : 'Use Start Irrigation to create your first schedule.'
+                    }
+                  />
+                ) : (
+                  <div className="space-y-3">
+                    {filteredSchedules.map((schedule) => (
+                      <div key={schedule.id} className="rounded-lg border p-3">
+                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                          <div>
+                            <p className="font-semibold">
+                              {formatDate(schedule.scheduledDate, locale)} at{' '}
+                              {schedule.scheduledTime || formatTime(schedule.scheduledDate, locale)}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Duration: {schedule.durationMinutes} min
+                              {typeof schedule.waterVolumeLiters === 'number'
+                                ? ` | Water: ${schedule.waterVolumeLiters} L`
+                                : ''}
+                              {schedule.triggerSource ? ` | Source: ${schedule.triggerSource}` : ''}
+                            </p>
+                          </div>
+                          <Badge variant={schedule.isExecuted ? 'secondary' : 'outline'}>
+                            {schedule.isExecuted ? 'executed' : 'scheduled'}
+                          </Badge>
+                        </div>
+                        {!schedule.isExecuted && (
+                          <div className="mt-3 flex justify-end">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleExecuteIrrigation(schedule.id)}
+                              disabled={executeIrrigationMutation.isPending}
+                            >
+                              {executeIrrigationMutation.isPending ? <Spinner size="sm" /> : 'Mark Executed'}
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </>
       )}
+
+      {/* ===== Sensors Tab ===== */}
+      {activeTab === 'sensors' && selectedFarmId && (
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Sensor Management</CardTitle>
+              <CardDescription>All sensors registered for this farm</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <SensorManagementPanel farmId={selectedFarmId} />
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {activeTab === 'sensors' && !selectedFarmId && (
+        <EmptyState title="No farm selected" message="Select a farm to view its sensors and latest readings." />
+      )}
+
+      {/* ===== Fertilization Tab ===== */}
+      {activeTab === 'fertilization' && selectedFarmId && (
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Droplets size={20} className="text-primary" />
+                Fertilization Schedules
+              </CardTitle>
+              <CardDescription>Planned and completed fertilization events</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <FertilizationPanel farmId={selectedFarmId} locale={locale} />
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {activeTab === 'fertilization' && !selectedFarmId && (
+        <EmptyState title="No farm selected" message="Select a farm to view fertilization schedules." />
+      )}
+
+      {/* ===== Pest History Tab ===== */}
+      {activeTab === 'pest-history' && selectedFarmId && (
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Pest Detection History</CardTitle>
+              <CardDescription>All past scans and detection results for this farm</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <PestHistoryPanel farmId={selectedFarmId} />
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {activeTab === 'pest-history' && !selectedFarmId && (
+        <EmptyState title="No farm selected" message="Select a farm to review previous pest detections." />
+      )}
+
+      {/* ===== Analytics Tab ===== */}
+      {activeTab === 'analytics' && selectedFarmId && (
+        <div className="space-y-6">
+          <AnalyticsPanel farmId={selectedFarmId} />
+        </div>
+      )}
+
+      {activeTab === 'analytics' && !selectedFarmId && (
+        <EmptyState title="No farm selected" message="Select a farm to view analytics and trend summaries." />
+      )}
+
+      {/* ===== AI Chat Tab ===== */}
+      {activeTab === 'ai-chat' && (
+        <div className="space-y-6">
+          <AiChatPanel farmId={selectedFarmId} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- Sub-panels ----------
+
+function SensorManagementPanel({ farmId }: { farmId: string }) {
+  const { data: sensors, isLoading } = useSensorsByFarm(farmId);
+  const { data: readings, isLoading: readingsLoading } = useFarmSensorData(farmId, { limit: 12 });
+  const createSensorMutation = useCreateSensor();
+  const updateSensorMutation = useUpdateSensor();
+  const deleteSensorMutation = useDeleteSensor();
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [editingSensorId, setEditingSensorId] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    deviceId: '',
+    sensorType: 'soil_moisture',
+    name: '',
+    locationDescription: '',
+    latitude: '',
+    longitude: '',
+  });
+  const resetForm = () => {
+    setForm({
+      deviceId: '',
+      sensorType: 'soil_moisture',
+      name: '',
+      locationDescription: '',
+      latitude: '',
+      longitude: '',
+    });
+    setShowCreateForm(false);
+    setEditingSensorId(null);
+  };
+
+  const toOptionalNumber = (value: string) => {
+    if (!value.trim()) return undefined;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  };
+
+  const startEditing = (sensor: Sensor) => {
+    setEditingSensorId(sensor.id);
+    setShowCreateForm(false);
+    setForm({
+      deviceId: sensor.deviceId || '',
+      sensorType: sensor.sensorType || 'soil_moisture',
+      name: sensor.name || '',
+      locationDescription: sensor.locationDescription || '',
+      latitude: sensor.coordinates?.lat !== undefined ? String(sensor.coordinates.lat) : '',
+      longitude: sensor.coordinates?.lng !== undefined ? String(sensor.coordinates.lng) : '',
+    });
+  };
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    const latitude = toOptionalNumber(form.latitude);
+    const longitude = toOptionalNumber(form.longitude);
+    const coordinates =
+      latitude !== undefined && longitude !== undefined ? { lat: latitude, lng: longitude } : undefined;
+
+    if (editingSensorId) {
+      await updateSensorMutation.mutateAsync({
+        id: editingSensorId,
+        data: {
+          name: form.name.trim() || undefined,
+          locationDescription: form.locationDescription.trim() || undefined,
+          coordinates,
+          status: 'active',
+        },
+      });
+    } else {
+      await createSensorMutation.mutateAsync({
+        farmId,
+        deviceId: form.deviceId.trim(),
+        sensorType: form.sensorType as Sensor['sensorType'],
+        name: form.name.trim() || undefined,
+        locationDescription: form.locationDescription.trim() || undefined,
+        coordinates,
+      });
+    }
+
+    resetForm();
+  };
+
+  const handleDelete = async (sensor: Sensor) => {
+    const confirmed = typeof window === 'undefined'
+      ? true
+      : window.confirm(`Delete sensor "${sensor.name || sensor.deviceId}"?`);
+    if (!confirmed) return;
+
+    await deleteSensorMutation.mutateAsync({ id: sensor.id, farmId });
+    if (editingSensorId === sensor.id) {
+      resetForm();
+    }
+  };
+
+  if (isLoading || readingsLoading) return <LoadingState text="Loading sensors..." size="sm" />;
+  const list = Array.isArray(sensors) ? sensors : [];
+  const latestReadings = Array.isArray(readings) ? readings : [];
+  const isSubmitting = createSensorMutation.isPending || updateSensorMutation.isPending;
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <Button
+          size="sm"
+          variant={showCreateForm || editingSensorId ? 'outline' : 'default'}
+          onClick={() => {
+            if (showCreateForm || editingSensorId) {
+              resetForm();
+              return;
+            }
+            setShowCreateForm(true);
+          }}
+        >
+          {showCreateForm || editingSensorId ? 'Cancel' : 'Add Sensor'}
+        </Button>
+      </div>
+
+      {(showCreateForm || editingSensorId) && (
+        <Card className="border-dashed">
+          <CardContent className="pt-6">
+            <form className="grid grid-cols-1 md:grid-cols-2 gap-3" onSubmit={handleSubmit}>
+              <input
+                value={form.deviceId}
+                onChange={(event) => setForm((current) => ({ ...current, deviceId: event.target.value }))}
+                placeholder="Device ID"
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                disabled={!!editingSensorId}
+                required={!editingSensorId}
+              />
+              <select
+                value={form.sensorType}
+                onChange={(event) => setForm((current) => ({ ...current, sensorType: event.target.value }))}
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                disabled={!!editingSensorId}
+              >
+                <option value="soil_moisture">Soil moisture</option>
+                <option value="temperature">Temperature</option>
+                <option value="humidity">Humidity</option>
+                <option value="npk">NPK</option>
+                <option value="rainfall">Rainfall</option>
+                <option value="light">Light</option>
+              </select>
+              <input
+                value={form.name}
+                onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+                placeholder="Display name"
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              />
+              <input
+                value={form.locationDescription}
+                onChange={(event) => setForm((current) => ({ ...current, locationDescription: event.target.value }))}
+                placeholder="Location description"
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              />
+              <input
+                value={form.latitude}
+                onChange={(event) => setForm((current) => ({ ...current, latitude: event.target.value }))}
+                placeholder="Latitude"
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                inputMode="decimal"
+              />
+              <input
+                value={form.longitude}
+                onChange={(event) => setForm((current) => ({ ...current, longitude: event.target.value }))}
+                placeholder="Longitude"
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                inputMode="decimal"
+              />
+              <div className="md:col-span-2 flex justify-end gap-2">
+                <Button type="button" variant="outline" onClick={resetForm} disabled={isSubmitting}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isSubmitting || (!editingSensorId && !form.deviceId.trim())}>
+                  {isSubmitting ? <Spinner size="sm" /> : editingSensorId ? 'Update Sensor' : 'Create Sensor'}
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
+
+      {latestReadings.length > 0 && (
+        <div className="rounded-lg border p-3 bg-muted/20">
+          <p className="font-medium mb-2">Latest readings</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {latestReadings.slice(0, 6).map((reading: any) => (
+              <div key={reading.id} className="rounded-md border bg-background p-3">
+                <p className="text-sm font-medium">
+                  {reading.sensorId ? `Sensor ${reading.sensorId.slice(0, 8)}` : 'Sensor reading'}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {reading.readingTimestamp ? new Date(reading.readingTimestamp).toLocaleString() : 'Unknown time'}
+                </p>
+                <div className="mt-2 text-sm text-muted-foreground space-y-1">
+                  {typeof reading.soilMoisture === 'number' && <p>Soil moisture: {reading.soilMoisture}%</p>}
+                  {typeof reading.soilTemperature === 'number' && <p>Soil temperature: {reading.soilTemperature} C</p>}
+                  {typeof reading.airTemperature === 'number' && <p>Air temperature: {reading.airTemperature} C</p>}
+                  {typeof reading.humidity === 'number' && <p>Humidity: {reading.humidity}%</p>}
+                  {typeof reading.rainfallMm === 'number' && <p>Rainfall: {reading.rainfallMm} mm</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {list.length === 0 ? (
+        <EmptyState
+          title="No registered sensors"
+          message="Create a sensor to start organizing hardware attached to this farm."
+        />
+      ) : (
+        <>
+          <p className="font-medium">Registered sensors</p>
+          {list.map((sensor) => (
+            <div key={sensor.id} className="rounded-lg border p-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="font-medium">{sensor.name || sensor.sensorType}</p>
+                <p className="text-xs text-muted-foreground">
+                  {sensor.sensorType} | Device: {sensor.deviceId}
+                </p>
+                {sensor.locationDescription && (
+                  <p className="text-xs text-muted-foreground mt-1">{sensor.locationDescription}</p>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge variant={sensor.status === 'active' ? 'default' : 'secondary'}>
+                  {sensor.status === 'active' ? 'Active' : sensor.status}
+                </Badge>
+                <Button size="sm" variant="outline" onClick={() => startEditing(sensor)}>
+                  Edit
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleDelete(sensor)}
+                  disabled={deleteSensorMutation.isPending}
+                >
+                  {deleteSensorMutation.isPending ? <Spinner size="sm" /> : 'Delete'}
+                </Button>
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
+function FertilizationPanel({ farmId, locale }: { farmId: string; locale: string }) {
+  const { data: schedules, isLoading } = useFertilizationSchedules(farmId);
+  const createFertilizationMutation = useCreateFertilization();
+  const updateFertilizationMutation = useUpdateFertilization();
+  const deleteFertilizationMutation = useDeleteFertilization();
+  const executeFertilizationMutation = useExecuteFertilization();
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    scheduledDate: new Date().toISOString().slice(0, 10),
+    fertilizerType: '',
+    applicationMethod: 'manual',
+    totalQuantityKg: '',
+    nitrogenKg: '',
+    phosphorusKg: '',
+    potassiumKg: '',
+    notes: '',
+  });
+
+  const resetForm = () => {
+    setForm({
+      scheduledDate: new Date().toISOString().slice(0, 10),
+      fertilizerType: '',
+      applicationMethod: 'manual',
+      totalQuantityKg: '',
+      nitrogenKg: '',
+      phosphorusKg: '',
+      potassiumKg: '',
+      notes: '',
+    });
+    setShowCreateForm(false);
+    setEditingScheduleId(null);
+  };
+
+  const toOptionalNumber = (value: string) => {
+    if (!value.trim()) return undefined;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  };
+
+  const startEditing = (schedule: FertilizationSchedule) => {
+    setEditingScheduleId(schedule.id);
+    setShowCreateForm(false);
+    setForm({
+      scheduledDate: schedule.scheduledDate ? schedule.scheduledDate.slice(0, 10) : new Date().toISOString().slice(0, 10),
+      fertilizerType: schedule.fertilizerType || '',
+      applicationMethod: schedule.applicationMethod || 'manual',
+      totalQuantityKg: schedule.totalQuantityKg !== undefined ? String(schedule.totalQuantityKg) : '',
+      nitrogenKg: schedule.nitrogenKg !== undefined ? String(schedule.nitrogenKg) : '',
+      phosphorusKg: schedule.phosphorusKg !== undefined ? String(schedule.phosphorusKg) : '',
+      potassiumKg: schedule.potassiumKg !== undefined ? String(schedule.potassiumKg) : '',
+      notes: schedule.notes || '',
+    });
+  };
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    const payload = {
+      scheduledDate: form.scheduledDate,
+      fertilizerType: form.fertilizerType.trim(),
+      applicationMethod: form.applicationMethod.trim() || undefined,
+      totalQuantityKg: toOptionalNumber(form.totalQuantityKg),
+      nitrogenKg: toOptionalNumber(form.nitrogenKg),
+      phosphorusKg: toOptionalNumber(form.phosphorusKg),
+      potassiumKg: toOptionalNumber(form.potassiumKg),
+      notes: form.notes.trim() || undefined,
+    };
+
+    if (editingScheduleId) {
+      await updateFertilizationMutation.mutateAsync({
+        farmId,
+        scheduleId: editingScheduleId,
+        data: payload,
+      });
+    } else {
+      await createFertilizationMutation.mutateAsync({
+        farmId,
+        data: payload,
+      });
+    }
+
+    resetForm();
+  };
+
+  const handleDelete = async (schedule: FertilizationSchedule) => {
+    const confirmed = typeof window === 'undefined'
+      ? true
+      : window.confirm(`Delete fertilization schedule "${schedule.fertilizerType}"?`);
+    if (!confirmed) return;
+
+    await deleteFertilizationMutation.mutateAsync({ farmId, scheduleId: schedule.id });
+    if (editingScheduleId === schedule.id) {
+      resetForm();
+    }
+  };
+
+  const handleExecute = async (schedule: FertilizationSchedule) => {
+    await executeFertilizationMutation.mutateAsync({
+      farmId,
+      scheduleId: schedule.id,
+      data: {
+        actualQuantityKg: schedule.totalQuantityKg,
+      },
+    });
+  };
+
+  if (isLoading) return <LoadingState text="Loading fertilization schedules..." size="sm" />;
+  const list = Array.isArray(schedules) ? schedules : [];
+  const isSubmitting = createFertilizationMutation.isPending || updateFertilizationMutation.isPending;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <Button
+          size="sm"
+          variant={showCreateForm || editingScheduleId ? 'outline' : 'default'}
+          onClick={() => {
+            if (showCreateForm || editingScheduleId) {
+              resetForm();
+              return;
+            }
+            setShowCreateForm(true);
+          }}
+        >
+          {showCreateForm || editingScheduleId ? 'Cancel' : 'Add Schedule'}
+        </Button>
+      </div>
+
+      {(showCreateForm || editingScheduleId) && (
+        <Card className="border-dashed">
+          <CardContent className="pt-6">
+            <form className="grid grid-cols-1 md:grid-cols-2 gap-3" onSubmit={handleSubmit}>
+              <input
+                type="date"
+                value={form.scheduledDate}
+                onChange={(event) => setForm((current) => ({ ...current, scheduledDate: event.target.value }))}
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                required
+              />
+              <input
+                value={form.fertilizerType}
+                onChange={(event) => setForm((current) => ({ ...current, fertilizerType: event.target.value }))}
+                placeholder="Fertilizer type"
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                required
+              />
+              <input
+                value={form.applicationMethod}
+                onChange={(event) => setForm((current) => ({ ...current, applicationMethod: event.target.value }))}
+                placeholder="Application method"
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              />
+              <input
+                value={form.totalQuantityKg}
+                onChange={(event) => setForm((current) => ({ ...current, totalQuantityKg: event.target.value }))}
+                placeholder="Total quantity (kg)"
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                inputMode="decimal"
+              />
+              <input
+                value={form.nitrogenKg}
+                onChange={(event) => setForm((current) => ({ ...current, nitrogenKg: event.target.value }))}
+                placeholder="Nitrogen (kg)"
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                inputMode="decimal"
+              />
+              <input
+                value={form.phosphorusKg}
+                onChange={(event) => setForm((current) => ({ ...current, phosphorusKg: event.target.value }))}
+                placeholder="Phosphorus (kg)"
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                inputMode="decimal"
+              />
+              <input
+                value={form.potassiumKg}
+                onChange={(event) => setForm((current) => ({ ...current, potassiumKg: event.target.value }))}
+                placeholder="Potassium (kg)"
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                inputMode="decimal"
+              />
+              <input
+                value={form.notes}
+                onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
+                placeholder="Notes"
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              />
+              <div className="md:col-span-2 flex justify-end gap-2">
+                <Button type="button" variant="outline" onClick={resetForm} disabled={isSubmitting}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isSubmitting || !form.fertilizerType.trim()}>
+                  {isSubmitting ? <Spinner size="sm" /> : editingScheduleId ? 'Update Schedule' : 'Create Schedule'}
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
+
+      {list.length === 0 ? (
+        <EmptyState title="No schedules" message="No fertilization schedules found for this farm." />
+      ) : (
+        list.map((schedule) => (
+          <div key={schedule.id} className="rounded-lg border p-3 space-y-3">
+            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="font-medium">{schedule.fertilizerType || 'Fertilizer'}</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Scheduled: {schedule.scheduledDate ? new Date(schedule.scheduledDate).toLocaleDateString(locale) : 'TBD'}
+                  {schedule.totalQuantityKg ? ` | ${schedule.totalQuantityKg} kg` : ''}
+                  {schedule.applicationMethod ? ` | ${schedule.applicationMethod}` : ''}
+                </p>
+                {schedule.notes && <p className="text-sm text-muted-foreground mt-1">{schedule.notes}</p>}
+              </div>
+              <Badge variant={schedule.isExecuted ? 'secondary' : 'outline'}>
+                {schedule.isExecuted ? 'Executed' : 'Scheduled'}
+              </Badge>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {!schedule.isExecuted && (
+                <>
+                  <Button size="sm" variant="outline" onClick={() => startEditing(schedule)}>
+                    Edit
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleExecute(schedule)}
+                    disabled={executeFertilizationMutation.isPending}
+                  >
+                    {executeFertilizationMutation.isPending ? <Spinner size="sm" /> : 'Mark Executed'}
+                  </Button>
+                </>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => handleDelete(schedule)}
+                disabled={deleteFertilizationMutation.isPending}
+              >
+                {deleteFertilizationMutation.isPending ? <Spinner size="sm" /> : 'Delete'}
+              </Button>
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+function PestHistoryPanel({ farmId }: { farmId: string }) {
+  const deletePestDetectionMutation = useDeletePestDetection();
+  const { data: response, isLoading } = usePestDetections({ farmId, limit: 20 } as any);
+  if (isLoading) return <LoadingState text="Loading pest history..." size="sm" />;
+  const items: PestDetection[] = (response as any)?.data ?? [];
+  if (items.length === 0)
+    return <EmptyState title="No detections" message="No pest scans recorded for this farm yet." />;
+
+  const handleDelete = async (detection: PestDetection) => {
+    const confirmed = typeof window === 'undefined'
+      ? true
+      : window.confirm(`Delete pest detection "${detection.pestType || 'unknown pest'}"?`);
+    if (!confirmed) return;
+
+    await deletePestDetectionMutation.mutateAsync(detection.id);
+  };
+
+  return (
+    <div className="space-y-3">
+      {items.map((d) => (
+        <div key={d.id} className="rounded-lg border p-3 flex items-start gap-3">
+          {d.imageUrl && (
+            <img src={d.imageUrl} alt="pest" className="w-16 h-16 rounded object-cover flex-shrink-0" />
+          )}
+          <div className="min-w-0">
+            <p className="font-medium truncate">{d.pestType || 'Unknown pest'}</p>
+            <p className="text-xs text-muted-foreground">
+              {d.createdAt ? new Date(d.createdAt).toLocaleDateString() : ''}
+              {d.severity ? ` | Severity: ${d.severity}` : ''}
+            </p>
+            {d.expertNotes && <p className="text-sm mt-1 line-clamp-2">{d.expertNotes}</p>}
+          </div>
+          <div className="flex flex-col items-end gap-2 flex-shrink-0">
+            <Badge variant={d.isConfirmed ? 'default' : 'secondary'}>
+              {d.isConfirmed ? 'confirmed' : 'pending'}
+            </Badge>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => handleDelete(d)}
+              disabled={deletePestDetectionMutation.isPending}
+            >
+              {deletePestDetectionMutation.isPending ? <Spinner size="sm" /> : 'Delete'}
+            </Button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AnalyticsPanel({ farmId }: { farmId: string }) {
+  const { data: dash, isLoading: dashLoading } = useAnalyticsDashboard(farmId);
+  const { data: trends, isLoading: trendsLoading } = useFarmSensorTrendsAnalytics(farmId, { interval: 'day' });
+  if (dashLoading) return <LoadingState text="Loading analytics..." />;
+  const d = dash as any;
+  const stats = [
+    { label: 'Total Sensors', value: d?.farm?.sensors?.length ?? d?.sensorCount ?? 0 },
+    { label: 'Active Alerts', value: d?.recentAlerts?.length ?? d?.alertCount ?? 0 },
+    { label: 'Recommendations', value: d?.activeRecommendations?.length ?? d?.recommendationCount ?? 0 },
+    { label: 'Pest Events', value: d?.recentPestDetections?.length ?? d?.pestDetectionCount ?? 0 },
+  ];
+  const trendRows = Array.isArray((trends as any)?.trends)
+    ? (trends as any).trends
+    : Array.isArray((trends as any)?.readings)
+      ? (trends as any).readings
+      : [];
+  const chartRows = trendRows.map((row: any) => ({
+    date: row.date || row.reading_date || '',
+    soilMoisture: row.soilMoisture ?? row.avgSoilMoisture ?? row.avg_soil_moisture ?? 0,
+  }));
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {stats.map((stat) => (
+          <Card key={stat.label}>
+            <CardContent className="pt-4">
+              <p className="text-2xl font-bold">{String(stat.value)}</p>
+              <p className="text-xs text-muted-foreground">{stat.label}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      {trendsLoading ? (
+        <LoadingState text="Loading sensor trends..." size="sm" />
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Daily Sensor Trends</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {chartRows.length > 0 ? (
+              <div className="h-56">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={chartRows}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 11 }} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: 'hsl(var(--card))',
+                        border: '1px solid hsl(var(--border))',
+                        borderRadius: '8px',
+                      }}
+                    />
+                    <Area type="monotone" dataKey="soilMoisture" stroke="hsl(var(--primary))" fill="hsl(var(--primary)/0.15)" strokeWidth={2} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <EmptyState title="No trend data" message="Not enough data to show trends yet." />
+            )}
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function AiChatPanel({ farmId }: { farmId?: string | null }) {
+  const [messages, setMessages] = React.useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
+  const [input, setInput] = React.useState('');
+  const [adviceQ, setAdviceQ] = React.useState('');
+  const chatMutation = useAiChat();
+  const adviceMutation = useAiAdvice();
+  const bottomRef = React.useRef<HTMLDivElement>(null);
+
+  const handleSend = async () => {
+    if (!input.trim()) return;
+    const userMsg = input.trim();
+    setInput('');
+    const history = messages.map((m) => ({ role: m.role, content: m.content, timestamp: new Date().toISOString() }));
+    setMessages((prev) => [...prev, { role: 'user', content: userMsg }]);
+    const res = await chatMutation.mutateAsync({ message: userMsg, conversationHistory: history, farmId: farmId ?? undefined });
+    setMessages((prev) => [...prev, { role: 'assistant', content: res.reply }]);
+    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+  };
+
+  const handleAdvice = async () => {
+    if (!adviceQ.trim()) return;
+    const q = adviceQ.trim();
+    setAdviceQ('');
+    const res = await adviceMutation.mutateAsync({ question: q, context: { farmId: farmId ?? undefined } });
+    setMessages((prev) => [
+      ...prev,
+      { role: 'user', content: `[Advice] ${q}` },
+      { role: 'assistant', content: res.answer + (res.suggestions?.length ? '\n\nSuggestions:\n• ' + res.suggestions.join('\n• ') : '') },
+    ]);
+  };
+
+  return (
+    <div className="grid md:grid-cols-2 gap-6">
+      <Card className="flex flex-col">
+        <CardHeader>
+          <CardTitle className="text-base">AI Chat Assistant</CardTitle>
+          <CardDescription>Ask anything about your farm, crops, or practices</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col flex-1 gap-3">
+          <div className="flex-1 overflow-y-auto max-h-72 space-y-2 rounded-lg border p-3 bg-muted/30">
+            {messages.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center pt-6">Start a conversation with the AI assistant.</p>
+            )}
+            {messages.map((m, i) => (
+              <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`rounded-lg px-3 py-2 max-w-[80%] text-sm whitespace-pre-wrap ${
+                  m.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-card border'
+                }`}>{m.content}</div>
+              </div>
+            ))}
+            <div ref={bottomRef} />
+          </div>
+          <div className="flex gap-2">
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
+              placeholder="Type a message..."
+              className="flex-1 h-9 rounded-md border border-input bg-background px-3 text-sm"
+            />
+            <Button size="sm" onClick={handleSend} disabled={chatMutation.isPending || !input.trim()}>
+              {chatMutation.isPending ? <Spinner size="sm" /> : 'Send'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Agricultural Advice</CardTitle>
+          <CardDescription>Get AI-powered crop & farm advice</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <textarea
+            value={adviceQ}
+            onChange={(e) => setAdviceQ(e.target.value)}
+            placeholder="e.g. How do I manage soil moisture for maize during dry season?"
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[100px]"
+          />
+          <Button onClick={handleAdvice} disabled={adviceMutation.isPending || !adviceQ.trim()} className="w-full">
+            {adviceMutation.isPending ? <Spinner size="sm" /> : 'Get Advice'}
+          </Button>
+          {adviceMutation.data && (
+            <div className="rounded-lg border p-3 bg-muted/30 text-sm space-y-2">
+              <p className="font-medium">Answer</p>
+              <p className="whitespace-pre-wrap">{adviceMutation.data.answer}</p>
+              {adviceMutation.data.suggestions?.length > 0 && (
+                <ul className="list-disc pl-5 text-muted-foreground">
+                  {adviceMutation.data.suggestions.map((s: string, i: number) => <li key={i}>{s}</li>)}
+                </ul>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

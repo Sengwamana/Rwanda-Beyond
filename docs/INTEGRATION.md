@@ -64,7 +64,7 @@ This document provides a comprehensive guide for the integration between the Rea
 │                    │                                                │
 │  ┌─────────────────┴─────────────────┐                             │
 │  │           Data Layer              │                             │
-│  │    Supabase + External APIs       │                             │
+│  │    Convex + External APIs       │                             │
 │  └───────────────────────────────────┘                             │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -485,9 +485,7 @@ NODE_ENV=development
 PORT=3000
 
 # Database
-SUPABASE_URL=https://xxx.supabase.co
-SUPABASE_ANON_KEY=xxx
-SUPABASE_SERVICE_ROLE_KEY=xxx
+CONVEX_URL=https://your-team.your-project.convex.cloud
 
 # Authentication
 CLERK_PUBLISHABLE_KEY=pk_test_xxx
@@ -706,3 +704,4 @@ import { uploadPestImage, imageService } from '../services/imageService';
 ---
 
 *Last updated: January 2024*
+

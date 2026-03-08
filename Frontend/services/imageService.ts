@@ -53,6 +53,15 @@ export interface ImageValidationError {
   message: string;
 }
 
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error('Failed to read image file'));
+    reader.readAsDataURL(file);
+  });
+}
+
 // =====================================================
 // Configuration
 // =====================================================
@@ -259,21 +268,21 @@ export async function uploadPestImage(
   }
 
   // Prepare additional data
-  const additionalData: Record<string, string> = {
-    farmId,
-  };
-  
-  if (options?.location) {
-    additionalData.latitude = String(options.location.latitude);
-    additionalData.longitude = String(options.location.longitude);
-  }
+  const additionalData: Record<string, string> = { farmId };
 
   // Upload image
   const formData = new FormData();
-  formData.append('image', imageToUpload);
+  formData.append('images', imageToUpload);
   Object.entries(additionalData).forEach(([key, value]) => {
     formData.append(key, value);
   });
+
+  if (options?.location) {
+    formData.append('location', JSON.stringify({
+      lat: options.location.latitude,
+      lng: options.location.longitude,
+    }));
+  }
 
   return api.upload<PestAnalysisResult>(`/pest-detection/upload/${farmId}`, formData, {
     onUploadProgress: (progressEvent) => {
@@ -348,6 +357,10 @@ export async function uploadProfileImage(
     throw new Error(validationError.message);
   }
 
+  if (onProgress) {
+    onProgress({ loaded: 0, total: 1, percentage: 0 });
+  }
+
   // Compress to smaller size for profile
   const compressedImage = await compressImage(file, {
     maxWidth: 500,
@@ -355,7 +368,22 @@ export async function uploadProfileImage(
     quality: 0.85,
   });
 
-  return uploadImage(compressedImage, '/users/profile/image', undefined, onProgress);
+  const imageUrl = await fileToDataUrl(compressedImage);
+  await api.put('/users/me', { profileImageUrl: imageUrl });
+
+  if (onProgress) {
+    onProgress({ loaded: 1, total: 1, percentage: 100 });
+  }
+
+  return {
+    url: imageUrl,
+    publicId: `profile-${Date.now()}`,
+    width: 0,
+    height: 0,
+    format: 'base64',
+    bytes: compressedImage.size,
+    resourceType: 'image',
+  };
 }
 
 // =====================================================
@@ -373,6 +401,10 @@ export async function uploadFarmImage(
     throw new Error(validationError.message);
   }
 
+  if (onProgress) {
+    onProgress({ loaded: 0, total: 1, percentage: 0 });
+  }
+
   // Compress for web
   const compressedImage = await compressImage(file, {
     maxWidth: 1920,
@@ -380,7 +412,22 @@ export async function uploadFarmImage(
     quality: 0.85,
   });
 
-  return uploadImage(compressedImage, `/farms/${farmId}/image`, undefined, onProgress);
+  const imageUrl = await fileToDataUrl(compressedImage);
+  await api.post(`/farms/${farmId}/image`, { imageUrl });
+
+  if (onProgress) {
+    onProgress({ loaded: 1, total: 1, percentage: 100 });
+  }
+
+  return {
+    url: imageUrl,
+    publicId: `farm-${farmId}-${Date.now()}`,
+    width: 0,
+    height: 0,
+    format: 'base64',
+    bytes: compressedImage.size,
+    resourceType: 'image',
+  };
 }
 
 // =====================================================

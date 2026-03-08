@@ -6,10 +6,8 @@ import {
   Search, ShieldAlert, Loader2, Camera, Check, Sparkles
 } from 'lucide-react';
 import { Language, translations } from '../utils/translations';
-import { GoogleGenAI } from "@google/genai";
-
-// Use environment variable for API Key
-const API_KEY = process.env.API_KEY || '';
+import { uploadPestImage } from '../services/imageService';
+import { useFarmStore } from '../store';
 
 interface UploadedImage {
   id: string;
@@ -38,6 +36,8 @@ export const PestControl: React.FC<PestControlProps> = ({ language = 'en' }) => 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [results, setResults] = useState<Record<string, AnalysisResult>>({});
+  const [analysisErrors, setAnalysisErrors] = useState<Record<string, string>>({});
+  const { selectedFarm, farms } = useFarmStore();
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const t = translations[language].pest;
@@ -86,20 +86,6 @@ export const PestControl: React.FC<PestControlProps> = ({ language = 'en' }) => 
     }
   };
 
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = () => {
-            const result = reader.result as string;
-            // Remove the Data URL prefix (e.g., "data:image/jpeg;base64,")
-            const base64 = result.split(',')[1];
-            resolve(base64);
-        };
-        reader.onerror = (error) => reject(error);
-    });
-  };
-
   const runAnalysis = async (id: string) => {
     if (results[id] || analyzing) return; 
     
@@ -109,80 +95,45 @@ export const PestControl: React.FC<PestControlProps> = ({ language = 'en' }) => 
     setAnalyzing(true);
     
     try {
-        if (!API_KEY) {
-            console.warn("API Key not configured, falling back to mock data");
-            throw new Error("API Key missing");
+        const farmId = selectedFarm?.id || farms[0]?.id;
+        if (!farmId) {
+          throw new Error('No farm selected for pest analysis.');
         }
 
-        const ai = new GoogleGenAI({ apiKey: API_KEY });
-        const base64Data = await fileToBase64(imageToAnalyze.file);
+        const response: any = await uploadPestImage(imageToAnalyze.file, farmId);
+        const payload = response?.data ?? response;
+        const analysis = payload?.analysis ?? payload?.result ?? {};
 
-        const prompt = `Analyze this image of a crop leaf (likely Maize/Corn) from a farm in Rwamagana, Rwanda. Identify any pests, diseases, or nutrient deficiencies.
-        
-        Return a JSON object with this exact structure:
-        {
-          "pest": "Common Name (and local Kinyarwanda name if known, e.g., 'Fall Armyworm (Nkongwa)') or 'Healthy'",
-          "scientific": "Scientific Name" or "N/A",
-          "confidence": number (0-100),
-          "severity": "Low" | "Moderate" | "High" | "Critical",
-          "type": "Insect" | "Disease" | "Deficiency" | "Healthy" | "Unknown",
-          "recommendation": "Provide actionable advice tailored for Rwandan farmers. Recommend treatments readily available in local agro-vet shops (e.g., Rocket, Match, Copper Oxychloride) or effective organic methods used in the region (e.g., Push-pull technology, Neem, Ash). Max 3 sentences.",
-          "affectedArea": "Estimated percentage string (e.g. '15-20%')",
-          "stage": "Larva" | "Adult" | "Early" | "Late" | "N/A"
-        }
-        
-        If the image is not a plant leaf, return "pest": "Unknown", "confidence": 0.`;
+        const rawConfidence = analysis.confidenceScore ?? analysis.confidence ?? analysis.result?.pest?.confidence ?? 0;
+        const confidence = rawConfidence > 1 ? Math.round(rawConfidence) : Math.round(rawConfidence * 100);
+        const recommendations: string[] = Array.isArray(analysis.recommendations)
+          ? analysis.recommendations
+          : [];
 
-        const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
-            contents: {
-                parts: [
-                    { inlineData: { mimeType: imageToAnalyze.file.type, data: base64Data } },
-                    { text: prompt }
-                ]
-            },
-            config: {
-                responseMimeType: "application/json"
-            }
+        const result: AnalysisResult = {
+          pest: analysis.detectedPest || analysis.pestType || analysis.result?.pest?.name || 'Unknown',
+          scientific: analysis.scientificName || analysis.result?.pest?.scientificName || 'N/A',
+          confidence: Number.isFinite(confidence) ? confidence : 0,
+          severity: analysis.severity || 'Low',
+          type: analysis.type || (analysis.pestDetected ? 'Insect' : 'Unknown'),
+          recommendation: recommendations[0] || 'No specific recommendation.',
+          affectedArea: analysis.affectedArea || `${analysis.affectedAreaPercentage ?? 0}%`,
+          stage: analysis.stage || 'N/A'
+        };
+
+        setResults(prev => ({...prev, [id]: result}));
+        setAnalysisErrors(prev => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
         });
-
-        const jsonText = response.text;
-        if (jsonText) {
-            // Robust cleanup of Markdown code blocks if present
-            const cleanJson = jsonText.replace(/```json|```/g, '').trim();
-            const analysis = JSON.parse(cleanJson);
-            
-            // Validate/fallback data structure
-            const result: AnalysisResult = {
-                pest: analysis.pest || 'Unknown',
-                scientific: analysis.scientific || '',
-                confidence: analysis.confidence || 0,
-                severity: analysis.severity || 'Low',
-                type: analysis.type || 'Unknown',
-                recommendation: analysis.recommendation || 'No specific recommendation.',
-                affectedArea: analysis.affectedArea || '0%',
-                stage: analysis.stage || 'N/A'
-            };
-
-            setResults(prev => ({...prev, [id]: result}));
-        } else {
-             throw new Error("No response from AI");
-        }
 
     } catch (error) {
         console.error("AI Analysis failed:", error);
-        // Fallback mock data in case of error (e.g. no API key or quota limit)
-         const mockResult: AnalysisResult = {
-            pest: 'Fall Armyworm (Nkongwa)',
-            scientific: 'Spodoptera frugiperda',
-            confidence: 94,
-            severity: 'Critical',
-            type: 'Larva',
-            recommendation: 'Apply "Rocket" pesticide immediately or use the Push-Pull method with Desmodium.',
-            affectedArea: '15-20%',
-            stage: 'Active Larval'
-          };
-          setResults(prev => ({...prev, [id]: mockResult}));
+        setAnalysisErrors(prev => ({
+          ...prev,
+          [id]: error instanceof Error ? error.message : 'Analysis failed. Please try again.',
+        }));
     } finally {
         setAnalyzing(false);
     }
@@ -195,6 +146,11 @@ export const PestControl: React.FC<PestControlProps> = ({ language = 'en' }) => 
     const next = {...results};
     delete next[id];
     setResults(next);
+    setAnalysisErrors(prev => {
+      const nextErrors = { ...prev };
+      delete nextErrors[id];
+      return nextErrors;
+    });
     if (id === activeId) setActiveId(newImages.length > 0 ? newImages[0].id : null);
   };
 
@@ -523,6 +479,11 @@ export const PestControl: React.FC<PestControlProps> = ({ language = 'en' }) => 
                                     <ScanLine size={48} className="text-[#0F5132] dark:text-emerald-400" />
                                 </div>
                                 <h3 className="text-3xl font-bold text-slate-900 dark:text-white">{t.ready}</h3>
+                                {activeId && analysisErrors[activeId] ? (
+                                    <p className="mt-3 mb-2 max-w-[320px] text-sm text-red-600 dark:text-red-400">
+                                      {analysisErrors[activeId]}
+                                    </p>
+                                ) : null}
                                 <p className="text-slate-500 dark:text-slate-400 max-w-[280px] mt-4 text-base leading-relaxed mb-10">
                                     Image uploaded successfully. Run AI detection to identify pests and get treatment plans.
                                 </p>

@@ -55,7 +55,11 @@ export const weatherService = {
    */
   getFarmingConditions: async (farmId: string): Promise<ApiResponse<FarmingConditions>> => {
     const response = await apiClient.get<ApiResponse<FarmingConditions>>(`/weather/farm/${farmId}/farming-conditions`);
-    return response.data;
+    const payload: any = response.data.data;
+    return {
+      ...response.data,
+      data: payload?.conditions || payload,
+    };
   },
 
   /**

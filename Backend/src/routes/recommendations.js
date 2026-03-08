@@ -93,6 +93,28 @@ router.get('/farm/:farmId/active',
   })
 );
 
+/**
+ * @route POST /api/v1/recommendations/farm/:farmId/generate
+ * @desc Generate recommendations for a single farm
+ * @access Owner, Admin, Expert
+ */
+router.post('/farm/:farmId/generate',
+  authenticate,
+  ...validateUUID('farmId'),
+  handleValidationErrors,
+  requireOwnership(getFarmUserId),
+  asyncHandler(async (req, res) => {
+    const { type } = req.body || {};
+
+    const result = await recommendationService.bulkGenerateRecommendations({
+      farmIds: [req.params.farmId],
+      type,
+    });
+
+    return successResponse(res, result, 'Recommendations generated successfully');
+  })
+);
+
 // =====================================================
 // UNSCOPED RECOMMENDATION ROUTES (admin/expert)
 // Must be defined BEFORE /:recommendationId param routes
@@ -121,7 +143,7 @@ router.get('/',
 
     const result = await db.recommendations.list(opts);
     const data = result.data || result;
-    const count = result.total || data.length;
+    const count = result.count ?? result.total ?? data.length;
 
     return paginatedResponse(
       res,
@@ -147,9 +169,10 @@ router.get('/active',
 
     let recommendations;
     if (farmId) {
-      recommendations = await db.recommendations.getByFarm(farmId, { status: ['pending', 'accepted'] });
+      recommendations = await db.recommendations.getByFarm(farmId, { statuses: ['pending', 'accepted'] });
     } else {
-      recommendations = await db.recommendations.list({ status: ['pending', 'accepted'] });
+      const result = await db.recommendations.list({ statuses: ['pending', 'accepted'], page: 1, limit: 200 });
+      recommendations = result.data || result;
     }
 
     return successResponse(res, recommendations, 'Active recommendations retrieved successfully');
@@ -182,17 +205,19 @@ router.get('/history',
   handleValidationErrors,
   asyncHandler(async (req, res) => {
     const { farmId, page, limit, startDate, endDate } = req.query;
+    const startTs = startDate ? new Date(startDate).getTime() : undefined;
+    const endTs = endDate ? new Date(endDate).getTime() : undefined;
 
     const opts = {
       page: parseInt(page) || 1,
       limit: parseInt(limit) || 20
     };
 
-    if (startDate) {
-      opts.since = new Date(startDate).toISOString();
+    if (Number.isFinite(startTs)) {
+      opts.since = startTs;
     }
-    if (endDate) {
-      opts.until = endDate;
+    if (Number.isFinite(endTs)) {
+      opts.until = endTs;
     }
 
     let data;
@@ -203,7 +228,7 @@ router.get('/history',
     }
 
     const result = Array.isArray(data) ? data : (data.data || []);
-    const count = data.total || result.length;
+    const count = data.count ?? data.total ?? result.length;
 
     return paginatedResponse(
       res,
@@ -215,6 +240,48 @@ router.get('/history',
     );
   })
 );
+
+/**
+ * @route GET /api/v1/recommendations/pending
+ * @desc Get all pending recommendations
+ * @access Admin, Expert
+ */
+router.get('/pending',
+  authenticate,
+  requireMinimumRole(ROLES.EXPERT),
+  validatePagination,
+  handleValidationErrors,
+  asyncHandler(async (req, res) => {
+    const { page, limit, priority, type, district } = req.query;
+
+    const opts = {
+      page: parseInt(page) || 1,
+      limit: parseInt(limit) || 20,
+      status: 'pending',
+      priority: priority || undefined,
+      type: type || undefined,
+      district: district || undefined
+    };
+
+    const result = await db.recommendations.list(opts);
+    const data = result.data || result;
+    const count = result.count ?? result.total ?? data.length;
+
+    return paginatedResponse(
+      res,
+      data,
+      parseInt(page) || 1,
+      parseInt(limit) || 20,
+      count,
+      'Pending recommendations retrieved successfully'
+    );
+  })
+);
+
+// =====================================================
+// PARAMETERIZED RECOMMENDATION ROUTES
+// Must be defined AFTER all named routes above
+// =====================================================
 
 /**
  * @route GET /api/v1/recommendations/:recommendationId
@@ -246,7 +313,17 @@ router.post('/:recommendationId/respond',
   handleValidationErrors,
   requireOwnership(getRecommendationUserId),
   asyncHandler(async (req, res) => {
-    const { action, reason, deferUntil } = req.body;
+    const action =
+      req.body?.action
+      || (req.body?.status === 'accepted'
+        ? 'accept'
+        : req.body?.status === 'rejected'
+          ? 'reject'
+          : req.body?.status === 'deferred'
+            ? 'defer'
+            : undefined);
+    const reason = req.body?.reason || req.body?.responseNotes;
+    const deferUntil = req.body?.deferUntil || req.body?.deferredUntil;
 
     const result = await recommendationService.respondToRecommendation(
       req.params.recommendationId,
@@ -291,42 +368,6 @@ router.post('/:recommendationId/complete',
 // =====================================================
 // EXPERT/ADMIN ROUTES
 // =====================================================
-
-/**
- * @route GET /api/v1/recommendations/pending
- * @desc Get all pending recommendations
- * @access Admin, Expert
- */
-router.get('/pending',
-  authenticate,
-  requireMinimumRole(ROLES.EXPERT),
-  validatePagination,
-  handleValidationErrors,
-  asyncHandler(async (req, res) => {
-    const { page, limit, priority, type, district } = req.query;
-
-    const opts = {
-      page: parseInt(page) || 1,
-      limit: parseInt(limit) || 20,
-      priority: priority || undefined,
-      type: type || undefined,
-      district: district || undefined
-    };
-
-    const result = await db.recommendations.getPending(opts);
-    const data = result.data || result;
-    const count = result.total || data.length;
-
-    return paginatedResponse(
-      res,
-      data,
-      parseInt(page) || 1,
-      parseInt(limit) || 20,
-      count,
-      'Pending recommendations retrieved successfully'
-    );
-  })
-);
 
 /**
  * @route GET /api/v1/recommendations/stats
@@ -384,11 +425,12 @@ router.post('/bulk-generate',
   authenticate,
   authorize(ROLES.ADMIN),
   asyncHandler(async (req, res) => {
-    const { district, type } = req.body;
+    const { district, type, farmIds } = req.body;
 
     const result = await recommendationService.bulkGenerateRecommendations({
       district,
-      type
+      type,
+      farmIds
     });
 
     return successResponse(res, result, `Bulk recommendations generated: ${result.generated} created`);

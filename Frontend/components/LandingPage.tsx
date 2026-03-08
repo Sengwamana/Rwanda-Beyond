@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import { UserRole } from '../types';
 import { Language, translations } from '../utils/translations';
+import { contentService } from '../services/content';
+import { handleApiError } from '../services/api';
 
 interface LandingPageProps {
   onLogin: (role: UserRole) => void;
@@ -29,16 +31,21 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onNavigate, l
   const t = translations[language].landing;
   const [email, setEmail] = useState('');
   const [subscribed, setSubscribed] = useState(false);
+  const [subscribeError, setSubscribeError] = useState<string | null>(null);
 
-  const handleSubscribe = (e: React.FormEvent) => {
+  const handleSubscribe = async (e: React.FormEvent) => {
       e.preventDefault();
-      if (!email) return;
-      // Simulate API call
-      setTimeout(() => {
+      const normalizedEmail = email.trim().toLowerCase();
+      if (!normalizedEmail) return;
+      setSubscribeError(null);
+      try {
+          await contentService.subscribeNewsletter(normalizedEmail);
           setSubscribed(true);
           setEmail('');
           setTimeout(() => setSubscribed(false), 5000); // Reset after 5s
-      }, 500);
+      } catch (error) {
+          setSubscribeError(handleApiError(error));
+      }
   };
 
   return (
@@ -64,10 +71,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onNavigate, l
             
             <div className="flex justify-center lg:justify-start">
               <button 
-                onClick={() => onNavigate('signup')}
+                onClick={() => onNavigate('login')}
                 className="px-8 py-4 bg-[#0F5132] text-white rounded-full font-bold hover:bg-[#0a3622] transition-all shadow-lg hover:shadow-xl hover:-translate-y-1 flex items-center gap-2 group"
               >
-                {t.download} <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                {t.signIn} <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
               </button>
             </div>
           </div>
@@ -486,6 +493,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onNavigate, l
                       {t.subscribe}
                   </button>
               </form>
+              {subscribeError && (
+                  <p className="text-red-300 mt-4 text-sm font-medium">{subscribeError}</p>
+              )}
           </div>
       </section>
     </div>

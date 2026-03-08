@@ -19,6 +19,82 @@ const router = Router();
 // All admin routes require admin role
 router.use(authenticate, authorize(ROLES.ADMIN));
 
+const MAX_REPORT_ROWS = 5000;
+const REPORT_TYPES = new Set([
+  'summary',
+  'users',
+  'farms',
+  'sensors',
+  'recommendations',
+  'pest-detections',
+]);
+
+const toArrayPayload = (value) => {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.data)) return value.data;
+  return [];
+};
+
+const toTimestamp = (value, fallback) => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+};
+
+const extractTimestamp = (row) => {
+  if (!row || typeof row !== 'object') return undefined;
+  const candidateKeys = ['created_at', 'updated_at', 'reading_timestamp', 'executed_at', 'responded_at'];
+  for (const key of candidateKeys) {
+    const raw = row[key];
+    if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+    if (typeof raw === 'string') {
+      const parsed = Date.parse(raw);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return undefined;
+};
+
+const filterRowsByDate = (rows, startMs, endMs) =>
+  rows.filter((row) => {
+    const ts = extractTimestamp(row);
+    if (ts === undefined) return true;
+    return ts >= startMs && ts <= endMs;
+  });
+
+const countByField = (rows, field) =>
+  rows.reduce((acc, row) => {
+    const key = row?.[field] ?? 'unknown';
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+
+const toCsv = (rows) => {
+  if (!rows.length) {
+    return 'message\n"No records found for selected filters"\n';
+  }
+
+  const keys = Array.from(new Set(rows.flatMap((row) => Object.keys(row || {}))));
+  const escape = (value) => {
+    const normalized =
+      value === null || value === undefined
+        ? ''
+        : typeof value === 'object'
+          ? JSON.stringify(value)
+          : String(value);
+    return `"${normalized.replace(/"/g, '""')}"`;
+  };
+
+  const header = keys.join(',');
+  const body = rows
+    .map((row) => keys.map((key) => escape(row?.[key])).join(','))
+    .join('\n');
+  return `${header}\n${body}\n`;
+};
+
 // =====================================================
 // SYSTEM CONFIGURATION
 // =====================================================
@@ -34,12 +110,15 @@ router.get('/config',
 
     // Group by category
     const config = data.reduce((acc, item) => {
-      const category = item.key.split('.')[0];
+      const key = item.config_key;
+      if (!key) return acc;
+      const category = key.split('.')[0];
       if (!acc[category]) acc[category] = {};
-      acc[category][item.key] = {
-        value: item.value,
+      acc[category][key] = {
+        value: item.config_value,
         description: item.description,
-        updatedAt: item.updated_at
+        updatedAt: item.updated_at,
+        isActive: item.is_active,
       };
       return acc;
     }, {});
@@ -59,10 +138,9 @@ router.put('/config/:key',
     const { value, description } = req.body;
 
     const data = await db.systemConfig.upsert({
-      key,
-      value,
+      config_key: key,
+      config_value: value,
       description,
-      updated_at: new Date().toISOString(),
       updated_by: req.user._id
     });
 
@@ -161,6 +239,29 @@ router.post('/users/:userId/deactivate',
   })
 );
 
+
+/**
+ * @route POST /api/v1/admin/users/:userId/reactivate
+ * @desc Reactivate a user
+ * @access Admin only
+ */
+router.post('/users/:userId/reactivate',
+  asyncHandler(async (req, res) => {
+    const { userId } = req.params;
+
+    const user = await db.users.update(userId, {
+      status: 'active',
+      deactivation_reason: null,
+      updated_at: new Date().toISOString()
+    });
+
+    await logAuditEvent(req.user._id, 'USER_REACTIVATED', {
+      targetUserId: userId
+    });
+
+    return successResponse(res, user, 'User reactivated successfully');
+  })
+);
 // =====================================================
 // IOT DEVICE MANAGEMENT
 // =====================================================
@@ -351,7 +452,7 @@ router.get('/metrics',
     }
 
     const startTime = new Date(Date.now() - hours * 60 * 60 * 1000);
-    const since = startTime.toISOString();
+    const since = startTime.getTime();
 
     const [sensorCount, recommendationCount, messageCount, errorCount] = await Promise.all([
       db.sensorData.countSince(since),
@@ -507,10 +608,10 @@ router.get('/overview',
       db.farms.listActive(),
       db.sensors.listAllStats(),
       db.recommendations.getStats({
-        since: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+        since: Date.now() - 30 * 24 * 60 * 60 * 1000
       }),
       db.pestDetections.getStats({
-        since: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+        since: Date.now() - 30 * 24 * 60 * 60 * 1000
       })
     ]);
 
@@ -582,7 +683,7 @@ router.get('/analytics',
       default: days = 30;
     }
 
-    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    const since = Date.now() - days * 24 * 60 * 60 * 1000;
 
     const [sensorCount, recommendationCount, messageCount, errorCount] = await Promise.all([
       db.sensorData.countSince(since),
@@ -611,7 +712,7 @@ router.get('/analytics',
  */
 router.get('/alerts/statistics',
   asyncHandler(async (req, res) => {
-    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const since = Date.now() - 30 * 24 * 60 * 60 * 1000;
 
     const [pestStats, recommendationStats] = await Promise.all([
       db.pestDetections.getStats({ since }),
@@ -646,29 +747,145 @@ router.get('/alerts/statistics',
 
 /**
  * @route POST /api/v1/admin/reports/generate
- * @desc Generate a report (placeholder)
+ * @desc Generate a dynamic report
  * @access Admin only
  */
 router.post('/reports/generate',
   asyncHandler(async (req, res) => {
-    const { type = 'summary', startDate, endDate, format = 'json' } = req.body;
+    const { type = 'summary', startDate, endDate, format = 'json' } = req.body || {};
+    const reportType = String(type).toLowerCase();
+    const reportFormat = String(format).toLowerCase();
 
-    await logAuditEvent(req.user._id, 'REPORT_GENERATED', {
-      type,
-      startDate,
-      endDate,
-      format
+    if (!REPORT_TYPES.has(reportType)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid report type',
+        code: 'VALIDATION_ERROR',
+      });
+    }
+
+    if (!['json', 'csv'].includes(reportFormat)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid report format. Use json or csv',
+        code: 'VALIDATION_ERROR',
+      });
+    }
+
+    const now = Date.now();
+    const startMs = toTimestamp(startDate, now - 30 * 24 * 60 * 60 * 1000);
+    const endMs = toTimestamp(endDate, now);
+
+    if (startMs > endMs) {
+      return res.status(400).json({
+        success: false,
+        message: 'startDate must be before endDate',
+        code: 'VALIDATION_ERROR',
+      });
+    }
+
+    let rows = [];
+    let summary = {};
+
+    if (reportType === 'summary') {
+      const [users, farms, sensors, recommendations, pestDetections] = await Promise.all([
+        db.users.listAll(),
+        db.farms.list({ page: 1, limit: MAX_REPORT_ROWS }),
+        db.sensors.listAllStats(),
+        db.recommendations.list({ page: 1, limit: MAX_REPORT_ROWS }),
+        db.pestDetections.getStats({ since: startMs, until: endMs }),
+      ]);
+
+      const usersRows = filterRowsByDate(toArrayPayload(users), startMs, endMs);
+      const farmsRows = filterRowsByDate(toArrayPayload(farms), startMs, endMs);
+      const sensorsRows = filterRowsByDate(toArrayPayload(sensors), startMs, endMs);
+      const recommendationRows = filterRowsByDate(toArrayPayload(recommendations), startMs, endMs);
+      const pestRows = filterRowsByDate(toArrayPayload(pestDetections), startMs, endMs);
+
+      summary = {
+        users: {
+          total: usersRows.length,
+          byRole: countByField(usersRows, 'role'),
+        },
+        farms: {
+          total: farmsRows.length,
+          byDistrict: countByField(farmsRows, 'district_id'),
+          byActiveStatus: countByField(farmsRows, 'is_active'),
+        },
+        sensors: {
+          total: sensorsRows.length,
+          byType: countByField(sensorsRows, 'sensor_type'),
+          byStatus: countByField(sensorsRows, 'status'),
+        },
+        recommendations: {
+          total: recommendationRows.length,
+          byStatus: countByField(recommendationRows, 'status'),
+          byPriority: countByField(recommendationRows, 'priority'),
+        },
+        pestDetections: {
+          total: pestRows.length,
+          bySeverity: countByField(pestRows, 'severity'),
+          withDetectedPest: pestRows.filter((row) => row?.pest_detected).length,
+        },
+      };
+
+      rows = [{
+        users_total: summary.users.total,
+        farms_total: summary.farms.total,
+        sensors_total: summary.sensors.total,
+        recommendations_total: summary.recommendations.total,
+        pest_detections_total: summary.pestDetections.total,
+      }];
+    } else if (reportType === 'users') {
+      rows = filterRowsByDate(toArrayPayload(await db.users.listAll()), startMs, endMs);
+    } else if (reportType === 'farms') {
+      rows = filterRowsByDate(toArrayPayload(await db.farms.list({ page: 1, limit: MAX_REPORT_ROWS })), startMs, endMs);
+    } else if (reportType === 'sensors') {
+      rows = filterRowsByDate(toArrayPayload(await db.sensors.listAllStats()), startMs, endMs);
+    } else if (reportType === 'recommendations') {
+      rows = filterRowsByDate(
+        toArrayPayload(await db.recommendations.list({ page: 1, limit: MAX_REPORT_ROWS })),
+        startMs,
+        endMs
+      );
+    } else if (reportType === 'pest-detections') {
+      rows = filterRowsByDate(
+        toArrayPayload(await db.pestDetections.getStats({ since: startMs, until: endMs })),
+        startMs,
+        endMs
+      );
+    }
+
+    await logAuditEvent(req.user.id, 'REPORT_GENERATED', {
+      entityType: 'report',
+      type: reportType,
+      format: reportFormat,
+      startDate: new Date(startMs).toISOString(),
+      endDate: new Date(endMs).toISOString(),
+      recordCount: rows.length,
     });
 
-    return successResponse(res, {
-      reportId: `report_${Date.now()}`,
-      type,
-      startDate: startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-      endDate: endDate || new Date().toISOString(),
-      format,
-      status: 'generated',
-      message: 'Report generation placeholder - full implementation pending'
-    }, 'Report generated successfully');
+    const reportId = `report_${Date.now()}`;
+    const baseReport = {
+      reportId,
+      type: reportType,
+      format: reportFormat,
+      generatedAt: new Date().toISOString(),
+      startDate: new Date(startMs).toISOString(),
+      endDate: new Date(endMs).toISOString(),
+      totalRecords: rows.length,
+      summary,
+      data: rows,
+    };
+
+    if (reportFormat === 'csv') {
+      const csv = toCsv(rows);
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${reportId}.csv"`);
+      return res.status(200).send(csv);
+    }
+
+    return successResponse(res, baseReport, 'Report generated successfully');
   })
 );
 
@@ -714,11 +931,15 @@ router.post('/devices/token',
 async function logAuditEvent(userId, action, details) {
   try {
     await db.auditLogs.create({
-      user_id: userId,
+      user_id: userId || undefined,
       action,
-      details,
-      ip_address: null, // Would be extracted from request in production
-      created_at: new Date().toISOString()
+      entity_type: details?.entityType || 'system',
+      entity_id: details?.entityId ? String(details.entityId) : undefined,
+      old_values: details?.oldValues,
+      new_values: details && typeof details === 'object' ? details : undefined,
+      ip_address: null,
+      user_agent: null,
+      created_at: Date.now(),
     });
   } catch (error) {
     logger.error('Failed to log audit event', { action, error: error.message });

@@ -55,13 +55,28 @@ export function LoadingOverlay({ isLoading, children, className }: LoadingOverla
 interface LoadingStateProps {
   text?: string;
   size?: 'sm' | 'md' | 'lg' | 'xl';
+  className?: string;
 }
 
-export function LoadingState({ text = 'Loading...', size = 'lg' }: LoadingStateProps) {
+export function LoadingState({ text = 'Loading...', size = 'lg', className }: LoadingStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center py-12 gap-4">
+    <div className={cn('flex flex-col items-center justify-center py-12 gap-4', className)}>
       <Spinner size={size} />
       <p className="text-muted-foreground text-sm">{text}</p>
+    </div>
+  );
+}
+
+interface FullPageLoadingProps {
+  text?: string;
+  size?: 'sm' | 'md' | 'lg' | 'xl';
+  className?: string;
+}
+
+export function FullPageLoading({ text = 'Loading...', size = 'lg', className }: FullPageLoadingProps) {
+  return (
+    <div className={cn('min-h-screen flex items-center justify-center bg-background', className)}>
+      <LoadingState text={text} size={size} className="py-0" />
     </div>
   );
 }

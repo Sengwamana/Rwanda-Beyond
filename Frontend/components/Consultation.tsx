@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Calendar, User, Mail, MessageSquare, MapPin, ArrowRight, Loader2, CheckCircle2 } from 'lucide-react';
 import { Language, translations } from '../utils/translations';
+import { contentService } from '../services/content';
+import { handleApiError } from '../services/api';
 
 interface ConsultationProps {
     language?: Language;
@@ -8,25 +10,43 @@ interface ConsultationProps {
 
 export const Consultation: React.FC<ConsultationProps> = ({ language = 'en' }) => {
     const t = translations[language].consultation;
+    const defaultTopic = t.topics?.[0] ?? 'Soil Health';
     const [isLoading, setIsLoading] = useState(false);
     const [isSuccess, setIsSuccess] = useState(false);
+    const [error, setError] = useState<string | null>(null);
     const [formData, setFormData] = useState({
         name: '',
         size: '',
-        topic: 'Soil Health',
+        topic: defaultTopic,
         message: ''
     });
 
-    const handleSubmit = (e: React.FormEvent) => {
+    useEffect(() => {
+        if (!t.topics.includes(formData.topic)) {
+            setFormData((prev) => ({ ...prev, topic: defaultTopic }));
+        }
+    }, [defaultTopic, formData.topic, t.topics]);
+
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsLoading(true);
-        // Simulate API call
-        setTimeout(() => {
+        setError(null);
+        try {
+            await contentService.submitConsultation({
+                name: formData.name.trim(),
+                size: formData.size.trim() || undefined,
+                topic: formData.topic.trim(),
+                message: formData.message.trim(),
+                language,
+            });
             setIsLoading(false);
             setIsSuccess(true);
-            setFormData({ name: '', size: '', topic: 'Soil Health', message: '' });
+            setFormData({ name: '', size: '', topic: defaultTopic, message: '' });
             setTimeout(() => setIsSuccess(false), 5000);
-        }, 1500);
+        } catch (submitError) {
+            setIsLoading(false);
+            setError(handleApiError(submitError));
+        }
     };
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -106,6 +126,11 @@ export const Consultation: React.FC<ConsultationProps> = ({ language = 'en' }) =
                         )}
 
                         <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-8">{t.formTitle}</h3>
+                        {error && (
+                            <div className="mb-6 rounded-2xl bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 px-4 py-3 text-sm font-medium">
+                                {error}
+                            </div>
+                        )}
                         <form onSubmit={handleSubmit} className="space-y-6">
                             <div className="space-y-2">
                                 <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider ml-1">{t.name}</label>

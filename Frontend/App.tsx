@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { ClerkProvider, SignIn, SignUp as ClerkSignUp, SignedIn, SignedOut, useAuth, useUser } from '@clerk/clerk-react';
+import { ClerkProvider, RedirectToSignIn, SignedIn, SignedOut, SignUp as ClerkSignUp, useAuth, useUser } from '@clerk/clerk-react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { Toaster, toast } from 'react-hot-toast';
 
@@ -20,34 +20,46 @@ import { Careers } from './components/Careers';
 import { FAQ } from './components/FAQ';
 import { Footer } from './components/Footer';
 import { Navbar } from './components/Navbar';
+import { FullPageLoading } from './components/ui/Spinner';
 
 // Store & Hooks
 import { useAppStore, useAuthStore, useNotificationStore } from './store';
-import { setAuthToken } from './services/api';
+import { setAuthToken, configureApiAuth } from './services/api';
 import { authService } from './services/auth';
 import { configureAuth } from './services/apiClient';
 import { queryClient } from './config/queryClient';
 import { wsManager as webSocketManager } from './services/websocket';
-import { UserRole } from './types';
+import { Language, UserRole } from './types';
 
 // Get Clerk publishable key from environment
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
+function resolvePreferredRole(clerkUser: any, fallbackRole?: UserRole | null): UserRole {
+  const metadataRole = clerkUser?.publicMetadata?.role ?? clerkUser?.unsafeMetadata?.role;
+  const sessionRole = authService.getPreferredRole();
+  const candidate = fallbackRole ?? metadataRole ?? sessionRole ?? 'farmer';
+  return candidate === 'admin' || candidate === 'expert' || candidate === 'farmer'
+    ? candidate
+    : 'farmer';
+}
+
 // Protected Route Component
 function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode; allowedRoles?: UserRole[] }) {
   const { isSignedIn, isLoaded } = useAuth();
-  const { user } = useAuthStore();
+  const { user, isLoading } = useAuthStore();
 
-  if (!isLoaded) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary border-t-transparent"></div>
-      </div>
-    );
+  if (!isLoaded || isLoading) {
+    return <FullPageLoading text="Loading dashboard..." />;
   }
 
-  if (!isSignedIn) {
-    return <Navigate to="/login" replace />;
+  if (!isSignedIn || !user) {
+    if (!isSignedIn) {
+      return <Navigate to="/login" replace />;
+    }
+
+    return (
+      <FullPageLoading text="Preparing your account..." />
+    );
   }
 
   if (allowedRoles && user && !allowedRoles.includes(user.role)) {
@@ -63,9 +75,29 @@ function AuthSync() {
   const { user: clerkUser, isLoaded } = useUser();
   const { setUser, setLoading, setError, setToken } = useAuthStore();
 
+  const buildFallbackUser = (clerk: any, role: UserRole) => ({
+    id: clerk.id,
+    clerkId: clerk.id,
+    email: clerk.primaryEmailAddress?.emailAddress || undefined,
+    phoneNumber: clerk.primaryPhoneNumber?.phoneNumber || undefined,
+    firstName: clerk.firstName || undefined,
+    lastName: clerk.lastName || undefined,
+    role,
+    preferredLanguage: 'en' as const,
+    profileImageUrl: clerk.imageUrl || undefined,
+    isActive: true,
+    isVerified: clerk.primaryEmailAddress?.verification?.status === 'verified',
+    createdAt: clerk.createdAt?.toISOString() || new Date().toISOString(),
+    updatedAt: clerk.updatedAt?.toISOString() || new Date().toISOString(),
+  });
+
   useEffect(() => {
     // Configure the API client with Clerk's getToken function
     configureAuth(getToken, getToken);
+    configureApiAuth(
+      async () => await getToken(),
+      async () => await getToken({ skipCache: true })
+    );
   }, [getToken]);
 
   useEffect(() => {
@@ -73,40 +105,55 @@ function AuthSync() {
       if (!isLoaded) return;
 
       if (isSignedIn && clerkUser) {
+        let token: string | null = null;
+
         try {
           setLoading(true);
           
           // Get Clerk session token
-          const token = await getToken();
-          if (token) {
-            setAuthToken(token);
-            setToken(token);
-            
-            // Connect WebSocket with auth token
-            webSocketManager.connect(token);
+          for (let attempt = 0; attempt < 3 && !token; attempt += 1) {
+            token = await getToken();
+            if (!token) {
+              await new Promise((resolve) => setTimeout(resolve, 200));
+            }
           }
+          if (!token) {
+            throw new Error('No Clerk token available');
+          }
+          setAuthToken(token);
+          setToken(token);
 
           // Sync user with backend
           const response = await authService.syncUser();
-          setUser(response.data);
+          const syncedUser = response.data;
+          const preferredRole = resolvePreferredRole(clerkUser, syncedUser?.role);
+          const mergedUser = { ...syncedUser, role: preferredRole };
+          setUser(mergedUser);
+          setError(null);
+          authService.clearPreferredRole();
+
+          webSocketManager.connect(token, clerkUser.id, mergedUser?.role || 'farmer');
         } catch (error) {
           console.error('Failed to sync user:', error);
-          // If sync fails, create a basic user object from Clerk data
-          setUser({
-            id: clerkUser.id,
-            clerkId: clerkUser.id,
-            email: clerkUser.primaryEmailAddress?.emailAddress,
-            phoneNumber: clerkUser.primaryPhoneNumber?.phoneNumber,
-            firstName: clerkUser.firstName || undefined,
-            lastName: clerkUser.lastName || undefined,
-            role: 'farmer', // Default role
-            preferredLanguage: 'en',
-            profileImageUrl: clerkUser.imageUrl,
-            isActive: true,
-            isVerified: clerkUser.primaryEmailAddress?.verification?.status === 'verified',
-            createdAt: clerkUser.createdAt?.toISOString() || new Date().toISOString(),
-            updatedAt: clerkUser.updatedAt?.toISOString() || new Date().toISOString(),
-          });
+          const status = (error as any)?.response?.status;
+          const isTokenError = (error as Error)?.message?.includes('No Clerk token available');
+
+          const fallbackRole = resolvePreferredRole(clerkUser);
+          setUser(buildFallbackUser(clerkUser, fallbackRole));
+
+          if (isTokenError) {
+            setError('Signed in, but auth token is not ready. Dashboard is available in limited mode.');
+          } else if (status === 401 || status === 403) {
+            setError('Backend auth rejected the session token. Dashboard is available in limited mode.');
+          } else if (status === 503) {
+            setError('Backend database is unavailable. Start Convex or connect the backend to a live Convex deployment.');
+          } else {
+            setError('Connected with limited backend data. Some dashboard features may be unavailable.');
+          }
+
+          if (token) {
+            webSocketManager.connect(token, clerkUser.id, fallbackRole);
+          }
         }
       } else {
         setUser(null);
@@ -163,8 +210,53 @@ function ThemeProvider({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function AuthenticatedDashboard({
+  userRole,
+  language,
+  setLanguage,
+  theme,
+  toggleTheme,
+}: {
+  userRole: UserRole;
+  language: Language;
+  setLanguage: (language: Language) => void;
+  theme: 'light' | 'dark';
+  toggleTheme: () => void;
+}) {
+  const navigate = useNavigate();
+  const { signOut } = useAuth();
+  const { setUser, setToken } = useAuthStore();
+
+  const handleLogout = async () => {
+    authService.clearPreferredRole();
+
+    try {
+      await signOut();
+    } catch (error) {
+      console.error('Failed to sign out from Clerk:', error);
+    } finally {
+      setUser(null);
+      setToken(null);
+      setAuthToken(null);
+      webSocketManager.disconnect();
+      navigate('/', { replace: true });
+    }
+  };
+
+  return (
+    <Dashboard
+      userRole={userRole}
+      onLogout={handleLogout}
+      language={language}
+      setLanguage={setLanguage}
+      theme={theme}
+      toggleTheme={toggleTheme}
+    />
+  );
+}
+
 // Main App Routes
-function AppRoutes() {
+function AppRoutes({ authEnabled }: { authEnabled: boolean }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { language, theme, toggleTheme, setLanguage } = useAppStore();
@@ -190,12 +282,8 @@ function AppRoutes() {
     navigate(routes[page] || '/');
   };
 
-  const handleLogin = (role: UserRole) => {
-    navigate('/dashboard');
-  };
-
-  const handleLogout = () => {
-    navigate('/');
+  const handleLogin = (_role: UserRole) => {
+    navigate(authEnabled ? '/login' : '/');
   };
 
   // Determine if navbar/footer should show
@@ -233,59 +321,98 @@ function AppRoutes() {
           <Route path="/careers" element={<Careers language={language} />} />
           <Route path="/faq" element={<FAQ language={language} />} />
 
-          {/* Auth Routes - Use custom components that wrap Clerk */}
-          <Route path="/login" element={
-            <SignedOut>
-              <Login onLogin={handleLogin} onNavigate={handleNavigate} language={language} />
-            </SignedOut>
-          } />
-          <Route path="/signup" element={
-            <SignedOut>
-              <SignUp onLogin={handleLogin} onNavigate={handleNavigate} language={language} />
-            </SignedOut>
-          } />
-
-          {/* Clerk's built-in sign-in/up pages (fallback) */}
-          <Route path="/sign-in/*" element={
-            <SignedOut>
-              <div className="min-h-screen flex items-center justify-center bg-background">
-                <SignIn routing="path" path="/sign-in" afterSignInUrl="/dashboard" />
-              </div>
-            </SignedOut>
-          } />
-          <Route path="/sign-up/*" element={
-            <SignedOut>
-              <div className="min-h-screen flex items-center justify-center bg-background">
-                <ClerkSignUp routing="path" path="/sign-up" afterSignUpUrl="/dashboard" />
-              </div>
-            </SignedOut>
-          } />
-
-          {/* Protected Routes */}
-          <Route path="/dashboard/*" element={
-            <ProtectedRoute>
-              <Dashboard 
-                userRole={user?.role || 'farmer'} 
-                onLogout={handleLogout} 
-                language={language} 
-                setLanguage={setLanguage}
-                theme={theme}
-                toggleTheme={toggleTheme}
+          {authEnabled ? (
+            <>
+              {/* Auth Routes - Use custom components that wrap Clerk */}
+              <Route
+                path="/login"
+                element={
+                  <>
+                    <SignedIn>
+                      {user ? (
+                        <Navigate to="/dashboard" replace />
+                      ) : (
+                        <FullPageLoading text="Preparing your account..." />
+                      )}
+                    </SignedIn>
+                    <SignedOut>
+                      <Login onNavigate={handleNavigate} language={language} />
+                    </SignedOut>
+                  </>
+                }
               />
-            </ProtectedRoute>
-          } />
+              <Route
+                path="/signup"
+                element={
+                  <>
+                    <SignedIn>
+                      {user ? (
+                        <Navigate to="/dashboard" replace />
+                      ) : (
+                        <FullPageLoading text="Preparing your account..." />
+                      )}
+                    </SignedIn>
+                    <SignedOut>
+                      <SignUp onNavigate={handleNavigate} language={language} />
+                    </SignedOut>
+                  </>
+                }
+              />
 
-          {/* Redirect for signed in users trying to access auth pages */}
-          <Route path="/login" element={
-            <SignedIn>
-              <Navigate to="/dashboard" replace />
-            </SignedIn>
-          } />
-          <Route path="/signup" element={
-            <SignedIn>
-              <Navigate to="/dashboard" replace />
-            </SignedIn>
-          } />
+              <Route
+                path="/sign-in/*"
+                element={
+                  <>
+                    <SignedIn>
+                      <Navigate to="/dashboard" replace />
+                    </SignedIn>
+                    <SignedOut>
+                      <RedirectToSignIn />
+                    </SignedOut>
+                  </>
+                }
+              />
+              <Route
+                path="/sign-up/*"
+                element={
+                  <>
+                    <SignedIn>
+                      <Navigate to="/dashboard" replace />
+                    </SignedIn>
+                    <SignedOut>
+                      <ClerkSignUp
+                        routing="path"
+                        path="/sign-up"
+                        fallbackRedirectUrl="/dashboard"
+                        signInUrl="/sign-in"
+                      />
+                    </SignedOut>
+                  </>
+                }
+              />
+
+              {/* Protected Routes */}
+              <Route path="/dashboard/*" element={
+                <ProtectedRoute>
+                  <AuthenticatedDashboard
+                    userRole={user?.role || 'farmer'}
+                    language={language}
+                    setLanguage={setLanguage}
+                    theme={theme}
+                    toggleTheme={toggleTheme}
+                  />
+                </ProtectedRoute>
+              } />
+            </>
+          ) : (
+            <>
+              <Route path="/login" element={<Navigate to="/" replace />} />
+              <Route path="/signup" element={<Navigate to="/" replace />} />
+              <Route path="/sign-in/*" element={<Navigate to="/" replace />} />
+              <Route path="/sign-up/*" element={<Navigate to="/" replace />} />
+              <Route path="/dashboard/*" element={<Navigate to="/" replace />} />
+            </>
+          )}
 
           {/* Catch all - redirect to home */}
           <Route path="*" element={<Navigate to="/" replace />} />
@@ -310,7 +437,8 @@ function App() {
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
           <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-            <AppRoutes />
+            <NotificationHandler />
+            <AppRoutes authEnabled={false} />
           </Router>
           <Toaster position="top-right" />
         </ThemeProvider>
@@ -325,7 +453,7 @@ function App() {
           <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
             <AuthSync />
             <NotificationHandler />
-            <AppRoutes />
+            <AppRoutes authEnabled={true} />
           </Router>
           <Toaster position="top-right" />
         </ThemeProvider>

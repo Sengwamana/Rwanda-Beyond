@@ -76,6 +76,7 @@ export const db = {
     listAllStats: () => client.query(api.sensors.listAllStats),
     create: (data) => client.mutation(api.sensors.create, data),
     update: (id, updates) => client.mutation(api.sensors.update, { id, updates }),
+    remove: (id) => client.mutation(api.sensors.remove, { id }),
   },
 
   // ============ SENSOR DATA ============
@@ -127,11 +128,13 @@ export const db = {
     getHistory: (farmId, since) => client.query(api.fertilizationSchedules.getHistory, { farmId, since }),
     create: (data) => client.mutation(api.fertilizationSchedules.create, { data }),
     update: (id, updates) => client.mutation(api.fertilizationSchedules.update, { id, updates }),
+    remove: (id) => client.mutation(api.fertilizationSchedules.remove, { id }),
   },
 
   // ============ RECOMMENDATIONS ============
   recommendations: {
     getById: (id) => client.query(api.recommendations.getById, { id }),
+    list: (opts = {}) => client.query(api.recommendations.list, opts),
     getByUser: (userId, opts = {}) => client.query(api.recommendations.getByUser, { userId, ...opts }),
     getPending: (opts = {}) => client.query(api.recommendations.getPending, opts),
     getPendingCount: (opts = {}) => client.query(api.recommendations.getPendingCount, opts),
@@ -155,7 +158,18 @@ export const db = {
 
   // ============ AUDIT LOGS ============
   auditLogs: {
-    create: (data) => client.mutation(api.auditLogs.create, { data }),
+    create: (entry) => {
+      const payload =
+        entry &&
+        typeof entry === 'object' &&
+        !Array.isArray(entry) &&
+        entry.data &&
+        typeof entry.data === 'object' &&
+        !entry.action
+          ? entry.data
+          : entry;
+      return client.mutation(api.auditLogs.create, { data: payload });
+    },
     list: (opts = {}) => client.query(api.auditLogs.list, opts),
     deleteOlderThan: (timestamp) => client.mutation(api.auditLogs.deleteOlderThan, { timestamp }),
     countErrors: (since) => client.query(api.auditLogs.countErrors, { since }),

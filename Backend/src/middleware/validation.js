@@ -11,9 +11,33 @@ import { validationResult, body, param, query } from 'express-validator';
 import { ValidationError } from '../utils/errors.js';
 import config from '../config/index.js';
 
+const isResourceId = (value) => typeof value === 'string' && value.trim().length > 0;
+
 /**
  * Handle validation errors from express-validator
  */
+export const validateRequest = (req, res, next) => {
+  const errors = validationResult(req);
+  
+  if (!errors.isEmpty()) {
+    const formattedErrors = errors.array().map(err => ({
+      field: err.path,
+      message: err.msg,
+      value: err.value
+    }));
+
+    return res.status(422).json({
+      success: false,
+      message: 'Validation failed',
+      code: 'VALIDATION_ERROR',
+      errors: formattedErrors,
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  next();
+};
+
 export const handleValidationErrors = (req, res, next) => {
   const errors = validationResult(req);
   
@@ -41,12 +65,13 @@ export const handleValidationErrors = (req, res, next) => {
 // =====================================================
 
 /**
- * UUID parameter validator
+ * Resource ID parameter validator.
+ * Accepts Convex document IDs as well as legacy UUID-shaped IDs.
  */
 export const validateUUID = (paramName) => [
   param(paramName)
-    .isUUID()
-    .withMessage(`${paramName} must be a valid UUID`)
+    .custom(isResourceId)
+    .withMessage(`${paramName} must be a valid resource ID`)
 ];
 
 /**
@@ -156,8 +181,8 @@ export const validateFarmCreation = [
     .withMessage('Farm name must be less than 255 characters'),
   body('districtId')
     .optional()
-    .isUUID()
-    .withMessage('District ID must be a valid UUID'),
+    .custom(isResourceId)
+    .withMessage('District ID must be a valid resource ID'),
   body('locationName')
     .optional()
     .trim()
@@ -223,8 +248,8 @@ export const validateSensorCreation = [
   body('farmId')
     .notEmpty()
     .withMessage('Farm ID is required')
-    .isUUID()
-    .withMessage('Farm ID must be a valid UUID'),
+    .custom(isResourceId)
+    .withMessage('Farm ID must be a valid resource ID'),
   body('sensorType')
     .notEmpty()
     .withMessage('Sensor type is required')
@@ -304,20 +329,42 @@ export const validateSensorData = [
 // =====================================================
 
 export const validateRecommendationResponse = [
-  body('status')
-    .notEmpty()
-    .withMessage('Status is required')
-    .isIn(['accepted', 'rejected', 'deferred'])
-    .withMessage('Status must be accepted, rejected, or deferred'),
+  body()
+    .custom((value) => {
+      const status = value?.status;
+      const action = value?.action;
+      if (!status && !action) {
+        throw new Error('Either status or action is required');
+      }
+
+      if (status && !['accepted', 'rejected', 'deferred'].includes(status)) {
+        throw new Error('Status must be accepted, rejected, or deferred');
+      }
+
+      if (action && !['accept', 'reject', 'defer'].includes(action)) {
+        throw new Error('Action must be accept, reject, or defer');
+      }
+
+      return true;
+    }),
   body('responseNotes')
     .optional()
     .trim()
     .isLength({ max: 1000 })
     .withMessage('Response notes must be less than 1000 characters'),
+  body('reason')
+    .optional()
+    .trim()
+    .isLength({ max: 1000 })
+    .withMessage('Reason must be less than 1000 characters'),
   body('deferredUntil')
     .optional()
     .isISO8601()
     .withMessage('Deferred until must be a valid ISO 8601 date'),
+  body('deferUntil')
+    .optional()
+    .isISO8601()
+    .withMessage('deferUntil must be a valid ISO 8601 date'),
   handleValidationErrors
 ];
 
@@ -329,8 +376,8 @@ export const validatePestDetection = [
   body('farmId')
     .notEmpty()
     .withMessage('Farm ID is required')
-    .isUUID()
-    .withMessage('Farm ID must be a valid UUID'),
+    .custom(isResourceId)
+    .withMessage('Farm ID must be a valid resource ID'),
   body('locationDescription')
     .optional()
     .trim()
@@ -355,8 +402,8 @@ export const validateIrrigationSchedule = [
   body('farmId')
     .notEmpty()
     .withMessage('Farm ID is required')
-    .isUUID()
-    .withMessage('Farm ID must be a valid UUID'),
+    .custom(isResourceId)
+    .withMessage('Farm ID must be a valid resource ID'),
   body('scheduledDate')
     .notEmpty()
     .withMessage('Scheduled date is required')
@@ -386,8 +433,8 @@ export const validateFertilizationSchedule = [
   body('farmId')
     .notEmpty()
     .withMessage('Farm ID is required')
-    .isUUID()
-    .withMessage('Farm ID must be a valid UUID'),
+    .custom(isResourceId)
+    .withMessage('Farm ID must be a valid resource ID'),
   body('scheduledDate')
     .notEmpty()
     .withMessage('Scheduled date is required')
@@ -419,6 +466,7 @@ export const validateFertilizationSchedule = [
 ];
 
 export default {
+  validateRequest,
   handleValidationErrors,
   validateUUID,
   validatePagination,

@@ -1,6 +1,8 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 
+const toTimestamp = (value?: number) => (typeof value === "number" ? value : undefined);
+
 export const getById = query({
   args: { id: v.id("recommendations") },
   returns: v.any(),
@@ -59,6 +61,68 @@ export const getByUser = query({
   },
 });
 
+export const list = query({
+  args: {
+    page: v.optional(v.number()),
+    limit: v.optional(v.number()),
+    type: v.optional(v.string()),
+    status: v.optional(v.string()),
+    statuses: v.optional(v.array(v.string())),
+    priority: v.optional(v.string()),
+    userId: v.optional(v.string()),
+    farmId: v.optional(v.string()),
+    district: v.optional(v.string()),
+    since: v.optional(v.number()),
+    until: v.optional(v.number()),
+  },
+  returns: v.any(),
+  handler: async (ctx, args) => {
+    const page = args.page ?? 1;
+    const limit = args.limit ?? 20;
+    const since = toTimestamp(args.since);
+    const until = toTimestamp(args.until);
+
+    let recs = await ctx.db.query("recommendations").order("desc").collect();
+
+    if (args.type) recs = recs.filter((r) => r.type === args.type);
+    if (args.status) recs = recs.filter((r) => r.status === args.status);
+    if (args.statuses) recs = recs.filter((r) => args.statuses!.includes(r.status));
+    if (args.priority) recs = recs.filter((r) => r.priority === args.priority);
+    if (args.userId) recs = recs.filter((r) => String(r.user_id) === args.userId);
+    if (args.farmId) recs = recs.filter((r) => String(r.farm_id) === args.farmId);
+    if (since !== undefined) recs = recs.filter((r) => r.created_at >= since);
+    if (until !== undefined) recs = recs.filter((r) => r.created_at <= until);
+
+    if (args.district) {
+      const withFarm = await Promise.all(
+        recs.map(async (r) => ({ rec: r, farm: await ctx.db.get(r.farm_id) }))
+      );
+      recs = withFarm
+        .filter(({ farm }) => farm && String(farm.district_id) === args.district)
+        .map(({ rec }) => rec);
+    }
+
+    const total = recs.length;
+    const offset = (page - 1) * limit;
+    const paginated = recs.slice(offset, offset + limit);
+
+    const enriched = await Promise.all(
+      paginated.map(async (r) => {
+        const farm = await ctx.db.get(r.farm_id);
+        const user = await ctx.db.get(r.user_id);
+        return {
+          ...r,
+          id: r._id,
+          farm: farm ? { id: farm._id, name: farm.name, user_id: farm.user_id, district_id: farm.district_id } : null,
+          user: user ? { id: user._id, first_name: user.first_name, last_name: user.last_name, email: user.email } : null,
+        };
+      })
+    );
+
+    return { data: enriched, count: total };
+  },
+});
+
 export const getPending = query({
   args: {
     userId: v.optional(v.id("users")),
@@ -106,6 +170,7 @@ export const getByFarm = query({
     priorities: v.optional(v.array(v.string())),
     limit: v.optional(v.number()),
     since: v.optional(v.number()),
+    until: v.optional(v.number()),
   },
   returns: v.any(),
   handler: async (ctx, args) => {
@@ -119,6 +184,7 @@ export const getByFarm = query({
     if (args.statuses) recs = recs.filter((r) => args.statuses!.includes(r.status));
     if (args.priorities) recs = recs.filter((r) => args.priorities!.includes(r.priority));
     if (args.since) recs = recs.filter((r) => r.created_at >= args.since!);
+    if (args.until) recs = recs.filter((r) => r.created_at <= args.until!);
     if (args.limit) recs = recs.slice(0, args.limit);
 
     return recs;
@@ -186,13 +252,17 @@ export const expirePending = mutation({
 export const getStats = query({
   args: {
     farmId: v.optional(v.string()),
+    userId: v.optional(v.string()),
     since: v.optional(v.number()),
+    until: v.optional(v.number()),
   },
   returns: v.any(),
   handler: async (ctx, args) => {
     let recs = await ctx.db.query("recommendations").collect();
-    if (args.farmId) recs = recs.filter((r) => r.farm_id === args.farmId);
+    if (args.farmId) recs = recs.filter((r) => String(r.farm_id) === args.farmId);
+    if (args.userId) recs = recs.filter((r) => String(r.user_id) === args.userId);
     if (args.since) recs = recs.filter((r) => r.created_at >= args.since!);
+    if (args.until) recs = recs.filter((r) => r.created_at <= args.until!);
     return recs.map((r) => ({
       type: r.type,
       status: r.status,

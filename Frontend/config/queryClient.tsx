@@ -4,6 +4,7 @@
 // =====================================================
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { AxiosError } from 'axios';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import React from 'react';
 import env from '../config/env';
@@ -114,13 +115,21 @@ export const queryClient = new QueryClient({
 
       // Retry configuration
       retry: (failureCount, error) => {
-        // Don't retry on 4xx errors (client errors)
-        if (error instanceof Error && 'status' in error) {
-          const status = (error as any).status;
-          if (status >= 400 && status < 500) return false;
+        // Don't retry on deterministic HTTP failures that won't improve immediately.
+        if (error instanceof AxiosError) {
+          const status = error.response?.status;
+          if (status === 503) {
+            return false;
+          }
+          if (status && status >= 400 && status < 500) {
+            return false;
+          }
+          if (status && status >= 500) {
+            return false;
+          }
         }
-        // Retry up to 3 times for other errors
-        return failureCount < 3;
+        // Retry a couple of times only for transport-level failures with no response.
+        return failureCount < 2;
       },
       retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
 

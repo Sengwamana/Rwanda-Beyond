@@ -11,6 +11,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { verifyToken } from '@clerk/clerk-sdk-node';
 import { URL } from 'url';
 import config from '../config/index.js';
+import { db } from '../database/convex.js';
 import logger from '../utils/logger.js';
 
 // =====================================================
@@ -58,6 +59,7 @@ const WS_EVENTS = {
  * @typedef {Object} ClientConnection
  * @property {WebSocket} ws - WebSocket connection
  * @property {string} userId - Authenticated user ID
+ * @property {string|null} userDbId - Backing database user ID
  * @property {string} role - User role (farmer/expert/admin)
  * @property {Set<string>} subscribedFarms - Farm IDs subscribed to
  * @property {boolean} isAuthenticated - Authentication status
@@ -126,6 +128,7 @@ class WebSocketManager {
     const client = {
       ws,
       userId: null,
+      userDbId: null,
       role: null,
       subscribedFarms: new Set(),
       isAuthenticated: false,
@@ -185,9 +188,20 @@ class WebSocketManager {
 
       client.userId = payload.sub;
       client.isAuthenticated = true;
-      
-      // Get user role from token metadata or default to farmer
-      client.role = payload.metadata?.role || 'farmer';
+
+      // Resolve canonical role and internal user ID from database when possible
+      let resolvedRole = payload.metadata?.role || 'farmer';
+      try {
+        const dbUser = await db.users.getByClerkId(payload.sub);
+        if (dbUser) {
+          client.userDbId = dbUser._id || dbUser.id || null;
+          resolvedRole = dbUser.role || resolvedRole;
+        }
+      } catch (dbError) {
+        logger.warn('WebSocket auth role lookup failed, using token metadata:', dbError.message);
+      }
+
+      client.role = resolvedRole;
 
       // Track user connection
       if (!this.userConnections.has(client.userId)) {
@@ -244,7 +258,7 @@ class WebSocketManager {
 
         case 'subscribe:farm':
           if (client.isAuthenticated && payload.farmId) {
-            this.subscribeFarm(ws, payload.farmId);
+            await this.subscribeFarm(ws, payload.farmId);
           }
           break;
 
@@ -317,11 +331,23 @@ class WebSocketManager {
    * @param {WebSocket} ws - WebSocket connection
    * @param {string} farmId - Farm ID
    */
-  subscribeFarm(ws, farmId) {
+  async subscribeFarm(ws, farmId) {
     const client = this.clients.get(ws);
     if (!client) return;
 
-    // TODO: Verify client has access to this farm
+    const hasAccess = await this.hasFarmAccess(client, farmId);
+    if (!hasAccess) {
+      logger.warn(`Blocked farm subscription for user ${client.userId} on farm ${farmId}`);
+      this.sendToClient(ws, {
+        type: WS_EVENTS.ERROR,
+        payload: {
+          code: 'FORBIDDEN',
+          message: 'You do not have access to this farm subscription',
+          farmId,
+        },
+      });
+      return;
+    }
 
     client.subscribedFarms.add(farmId);
 
@@ -331,6 +357,44 @@ class WebSocketManager {
     this.farmSubscriptions.get(farmId).add(ws);
 
     logger.debug(`Client ${client.userId} subscribed to farm ${farmId}`);
+  }
+
+  /**
+   * Verify whether a client can subscribe to a farm stream.
+   * Admin and expert roles are allowed global access.
+   * Farmers can only subscribe to their own farms.
+   * @param {ClientConnection} client
+   * @param {string} farmId
+   * @returns {Promise<boolean>}
+   */
+  async hasFarmAccess(client, farmId) {
+    if (!client?.isAuthenticated || !farmId) return false;
+
+    if (client.role === 'admin' || client.role === 'expert') {
+      return true;
+    }
+
+    try {
+      let userDbId = client.userDbId;
+      if (!userDbId && client.userId) {
+        const dbUser = await db.users.getByClerkId(client.userId);
+        userDbId = dbUser?._id || dbUser?.id || null;
+        client.userDbId = userDbId;
+        if (dbUser?.role) {
+          client.role = dbUser.role;
+        }
+      }
+
+      if (!userDbId) {
+        return false;
+      }
+
+      const farmOwnerId = await db.farms.getUserId(farmId);
+      return farmOwnerId === userDbId;
+    } catch (error) {
+      logger.error(`Farm access check failed for ${client.userId} -> ${farmId}:`, error.message);
+      return false;
+    }
   }
 
   /**

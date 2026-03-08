@@ -201,8 +201,9 @@ export const analyzePestImage = async (imageUrl, context = {}) => {
     let actualImageUrl = imageUrl;
     let detectionId = null;
     let farmId = context.farmId;
+    const isDataUrl = typeof imageUrl === 'string' && imageUrl.startsWith('data:image/');
 
-    if (imageUrl && !imageUrl.startsWith('http')) {
+    if (imageUrl && !imageUrl.startsWith('http') && !isDataUrl) {
       // Assume it's a detection ID
       detectionId = imageUrl;
       const detection = await db.pestDetections.getById(detectionId);
@@ -255,7 +256,7 @@ export const analyzePestImage = async (imageUrl, context = {}) => {
       symptoms: aiResult.symptoms || [],
       recommendations: aiResult.recommendations || [],
       urgency: aiResult.urgency || 'none',
-      modelVersion: aiResult.model_version || 'gemini-1.5-flash',
+      modelVersion: aiResult.model_version || config.ai.geminiModel,
       detectionMetadata: aiResult.metadata || {}
     };
 
@@ -284,22 +285,6 @@ export const analyzePestImage = async (imageUrl, context = {}) => {
     logger.error('Pest analysis failed:', error);
     throw new AIServiceError(`Failed to analyze pest image: ${error.message}`);
   }
-};
-
-/**
- * Fallback local pest analysis when AI service is unavailable
- * @param {string} imageUrl - Image URL
- * @returns {Object} Analysis results
- */
-const performLocalPestAnalysis = (imageUrl) => {
-  // This is a placeholder for local analysis
-  // In production, you might use TensorFlow.js or a local model
-  return {
-    pest_detected: false,
-    confidence: 0,
-    affected_area: 0,
-    model_version: 'fallback_v1'
-  };
 };
 
 /**

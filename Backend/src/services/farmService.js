@@ -11,6 +11,9 @@ import { db } from '../database/convex.js';
 import { NotFoundError, ForbiddenError, BadRequestError } from '../utils/errors.js';
 import logger from '../utils/logger.js';
 
+const withDefinedFields = (fields) =>
+  Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined));
+
 /**
  * Get farm by ID
  * @param {string} farmId - Farm ID
@@ -93,27 +96,23 @@ export const createFarm = async (userId, farmData) => {
     metadata = {}
   } = farmData;
 
-  // Build coordinates point if lat/lng provided
-  let coordinates = null;
-  if (latitude !== undefined && longitude !== undefined) {
-    coordinates = `POINT(${longitude} ${latitude})`;
-  }
-
-  const data = await db.farms.create({
+  const payload = withDefinedFields({
     user_id: userId,
     name,
     district_id: districtId,
     location_name: locationName,
-    coordinates,
+    latitude,
+    longitude,
     size_hectares: sizeHectares,
     soil_type: soilType,
     crop_variety: cropVariety,
     planting_date: plantingDate,
     expected_harvest_date: expectedHarvestDate,
-    current_growth_stage: plantingDate ? 'germination' : null,
+    current_growth_stage: plantingDate ? 'germination' : undefined,
     metadata,
-    is_active: true
   });
+
+  const data = await db.farms.create(payload);
 
   logger.info(`Farm created: ${data._id} for user ${userId}`);
   return data;
@@ -164,9 +163,12 @@ export const updateFarm = async (farmId, updateData, userId) => {
     }
   });
 
-  // Handle coordinates update
-  if (updateData.latitude !== undefined && updateData.longitude !== undefined) {
-    updates.coordinates = `POINT(${updateData.longitude} ${updateData.latitude})`;
+  if (updateData.latitude !== undefined) {
+    updates.latitude = updateData.latitude;
+  }
+
+  if (updateData.longitude !== undefined) {
+    updates.longitude = updateData.longitude;
   }
 
   if (Object.keys(updates).length === 0) {

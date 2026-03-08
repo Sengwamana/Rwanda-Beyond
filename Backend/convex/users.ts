@@ -47,6 +47,7 @@ export const list = query({
     role: v.optional(v.string()),
     isActive: v.optional(v.boolean()),
     search: v.optional(v.string()),
+    since: v.optional(v.number()),
     page: v.optional(v.number()),
     limit: v.optional(v.number()),
   },
@@ -70,6 +71,9 @@ export const list = query({
           (u.last_name?.toLowerCase().includes(s)) ||
           (u.email?.toLowerCase().includes(s))
       );
+    }
+    if (args.since) {
+      users = users.filter((u) => u.created_at >= args.since!);
     }
 
     const total = users.length;

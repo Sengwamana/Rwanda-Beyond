@@ -24,12 +24,15 @@ export { recommendationService } from './recommendations';
 export { adminService } from './admin';
 export { analyticsService } from './analytics';
 export { default as aiService } from './ai';
+export { contentService } from './content';
+export { ussdService } from './ussd';
 
 // WebSocket and real-time
-export { wsManager as webSocketManager, WebSocketEventType, type WebSocketEvent } from './websocket';
+export { wsManager as webSocketManager, WS_EVENTS, type WebSocketMessage, type WebSocketStatus } from './websocket';
 
 // Image handling
-export { imageUploadService, ImageValidationError } from './imageService';
+export { imageService } from './imageService';
+export type { ImageValidationError } from './imageService';
 
 // Re-export types for convenience
 export type { RegisterData, UserProfile } from './auth';
@@ -38,6 +41,22 @@ export type { CreateSensorData, UpdateSensorData, SensorReadingData, SensorQuery
 export type { SubmitPestDetectionData, PestDetectionQueryParams, PestReviewData } from './pestDetection';
 export type { RecommendationQueryParams, RecommendationResponse } from './recommendations';
 export type { UserQueryParams, AdminUserUpdate, SystemConfigUpdate } from './admin';
+export type {
+  ResourceContentItem,
+  FAQContentItem,
+  CareerValueItem,
+  CareerPositionItem,
+  ResourcesContentPayload,
+  FAQContentPayload,
+  CareersContentPayload,
+  FeatureContentCard,
+  FeaturesContentPayload,
+  PricingPlanItem,
+  PricingContentPayload,
+  AboutValueItem,
+  AboutTeamMember,
+  AboutContentPayload,
+} from './content';
 export type {
   FarmDashboardAnalytics,
   SensorTrendsData,
@@ -59,3 +78,8 @@ export type {
   TranslationRequest,
   TranslationResponse,
 } from './ai';
+export type {
+  UssdCallbackRequest,
+  UssdCallbackV2Request,
+  UssdHealth,
+} from './ussd';

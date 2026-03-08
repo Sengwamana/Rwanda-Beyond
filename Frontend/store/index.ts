@@ -126,6 +126,7 @@ export const useAppStore = create<AppState>()(
 interface FarmState {
   farms: import('../types').Farm[];
   selectedFarm: import('../types').Farm | null;
+  selectedFarmId: string | null;
   isLoading: boolean;
   error: string | null;
   
@@ -135,42 +136,96 @@ interface FarmState {
   updateFarm: (id: string, updates: Partial<import('../types').Farm>) => void;
   removeFarm: (id: string) => void;
   setSelectedFarm: (farm: import('../types').Farm | null) => void;
+  setSelectedFarmById: (farmId: string | null) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
+  clearFarms: () => void;
 }
 
-export const useFarmStore = create<FarmState>()((set) => ({
-  farms: [],
-  selectedFarm: null,
-  isLoading: false,
-  error: null,
+export const useFarmStore = create<FarmState>()(
+  persist(
+    (set) => ({
+      farms: [],
+      selectedFarm: null,
+      selectedFarmId: null,
+      isLoading: false,
+      error: null,
 
-  setFarms: (farms) => set({ farms, isLoading: false, error: null }),
+      setFarms: (farms) =>
+        set((state) => {
+          const desiredSelectedId = state.selectedFarmId || state.selectedFarm?.id || null;
+          const selectedFarm = desiredSelectedId
+            ? farms.find((farm) => farm.id === desiredSelectedId) || null
+            : null;
 
-  addFarm: (farm) =>
-    set((state) => ({ farms: [...state.farms, farm] })),
+          return {
+            farms,
+            selectedFarm,
+            selectedFarmId: selectedFarm?.id || null,
+            isLoading: false,
+            error: null,
+          };
+        }),
 
-  updateFarm: (id, updates) =>
-    set((state) => ({
-      farms: state.farms.map((f) => (f.id === id ? { ...f, ...updates } : f)),
-      selectedFarm:
-        state.selectedFarm?.id === id
-          ? { ...state.selectedFarm, ...updates }
-          : state.selectedFarm,
-    })),
+      addFarm: (farm) =>
+        set((state) => ({
+          farms: [...state.farms, farm],
+          selectedFarm: state.selectedFarm || farm,
+          selectedFarmId: state.selectedFarmId || farm.id,
+        })),
 
-  removeFarm: (id) =>
-    set((state) => ({
-      farms: state.farms.filter((f) => f.id !== id),
-      selectedFarm: state.selectedFarm?.id === id ? null : state.selectedFarm,
-    })),
+      updateFarm: (id, updates) =>
+        set((state) => ({
+          farms: state.farms.map((farm) => (farm.id === id ? { ...farm, ...updates } : farm)),
+          selectedFarm: state.selectedFarm?.id === id ? { ...state.selectedFarm, ...updates } : state.selectedFarm,
+        })),
 
-  setSelectedFarm: (farm) => set({ selectedFarm: farm }),
+      removeFarm: (id) =>
+        set((state) => {
+          const farms = state.farms.filter((farm) => farm.id !== id);
+          const selectedFarmId = state.selectedFarmId === id ? farms[0]?.id || null : state.selectedFarmId;
+          const selectedFarm = selectedFarmId
+            ? farms.find((farm) => farm.id === selectedFarmId) || null
+            : null;
 
-  setLoading: (isLoading) => set({ isLoading }),
+          return {
+            farms,
+            selectedFarm,
+            selectedFarmId,
+          };
+        }),
 
-  setError: (error) => set({ error, isLoading: false }),
-}));
+      setSelectedFarm: (farm) =>
+        set({
+          selectedFarm: farm,
+          selectedFarmId: farm?.id || null,
+        }),
+
+      setSelectedFarmById: (farmId) =>
+        set((state) => ({
+          selectedFarmId: farmId,
+          selectedFarm: farmId ? state.farms.find((farm) => farm.id === farmId) || null : null,
+        })),
+
+      setLoading: (isLoading) => set({ isLoading }),
+
+      setError: (error) => set({ error, isLoading: false }),
+
+      clearFarms: () =>
+        set({
+          farms: [],
+          selectedFarm: null,
+          selectedFarmId: null,
+          isLoading: false,
+          error: null,
+        }),
+    }),
+    {
+      name: 'farm-storage',
+      partialize: (state) => ({ selectedFarmId: state.selectedFarmId }),
+    }
+  )
+);
 
 // =====================================================
 // Notification store

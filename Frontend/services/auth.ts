@@ -3,7 +3,7 @@
 // =====================================================
 
 import apiClient from './api';
-import { User, ApiResponse } from '../types';
+import { User, ApiResponse, UserRole } from '../types';
 
 export interface RegisterData {
   email?: string;
@@ -20,6 +20,62 @@ export interface UserProfile {
   phoneNumber?: string;
   preferredLanguage?: 'en' | 'rw' | 'fr';
   profileImageUrl?: string;
+}
+
+const PREFERRED_ROLE_KEY = 'preferred-role';
+
+function isValidRole(role: string | null): role is UserRole {
+  return role === 'farmer' || role === 'expert' || role === 'admin';
+}
+
+function normalizeLanguage(language: unknown): User['preferredLanguage'] {
+  return language === 'rw' || language === 'fr' || language === 'en' ? language : 'en';
+}
+
+export function normalizeUser(user: any): User {
+  const metadata = user?.metadata && typeof user.metadata === 'object' ? user.metadata : {};
+  const verifiedFromMetadata =
+    typeof metadata.is_verified === 'boolean' ? metadata.is_verified : undefined;
+
+  return {
+    id: String(user?.id || user?._id || user?.clerkId || user?.clerk_id || ''),
+    clerkId: String(user?.clerkId || user?.clerk_id || user?.id || user?._id || ''),
+    email: user?.email || undefined,
+    phoneNumber: user?.phoneNumber || user?.phone_number || undefined,
+    firstName: user?.firstName || user?.first_name || undefined,
+    lastName: user?.lastName || user?.last_name || undefined,
+    role: isValidRole(user?.role ?? null) ? user.role : 'farmer',
+    preferredLanguage: normalizeLanguage(user?.preferredLanguage || user?.preferred_language),
+    profileImageUrl: user?.profileImageUrl || user?.profile_image_url || undefined,
+    isActive:
+      typeof user?.isActive === 'boolean'
+        ? user.isActive
+        : typeof user?.is_active === 'boolean'
+          ? user.is_active
+          : true,
+    isVerified:
+      typeof user?.isVerified === 'boolean'
+        ? user.isVerified
+        : typeof user?.is_verified === 'boolean'
+          ? user.is_verified
+          : typeof verifiedFromMetadata === 'boolean'
+            ? verifiedFromMetadata
+            : false,
+    lastLoginAt: user?.lastLoginAt || user?.last_login_at || undefined,
+    createdAt: user?.createdAt || user?.created_at || new Date().toISOString(),
+    updatedAt: user?.updatedAt || user?.updated_at || new Date().toISOString(),
+  };
+}
+
+function normalizeApiResponse<T>(response: ApiResponse<T>): ApiResponse<any> {
+  if (!response?.data || typeof response.data !== 'object' || Array.isArray(response.data)) {
+    return response;
+  }
+
+  return {
+    ...response,
+    data: normalizeUser(response.data),
+  };
 }
 
 // Auth service functions
@@ -48,7 +104,7 @@ export const authService = {
    */
   getProfile: async (): Promise<ApiResponse<User>> => {
     const response = await apiClient.get<ApiResponse<User>>('/users/me');
-    return response.data;
+    return normalizeApiResponse(response.data);
   },
 
   /**
@@ -56,7 +112,7 @@ export const authService = {
    */
   updateProfile: async (data: UserProfile): Promise<ApiResponse<User>> => {
     const response = await apiClient.put<ApiResponse<User>>('/users/me', data);
-    return response.data;
+    return normalizeApiResponse(response.data);
   },
 
   /**
@@ -64,7 +120,7 @@ export const authService = {
    */
   syncUser: async (): Promise<ApiResponse<User>> => {
     const response = await apiClient.get<ApiResponse<User>>('/users/me');
-    return response.data;
+    return normalizeApiResponse(response.data);
   },
 
   /**
@@ -80,7 +136,7 @@ export const authService = {
     const response = await apiClient.put<ApiResponse<User>>('/users/me', { 
       notificationPreferences: preferences 
     });
-    return response.data;
+    return normalizeApiResponse(response.data);
   },
 
   /**
@@ -91,6 +147,31 @@ export const authService = {
     // For now, this would need to be done through admin
     // or we can add a dedicated endpoint on backend
     throw new Error('Account deletion must be requested through support');
+  },
+
+  /**
+   * Store preferred role during auth flows (used before backend profile exists)
+   */
+  setPreferredRole: (role: UserRole): void => {
+    if (typeof window === 'undefined') return;
+    sessionStorage.setItem(PREFERRED_ROLE_KEY, role);
+  },
+
+  /**
+   * Get preferred role selected on the auth screen, if available
+   */
+  getPreferredRole: (): UserRole | null => {
+    if (typeof window === 'undefined') return null;
+    const role = sessionStorage.getItem(PREFERRED_ROLE_KEY);
+    return isValidRole(role) ? role : null;
+  },
+
+  /**
+   * Clear temporary auth role preference
+   */
+  clearPreferredRole: (): void => {
+    if (typeof window === 'undefined') return;
+    sessionStorage.removeItem(PREFERRED_ROLE_KEY);
   },
 };
 

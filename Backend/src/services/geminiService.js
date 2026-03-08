@@ -53,7 +53,7 @@ const generationConfig = {
  * @returns {GenerativeModel} Gemini model instance
  */
 const getModel = (useVision = false) => {
-  const modelName = useVision ? 'gemini-1.5-flash' : config.ai.geminiModel;
+  const modelName = config.ai.geminiModel;
   return genAI.getGenerativeModel({ 
     model: modelName,
     safetySettings,
@@ -131,7 +131,7 @@ Be precise and conservative in your assessment. Only report pest detection if yo
       recommendations: analysis.recommendations || [],
       urgency: analysis.urgency || 'none',
       notes: analysis.additional_notes || '',
-      model_version: 'gemini-1.5-flash',
+      model_version: config.ai.geminiModel,
       metadata: {
         provider: 'google-gemini',
         analyzed_at: new Date().toISOString()
@@ -414,7 +414,7 @@ Analyze all images and provide a comprehensive farm health assessment as JSON (n
       yieldForecast: assessment.yield_forecast || '',
       confidence: assessment.confidence || 0.5,
       imagesAnalyzed: imageUrls.length,
-      model: 'gemini-1.5-flash',
+      model: config.ai.geminiModel,
       analyzedAt: new Date().toISOString()
     };
 
@@ -431,6 +431,18 @@ Analyze all images and provide a comprehensive farm health assessment as JSON (n
  */
 const fetchImageAsBase64 = async (url) => {
   try {
+    if (typeof url === 'string' && url.startsWith('data:image/')) {
+      const match = url.match(/^data:(image\/[^;]+);base64,(.+)$/);
+      if (!match) {
+        throw new Error('Invalid data URL image format');
+      }
+
+      return {
+        mimeType: match[1],
+        base64: match[2]
+      };
+    }
+
     const response = await axios.get(url, {
       responseType: 'arraybuffer',
       timeout: 30000

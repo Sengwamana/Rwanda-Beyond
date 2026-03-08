@@ -77,6 +77,7 @@ export const list = query({
     isActive: v.optional(v.boolean()),
     search: v.optional(v.string()),
     userId: v.optional(v.string()),
+    since: v.optional(v.number()),
   },
   returns: v.any(),
   handler: async (ctx, args) => {
@@ -88,6 +89,7 @@ export const list = query({
     if (args.userId) farms = farms.filter((f) => f.user_id === args.userId);
     if (args.districtId) farms = farms.filter((f) => f.district_id === args.districtId);
     if (typeof args.isActive === "boolean") farms = farms.filter((f) => f.is_active === args.isActive);
+    if (args.since) farms = farms.filter((f) => f.created_at >= args.since!);
     if (args.search) {
       const s = args.search.toLowerCase();
       farms = farms.filter((f) => f.name.toLowerCase().includes(s) || f.location_name?.toLowerCase().includes(s));

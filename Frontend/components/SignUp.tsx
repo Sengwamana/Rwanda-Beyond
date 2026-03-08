@@ -1,30 +1,69 @@
 import React, { useState } from 'react';
-import { Sprout, Mail, Lock, ArrowRight, Loader2, User, Phone, MapPin } from 'lucide-react';
+import { Sprout, Mail, Lock, ArrowRight, Loader2 } from 'lucide-react';
 import { useSignUp } from '@clerk/clerk-react';
 import { useNavigate } from 'react-router-dom';
 import { UserRole } from '../types';
 import { Language, translations } from '../utils/translations';
+import { useAuthStore } from '../store';
+import { authService } from '../services/auth';
 
 interface SignUpProps {
-  onLogin: (role: UserRole) => void;
   onNavigate: (page: any) => void;
   language?: Language;
 }
 
-export const SignUp: React.FC<SignUpProps> = ({ onLogin, onNavigate, language = 'en' }) => {
+function getClerkErrorMessage(error: any): string {
+  return String(
+    error?.errors?.[0]?.longMessage ||
+    error?.errors?.[0]?.message ||
+    error?.message ||
+    ''
+  );
+}
+
+function isCaptchaFailure(error: any): boolean {
+  const code = String(error?.errors?.[0]?.code || '').toLowerCase();
+  const message = getClerkErrorMessage(error).toLowerCase();
+
+  return (
+    code.includes('captcha') ||
+    message.includes('captcha') ||
+    message.includes('turnstile') ||
+    message.includes('unsupported browser') ||
+    message.includes('failed to load')
+  );
+}
+
+function formatSignUpError(error: any): string {
+  const code = String(error?.errors?.[0]?.code || '').toLowerCase();
+  const message = getClerkErrorMessage(error);
+
+  if (code.includes('identifier_exists')) {
+    return 'An account already exists for this email. Sign in instead or use a different email.';
+  }
+
+  if (code.includes('password')) {
+    return message || 'Password requirements were not met.';
+  }
+
+  return message || 'Failed to create account. Please try again.';
+}
+
+export const SignUp: React.FC<SignUpProps> = ({ onNavigate, language = 'en' }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [role, setRole] = useState<UserRole>('farmer');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [isCaptchaError, setIsCaptchaError] = useState(false);
   const [pendingVerification, setPendingVerification] = useState(false);
   const [verificationCode, setVerificationCode] = useState('');
   
   const { signUp, setActive, isLoaded } = useSignUp();
   const navigate = useNavigate();
+  const setAuthLoading = useAuthStore((state) => state.setLoading);
   
   const t = translations[language].signup;
 
@@ -32,19 +71,25 @@ export const SignUp: React.FC<SignUpProps> = ({ onLogin, onNavigate, language = 
     e.preventDefault();
     if (!isLoaded || !signUp) return;
 
+    authService.setPreferredRole(role);
     setIsLoading(true);
     setError('');
+    setIsCaptchaError(false);
 
     try {
       const result = await signUp.create({
-        firstName,
-        lastName,
-        emailAddress: email,
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        emailAddress: email.trim(),
         password,
+        unsafeMetadata: {
+          role,
+        },
       });
 
       // Check if signup is complete (no verification needed)
       if (result.status === 'complete') {
+        setAuthLoading(true);
         await setActive({ session: result.createdSessionId });
         navigate('/dashboard');
         return;
@@ -69,7 +114,12 @@ export const SignUp: React.FC<SignUpProps> = ({ onLogin, onNavigate, language = 
       }
     } catch (err: any) {
       console.error('Sign up error:', err);
-      setError(err.errors?.[0]?.longMessage || err.message || 'Failed to create account. Please try again.');
+      if (isCaptchaFailure(err)) {
+        setIsCaptchaError(true);
+        setError('CAPTCHA failed to load. Disable privacy/ad-block extensions for this site, then retry. If it still fails, use the Clerk hosted sign-up fallback.');
+      } else {
+        setError(formatSignUpError(err));
+      }
     } finally {
       setIsLoading(false);
     }
@@ -81,6 +131,7 @@ export const SignUp: React.FC<SignUpProps> = ({ onLogin, onNavigate, language = 
 
     setIsLoading(true);
     setError('');
+    setIsCaptchaError(false);
 
     try {
       const result = await signUp.attemptEmailAddressVerification({
@@ -90,6 +141,7 @@ export const SignUp: React.FC<SignUpProps> = ({ onLogin, onNavigate, language = 
       console.log('Verification result:', JSON.stringify(result, null, 2));
 
       if (result.status === 'complete') {
+        setAuthLoading(true);
         await setActive({ session: result.createdSessionId });
         navigate('/dashboard');
       } else if (result.status === 'missing_requirements') {
@@ -116,7 +168,22 @@ export const SignUp: React.FC<SignUpProps> = ({ onLogin, onNavigate, language = 
       }
     } catch (err: any) {
       console.error('Verification error:', err);
-      setError(err.errors?.[0]?.longMessage || err.message || 'Invalid verification code.');
+      setError(formatSignUpError(err));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    if (!isLoaded || !signUp) return;
+
+    setIsLoading(true);
+    setError('');
+
+    try {
+      await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
+    } catch (err: any) {
+      setError(formatSignUpError(err));
     } finally {
       setIsLoading(false);
     }
@@ -166,6 +233,19 @@ export const SignUp: React.FC<SignUpProps> = ({ onLogin, onNavigate, language = 
               </div>
             )}
 
+            {isCaptchaError && (
+              <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 px-4 py-3 rounded-xl text-sm space-y-3">
+                <p>CAPTCHA is blocked in this browser context.</p>
+                <button
+                  type="button"
+                  onClick={() => navigate('/sign-up')}
+                  className="font-semibold underline underline-offset-2"
+                >
+                  Continue with Clerk hosted sign-up
+                </button>
+              </div>
+            )}
+
             {pendingVerification ? (
               <form onSubmit={handleVerification} className="space-y-4">
                 <div className="space-y-2">
@@ -187,6 +267,14 @@ export const SignUp: React.FC<SignUpProps> = ({ onLogin, onNavigate, language = 
                 >
                     {isLoading ? <Loader2 className="animate-spin" size={20} /> : <>Verify Email <ArrowRight size={18} /></>}
                 </button>
+                <button
+                    type="button"
+                    onClick={handleResendVerification}
+                    disabled={isLoading || !isLoaded}
+                    className="w-full border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 py-3 rounded-xl font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 transition-all disabled:opacity-70"
+                >
+                    Resend code
+                </button>
               </form>
             ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -206,27 +294,6 @@ export const SignUp: React.FC<SignUpProps> = ({ onLogin, onNavigate, language = 
                     <div className="relative">
                         <Mail className="absolute left-4 top-3.5 text-slate-400" size={18} />
                         <input type="email" placeholder="jean@example.com" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full pl-11 pr-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-medium" required />
-                    </div>
-                </div>
-
-                <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase">{t.phone}</label>
-                    <div className="relative">
-                        <Phone className="absolute left-4 top-3.5 text-slate-400" size={18} />
-                        <input type="tel" placeholder="+250 788 123 456" value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full pl-11 pr-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-medium" />
-                    </div>
-                </div>
-
-                <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase">{t.location}</label>
-                    <div className="relative">
-                        <MapPin className="absolute left-4 top-3.5 text-slate-400" size={18} />
-                         <select className="w-full pl-11 pr-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-medium appearance-none">
-                             <option>Rwamagana, Kigabiro</option>
-                             <option>Rwamagana, Mwulire</option>
-                             <option>Rwamagana, Rubona</option>
-                             <option>Other</option>
-                         </select>
                     </div>
                 </div>
 
@@ -252,7 +319,7 @@ export const SignUp: React.FC<SignUpProps> = ({ onLogin, onNavigate, language = 
                     <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase">{t.password}</label>
                     <div className="relative">
                         <Lock className="absolute left-4 top-3.5 text-slate-400" size={18} />
-                        <input type="password" placeholder="Min. 8 characters" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-11 pr-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-medium" required />
+                        <input type="password" placeholder="Min. 8 characters" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-11 pr-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-medium" autoComplete="new-password" required />
                     </div>
                 </div>
 

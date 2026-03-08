@@ -1,195 +1,136 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Mic, MicOff, Loader2, X, Sparkles } from 'lucide-react';
-import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
-import { createBlob, decode, decodeAudioData } from '../utils/audio';
-
-// NOTE: In a real production app, move API_KEY to a secure backend proxy.
-// For this prototype, we assume process.env.API_KEY is available.
-const API_KEY = process.env.API_KEY || '';
+import { sendChatMessage } from '../services/ai';
+import { useFarmStore } from '../store';
 
 export const VoiceAssistant: React.FC = () => {
   const [isActive, setIsActive] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [transcript, setTranscript] = useState('');
   const [error, setError] = useState<string | null>(null);
-  
-  // Refs for Audio Contexts and cleanup
-  const inputAudioContextRef = useRef<AudioContext | null>(null);
-  const outputAudioContextRef = useRef<AudioContext | null>(null);
-  const sessionRef = useRef<any>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
-  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const nextStartTimeRef = useRef<number>(0);
-  const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+  const recognitionRef = useRef<any>(null);
+  const shouldRestartRef = useRef(false);
+  const { selectedFarm, farms } = useFarmStore();
 
   const cleanup = () => {
-    if (sessionRef.current) {
-      sessionRef.current.close();
-      sessionRef.current = null;
+    shouldRestartRef.current = false;
+    const recognition = recognitionRef.current;
+    if (recognition) {
+      try {
+        recognition.stop();
+      } catch (_) {
+        // Ignore
+      }
     }
-    
-    // Stop all playing sources
-    sourcesRef.current.forEach(source => {
-        try { source.stop(); } catch(e) {}
-    });
-    sourcesRef.current.clear();
 
-    if (processorRef.current) {
-      processorRef.current.disconnect();
-      processorRef.current = null;
-    }
-    if (sourceRef.current) {
-      sourceRef.current.disconnect();
-      sourceRef.current = null;
-    }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-    if (inputAudioContextRef.current) {
-      inputAudioContextRef.current.close();
-      inputAudioContextRef.current = null;
-    }
-    if (outputAudioContextRef.current) {
-      outputAudioContextRef.current.close();
-      outputAudioContextRef.current = null;
-    }
-    
+    window.speechSynthesis.cancel();
     setIsActive(false);
-    setIsConnecting(false);
-    nextStartTimeRef.current = 0;
+    setIsProcessing(false);
   };
 
-  const startSession = async () => {
-    if (!API_KEY) {
-      setError("API Key not found. Please set process.env.API_KEY");
+  const askAssistant = async (question: string) => {
+    if (!question.trim()) return;
+
+    setIsProcessing(true);
+    setError(null);
+
+    try {
+      const farmId = selectedFarm?.id || farms[0]?.id;
+      const response = await sendChatMessage({
+        message: question,
+        farmId,
+      });
+
+      const reply = response.reply || 'I could not generate a response right now.';
+      const utterance = new SpeechSynthesisUtterance(reply);
+      utterance.lang = 'en-US';
+      utterance.onend = () => {
+        setIsProcessing(false);
+      };
+      utterance.onerror = () => {
+        setIsProcessing(false);
+      };
+      window.speechSynthesis.speak(utterance);
+    } catch (err) {
+      console.error('Voice assistant backend request failed:', err);
+      setError('Unable to reach the AI assistant. Please try again.');
+      setIsProcessing(false);
+    }
+  };
+
+  const startSession = () => {
+    const SpeechRecognitionCtor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor) {
+      setError('Speech recognition is not supported in this browser.');
       return;
     }
 
     try {
-      setIsConnecting(true);
-      setError(null);
+      if (!recognitionRef.current) {
+        const recognition = new SpeechRecognitionCtor();
+        recognition.lang = 'en-US';
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.maxAlternatives = 1;
 
-      const ai = new GoogleGenAI({ apiKey: API_KEY });
-      
-      // Initialize Audio Contexts
-      const InputContextClass = (window.AudioContext || (window as any).webkitAudioContext);
-      inputAudioContextRef.current = new InputContextClass({ sampleRate: 16000 });
-      outputAudioContextRef.current = new InputContextClass({ sampleRate: 24000 });
-      
-      // Get User Media
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
+        recognition.onresult = (event: any) => {
+          let finalText = '';
+          let interimText = '';
 
-
-
-      const config = {
-        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
-        callbacks: {
-          onopen: () => {
-            setIsConnecting(false);
-            setIsActive(true);
-            
-            // Setup Audio Processing for Input
-            if (!inputAudioContextRef.current || !streamRef.current) return;
-            
-            const source = inputAudioContextRef.current.createMediaStreamSource(streamRef.current);
-            sourceRef.current = source;
-            
-            // Using ScriptProcessor for compatibility, effectively creating chunks
-            const processor = inputAudioContextRef.current.createScriptProcessor(4096, 1, 1);
-            processorRef.current = processor;
-            
-            processor.onaudioprocess = (e) => {
-              const inputData = e.inputBuffer.getChannelData(0);
-              const pcmBlob = createBlob(inputData);
-              
-              // Send to Gemini
-              if (sessionRef.current) {
-                 sessionRef.current.sendRealtimeInput({ media: pcmBlob });
-              }
-            };
-            
-            source.connect(processor);
-            processor.connect(inputAudioContextRef.current.destination);
-          },
-          onmessage: async (message: LiveServerMessage) => {
-             // Handle Audio Output
-            const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-            
-            if (base64Audio && outputAudioContextRef.current) {
-              const ctx = outputAudioContextRef.current;
-              // Ensure we don't schedule in the past
-              nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime);
-              
-              const audioBytes = decode(base64Audio);
-              const audioBuffer = await decodeAudioData(audioBytes, ctx, 24000, 1);
-              
-              const source = ctx.createBufferSource();
-              source.buffer = audioBuffer;
-              const gainNode = ctx.createGain();
-              // A bit of volume boost
-              gainNode.gain.value = 1.2; 
-              
-              source.connect(gainNode);
-              gainNode.connect(ctx.destination);
-              
-              source.addEventListener('ended', () => {
-                 sourcesRef.current.delete(source);
-              });
-              
-              source.start(nextStartTimeRef.current);
-              nextStartTimeRef.current += audioBuffer.duration;
-              sourcesRef.current.add(source);
+          for (let i = event.resultIndex; i < event.results.length; i += 1) {
+            const text = event.results[i][0]?.transcript || '';
+            if (event.results[i].isFinal) {
+              finalText += text;
+            } else {
+              interimText += text;
             }
-
-            // Handle interruptions
-            if (message.serverContent?.interrupted) {
-                sourcesRef.current.forEach(s => s.stop());
-                sourcesRef.current.clear();
-                nextStartTimeRef.current = 0;
-            }
-          },
-          onclose: () => {
-            console.log("Session closed");
-            cleanup();
-          },
-          onerror: (e: ErrorEvent) => {
-            console.error("Session error", e);
-            setError("Connection error. Please try again.");
-            cleanup();
           }
-        },
-        config: {
-            responseModalities: [Modality.AUDIO],
-            speechConfig: {
-                voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } }
-            },
-            systemInstruction: `You are "Keza", a friendly and knowledgeable agricultural assistant for smallholder farmers in Rwanda. 
-            Your role is to provide practical advice on maize and bean farming, weather interpretation, and pest control (specifically Fall Armyworm).
-            
-            Guidelines:
-            - Speak clearly and concisely (max 2-3 sentences per turn).
-            - Use a warm, encouraging tone.
-            - Use metric units (Celcius, Liters, Hectares).
-            - If asked about pests, suggest both organic (e.g. push-pull) and chemical options available in East Africa.
-            - Acknowledge local context (Rwamagana district, hillside farming).`
-        }
-      };
 
-      // const sessionPromise = ai.live.connect(config);
-      // sessionRef.current = await sessionPromise;
-      console.warn("Voice Assistant disabled for build verification.");
-      setError("Voice Assistant momentarily unavailable.");
-      setIsConnecting(false);
+          const currentText = (finalText || interimText).trim();
+          if (currentText) {
+            setTranscript(currentText);
+          }
 
+          if (finalText.trim()) {
+            void askAssistant(finalText.trim());
+          }
+        };
+
+        recognition.onerror = (event: any) => {
+          console.error('Speech recognition error:', event);
+          setError('Microphone capture failed. Check browser microphone permissions.');
+          setIsActive(false);
+          shouldRestartRef.current = false;
+        };
+
+        recognition.onend = () => {
+          if (shouldRestartRef.current) {
+            recognition.start();
+          } else {
+            setIsActive(false);
+          }
+        };
+
+        recognitionRef.current = recognition;
+      }
+
+      shouldRestartRef.current = true;
+      setError(null);
+      setIsActive(true);
+      recognitionRef.current.start();
     } catch (err) {
-      console.error("Failed to start session:", err);
-      setError("Failed to access microphone or connect.");
-      setIsConnecting(false);
+      console.error('Failed to start voice recognition:', err);
+      setError('Failed to start microphone session.');
       cleanup();
     }
   };
+
+  useEffect(() => {
+    return () => {
+      cleanup();
+      recognitionRef.current = null;
+    };
+  }, []);
 
   return (
     <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end space-y-4">
@@ -211,8 +152,11 @@ export const VoiceAssistant: React.FC = () => {
                 </button>
             </div>
             <p className="text-xs text-green-100 leading-relaxed">
-                Listening... Ask about your soil moisture, pest identification, or weather forecast.
+                Listening... Ask about soil moisture, pest identification, or weather forecast.
             </p>
+            {transcript && (
+              <p className="mt-2 text-[11px] text-green-50/90 italic line-clamp-2">"{transcript}"</p>
+            )}
             <div className="mt-3 flex gap-1 justify-center h-4 items-center">
                  {/* Simple Audio Visualizer Animation */}
                  <div className="w-1 bg-white/60 animate-[bounce_1s_infinite] h-2"></div>
@@ -224,7 +168,7 @@ export const VoiceAssistant: React.FC = () => {
 
       <button
         onClick={isActive ? cleanup : startSession}
-        disabled={isConnecting}
+        disabled={isProcessing}
         className={`h-14 w-14 rounded-full shadow-2xl flex items-center justify-center transition-all duration-300 transform hover:scale-105 ${
             isActive 
             ? 'bg-red-500 hover:bg-red-600 animate-pulse' 
@@ -232,7 +176,7 @@ export const VoiceAssistant: React.FC = () => {
         } text-white`}
         aria-label="Toggle Voice Assistant"
       >
-        {isConnecting ? (
+        {isProcessing ? (
           <Loader2 className="h-6 w-6 animate-spin" />
         ) : isActive ? (
           <MicOff className="h-6 w-6" />

@@ -77,6 +77,60 @@ export const getUserRecommendations = async (userId, options = {}) => {
 };
 
 /**
+ * Get recommendations for a farm with pagination.
+ * @param {string} farmId - Farm ID
+ * @param {Object} options - Query options
+ * @returns {Promise<Object>} Recommendations with pagination
+ */
+export const getFarmRecommendations = async (farmId, options = {}) => {
+  const {
+    page = 1,
+    limit = 20,
+    status,
+    type,
+    priority,
+    since,
+    until,
+  } = options;
+
+  const result = await db.recommendations.list({
+    page,
+    limit,
+    farmId,
+    status,
+    type,
+    priority,
+    since,
+    until,
+  });
+
+  const data = result?.data || result || [];
+  const total = result?.count ?? result?.total ?? data.length;
+
+  return {
+    data,
+    total,
+    page,
+    limit,
+    totalPages: Math.ceil(total / limit),
+  };
+};
+
+/**
+ * Get active recommendations for a farm.
+ * @param {string} farmId - Farm ID
+ * @returns {Promise<Array>} Active recommendations
+ */
+export const getActiveRecommendations = async (farmId) => {
+  const data = await db.recommendations.getByFarm(farmId, {
+    statuses: ['pending', 'accepted'],
+    limit: 50,
+  });
+
+  return data || [];
+};
+
+/**
  * Get pending recommendations for a user (for USSD/SMS)
  * @param {string} userId - User UUID
  * @param {number} limit - Maximum number to return
@@ -228,6 +282,63 @@ export const updateRecommendationStatus = async (recommendationId, status, respo
   // If accepted, trigger execution workflow
   if (status === 'accepted') {
     await executeRecommendation(data);
+  }
+
+  return data;
+};
+
+/**
+ * Respond to a recommendation using action aliases from the API.
+ * @param {string} recommendationId - Recommendation ID
+ * @param {string} action - accept, reject, or defer
+ * @param {Object} responseData - Response metadata
+ * @returns {Promise<Object>} Updated recommendation
+ */
+export const respondToRecommendation = async (recommendationId, action, responseData = {}) => {
+  const statusByAction = {
+    accept: 'accepted',
+    reject: 'rejected',
+    defer: 'deferred',
+  };
+
+  const normalizedStatus = statusByAction[action] || action;
+
+  return updateRecommendationStatus(recommendationId, normalizedStatus, {
+    responseNotes: responseData.reason || responseData.responseNotes,
+    deferredUntil: responseData.deferUntil || responseData.deferredUntil,
+    respondedBy: responseData.respondedBy,
+  });
+};
+
+/**
+ * Mark recommendation as completed.
+ * @param {string} recommendationId - Recommendation ID
+ * @param {Object} completionData - Completion details
+ * @returns {Promise<Object>} Updated recommendation
+ */
+export const markCompleted = async (recommendationId, completionData = {}) => {
+  const updates = {
+    status: 'executed',
+    completed_at: Date.now(),
+    updated_at: Date.now(),
+  };
+
+  if (completionData.notes) {
+    updates.response_notes = completionData.notes;
+  }
+
+  if (completionData.outcome) {
+    updates.outcome = completionData.outcome;
+  }
+
+  if (completionData.completedBy) {
+    updates.completed_by = completionData.completedBy;
+  }
+
+  const data = await db.recommendations.update(recommendationId, updates);
+
+  if (!data) {
+    throw new NotFoundError('Recommendation not found');
   }
 
   return data;
@@ -507,21 +618,113 @@ export const expireOldRecommendations = async () => {
  * @param {string} userId - Optional user ID for filtering
  * @returns {Promise<Object>} Recommendation statistics
  */
-export const getRecommendationStats = async (farmId = null, userId = null) => {
-  const stats = await db.recommendations.getStats({ farmId, userId });
+export const getRecommendationStats = async (farmIdOrOptions = null, userIdArg = null) => {
+  let farmId = null;
+  let userId = null;
+  let since;
+  let until;
 
+  if (farmIdOrOptions && typeof farmIdOrOptions === 'object' && !Array.isArray(farmIdOrOptions)) {
+    farmId = farmIdOrOptions.farmId || null;
+    userId = farmIdOrOptions.userId || null;
+
+    const startDate = farmIdOrOptions.startDate || farmIdOrOptions.since;
+    const endDate = farmIdOrOptions.endDate || farmIdOrOptions.until;
+
+    if (startDate) {
+      const parsedStart = new Date(startDate).getTime();
+      if (Number.isFinite(parsedStart)) {
+        since = parsedStart;
+      }
+    }
+
+    if (endDate) {
+      const parsedEnd = new Date(endDate).getTime();
+      if (Number.isFinite(parsedEnd)) {
+        until = parsedEnd;
+      }
+    }
+  } else {
+    farmId = farmIdOrOptions;
+    userId = userIdArg;
+  }
+
+  const query = {
+    farmId: farmId || undefined,
+    userId: userId || undefined,
+    since,
+    until,
+  };
+
+  const stats = await db.recommendations.getStats(query);
   return stats;
+};
+
+/**
+ * Generate recommendations in bulk by running farm analysis.
+ * @param {Object} options - Generation scope
+ * @returns {Promise<Object>} Generation summary
+ */
+export const bulkGenerateRecommendations = async (options = {}) => {
+  const {
+    district,
+    type,
+    farmIds = [],
+  } = options;
+
+  let targetFarmIds = Array.isArray(farmIds) ? farmIds.filter(Boolean) : [];
+
+  if (targetFarmIds.length === 0) {
+    const farms = district
+      ? (await db.farms.list({ page: 1, limit: 1000 })).data?.filter((farm) => String(farm?.district?.name || farm?.district || farm?.district_id || '') === String(district))
+      : await db.farms.listActive();
+
+    targetFarmIds = (farms || []).map((farm) => String(farm.id || farm._id)).filter(Boolean);
+  }
+
+  const aiService = await import('./aiService.js');
+  const errors = [];
+  let generated = 0;
+
+  for (const farmId of targetFarmIds) {
+    try {
+      if (type === 'irrigation') {
+        await aiService.analyzeIrrigationNeeds(farmId);
+      } else if (type === 'fertilization') {
+        await aiService.analyzeNutrientNeeds(farmId);
+      } else {
+        await aiService.runComprehensiveAnalysis(farmId);
+      }
+      generated += 1;
+    } catch (error) {
+      errors.push({
+        farmId,
+        error: error.message || 'Generation failed',
+      });
+    }
+  }
+
+  return {
+    generated,
+    farms: targetFarmIds,
+    errors,
+  };
 };
 
 export default {
   getRecommendationById,
   getUserRecommendations,
+  getFarmRecommendations,
+  getActiveRecommendations,
   getPendingRecommendations,
   createRecommendation,
   updateRecommendationStatus,
+  respondToRecommendation,
+  markCompleted,
   createIrrigationRecommendation,
   createPestAlertRecommendation,
   createFertilizationRecommendation,
   expireOldRecommendations,
-  getRecommendationStats
+  getRecommendationStats,
+  bulkGenerateRecommendations,
 };

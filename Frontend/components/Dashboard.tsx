@@ -1,18 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  LayoutGrid, Droplets, Bug, Sprout, MessageSquare, Settings as SettingsIcon, LogOut, 
-  Bell, Search, Menu, Map as MapIcon, Activity, Users, ShieldCheck, FileText, Server, Sun, Moon
+  LayoutGrid, Sprout, Settings as SettingsIcon, LogOut, 
+  Bell, Search, Menu, Activity, Server, Sun, Moon, Users, FileClock, Cpu, SlidersHorizontal, RadioTower, FileSpreadsheet, Send, CheckCheck, X, Trash2,
+  BarChart2, Bot, Wifi, BookOpen, MessageSquare, Droplets, Bug
 } from 'lucide-react';
-import { Irrigation } from './Irrigation';
-import { PestControl } from './PestControl';
-import { SoilHealth } from './SoilHealth';
-import { Communication } from './Communication';
 import { Settings } from './Settings';
-import { FarmerDashboard } from './FarmerDashboard';
-import { ExpertDashboard } from './ExpertDashboard';
-import { AdminDashboard } from './AdminDashboard';
+import { ConnectedFarmerDashboard } from './ConnectedFarmerDashboard';
+import { ConnectedExpertDashboard } from './ConnectedExpertDashboard';
+import { ConnectedAdminDashboard } from './ConnectedAdminDashboard';
 import { UserRole } from '../types';
 import { Language, translations } from '../utils/translations';
+import { useAlertStore } from '../store';
 
 interface DashboardProps {
   userRole: UserRole;
@@ -23,15 +21,44 @@ interface DashboardProps {
   toggleTheme?: () => void;
 }
 
+const DASHBOARD_TAB_STORAGE_KEY = 'dashboard-active-tab';
+
 export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, language = 'en', setLanguage, theme, toggleTheme }) => {
   const [activeTab, setActiveTab] = useState<string>('overview');
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showAlerts, setShowAlerts] = useState(false);
+  const [showMobileSearch, setShowMobileSearch] = useState(false);
+
+  const { alerts, unreadCount, markAllAsRead, markAsRead, removeAlert, clearAlerts } = useAlertStore();
   
   const t = translations[language].dashboard;
 
   // Reset active tab when role changes to avoid getting stuck on a non-existent tab
   useEffect(() => {
-    setActiveTab('overview');
+    if (typeof window === 'undefined') {
+      setActiveTab('overview');
+      return;
+    }
+
+    const raw = window.sessionStorage.getItem(DASHBOARD_TAB_STORAGE_KEY);
+    if (!raw) {
+      setActiveTab('overview');
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(raw) as Record<string, string>;
+      setActiveTab(parsed[userRole] || 'overview');
+    } catch {
+      setActiveTab('overview');
+    }
+  }, [userRole]);
+
+  useEffect(() => {
+    setSearchQuery('');
+    setShowAlerts(false);
+    setShowMobileSearch(false);
   }, [userRole]);
 
   // Define Navigation Items based on Role
@@ -44,22 +71,33 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
       case 'farmer':
         return [
           { id: 'overview', label: t.fieldView, icon: LayoutGrid },
-          // The FarmerDashboard component now handles sub-navigation (Irrigation, Pest, etc.) internally
-          // to provide a simpler, app-like experience.
+          { id: 'sensors', label: 'Sensors', icon: Wifi },
+          { id: 'fertilization', label: 'Fertilization', icon: Droplets },
+          { id: 'pest-history', label: 'Pest History', icon: Bug },
+          { id: 'analytics', label: 'Analytics', icon: BarChart2 },
+          { id: 'ai-chat', label: 'AI Assistant', icon: Bot },
+          ...common,
         ];
       case 'expert':
         return [
           { id: 'overview', label: t.analysis, icon: Activity },
-          { id: 'irrigation', label: t.waterTrends, icon: Droplets },
-          { id: 'pest', label: t.pestMap, icon: MapIcon },
-          { id: 'audit', label: t.aiAudit, icon: ShieldCheck },
+          { id: 'district-analytics', label: 'District Analytics', icon: BarChart2 },
+          { id: 'ai-advice', label: 'AI Advice', icon: Bot },
           ...common
         ];
       case 'admin':
         return [
           { id: 'overview', label: t.systemView, icon: Server },
-          { id: 'users', label: t.userMgmt, icon: Users },
-          { id: 'devices', label: t.deviceHealth, icon: Activity },
+          { id: 'users', label: 'Users', icon: Users },
+          { id: 'audit', label: 'Audit Logs', icon: FileClock },
+          { id: 'devices', label: 'Devices', icon: Cpu },
+          { id: 'config', label: 'Configuration', icon: SlidersHorizontal },
+          { id: 'monitoring', label: 'Monitoring', icon: RadioTower },
+          { id: 'analytics', label: 'Analytics', icon: BarChart2 },
+          { id: 'content', label: 'Content', icon: BookOpen },
+          { id: 'ussd', label: 'USSD Monitor', icon: MessageSquare },
+          { id: 'reports', label: 'Reports', icon: FileSpreadsheet },
+          { id: 'broadcast', label: 'Broadcast', icon: Send },
           ...common
         ];
       default:
@@ -68,6 +106,32 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
   };
 
   const navItems = getNavItems(userRole);
+
+  useEffect(() => {
+    if (!navItems.some((item) => item.id === activeTab)) {
+      setActiveTab('overview');
+    }
+  }, [activeTab, navItems]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const raw = window.sessionStorage.getItem(DASHBOARD_TAB_STORAGE_KEY);
+    let parsed: Record<string, string> = {};
+    if (raw) {
+      try {
+        parsed = JSON.parse(raw) as Record<string, string>;
+      } catch {
+        parsed = {};
+      }
+    }
+    parsed[userRole] = activeTab;
+    window.sessionStorage.setItem(DASHBOARD_TAB_STORAGE_KEY, JSON.stringify(parsed));
+  }, [activeTab, userRole]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [activeTab]);
 
   // Role-based Label helpers
   const getRoleLabel = (role: UserRole) => {
@@ -82,11 +146,53 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
       return 'Rwamagana District - Farm A';
   };
 
+  const getTabLabel = (tabId: string) => {
+    const active = navItems.find((item) => item.id === tabId);
+    return active?.label || tabId;
+  };
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (event.key !== '/') return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
+
+      event.preventDefault();
+      const desktopSearchInput = document.getElementById('dashboard-search-input') as HTMLInputElement | null;
+      if (desktopSearchInput) {
+        desktopSearchInput.focus();
+        return;
+      }
+      setShowMobileSearch(true);
+      setTimeout(() => {
+        const mobileSearchInput = document.getElementById('dashboard-search-input-mobile') as HTMLInputElement | null;
+        mobileSearchInput?.focus();
+      }, 0);
+    };
+
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setIsMobileNavOpen(false);
+      setShowMobileSearch(false);
+      setShowAlerts(false);
+    };
+
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
   const NavItem: React.FC<{ id: string; label: string; icon: any }> = ({ id, label, icon: Icon }) => (
     <button
       onClick={() => {
         setActiveTab(id);
         setIsMobileNavOpen(false);
+        setShowMobileSearch(false);
       }}
       className={`w-full flex items-center gap-3 px-6 py-4 rounded-full transition-all duration-300 font-bold text-sm group ${
         activeTab === id
@@ -105,25 +211,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
       
       // Farmer Views
       if (userRole === 'farmer') {
-          // FarmerDashboard handles its own internal routing for A-F modules
-          return <FarmerDashboard onNavigate={setActiveTab} language={language} />;
+          return <ConnectedFarmerDashboard language={language} searchQuery={searchQuery} activeTab={activeTab} />;
       }
 
       // Expert Views
       if (userRole === 'expert') {
-          switch (activeTab) {
-              case 'overview': return <ExpertDashboard language={language} />;
-              case 'irrigation': return <Irrigation language={language} />; // Expert can view charts
-              case 'pest': return <PestControl language={language} />; // Expert can view pest analysis
-              case 'audit': return <ExpertDashboard language={language} />; // In prototype, audit is part of dashboard
-              default: return <ExpertDashboard language={language} />;
-          }
+          return <ConnectedExpertDashboard searchQuery={searchQuery} activeTab={activeTab} />;
       }
 
       // Admin Views
       if (userRole === 'admin') {
-           // In this prototype, AdminDashboard contains all sections (Device, User, etc.)
-           return <AdminDashboard language={language} />;
+           return <ConnectedAdminDashboard activeTab={activeTab} searchQuery={searchQuery} />;
       }
 
       return <div>Select a tab</div>;
@@ -199,13 +297,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
                   <div className="flex items-center gap-2 mt-0.5">
                       <div className={`w-2 h-2 rounded-full ${userRole === 'admin' ? 'bg-blue-500 animate-pulse' : 'bg-[#0F5132] animate-pulse'}`}></div>
                       <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">
-                          {userRole === 'admin' ? t.systemHealthy : t.ussdOnline}
+                          {`${getTabLabel(activeTab)} | ${userRole === 'admin' ? t.systemHealthy : t.ussdOnline}`}
                       </p>
                   </div>
                </div>
            </div>
 
            <div className="flex items-center gap-3 md:gap-4">
+               <button
+                 className="md:hidden p-3 text-slate-400 hover:text-[#0F5132] transition-colors relative bg-white dark:bg-slate-800 rounded-full shadow-sm border border-slate-100 dark:border-slate-700 hover:shadow-md"
+                 onClick={() => setShowMobileSearch((previous) => !previous)}
+                 title="Search"
+               >
+                  <Search size={20} />
+               </button>
                {toggleTheme && (
                    <button 
                      onClick={toggleTheme}
@@ -218,15 +323,135 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
 
                <div className="hidden md:flex items-center gap-2 bg-white dark:bg-slate-800 px-4 py-2.5 rounded-full shadow-sm w-72 focus-within:ring-2 ring-[#0F5132]/20 transition-all border border-slate-100 dark:border-slate-700">
                    <Search size={18} className="text-slate-400" />
-                   <input type="text" placeholder={t.search} className="bg-transparent text-sm w-full outline-none text-slate-600 dark:text-slate-300 placeholder:text-slate-400 font-medium" />
+                   <input
+                     id="dashboard-search-input"
+                     type="text"
+                     placeholder={t.search}
+                     value={searchQuery}
+                     onChange={(event) => setSearchQuery(event.target.value)}
+                     className="bg-transparent text-sm w-full outline-none text-slate-600 dark:text-slate-300 placeholder:text-slate-400 font-medium"
+                   />
+                   {searchQuery && (
+                     <button
+                       onClick={() => setSearchQuery('')}
+                       className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                       title="Clear search"
+                     >
+                       <X size={14} />
+                     </button>
+                   )}
                </div>
 
-               <button className="p-3 text-slate-400 hover:text-[#0F5132] transition-colors relative bg-white dark:bg-slate-800 rounded-full shadow-sm border border-slate-100 dark:border-slate-700 hover:shadow-md">
+               <button
+                  onClick={() => setShowAlerts((previous) => !previous)}
+                  className="p-3 text-slate-400 hover:text-[#0F5132] transition-colors relative bg-white dark:bg-slate-800 rounded-full shadow-sm border border-slate-100 dark:border-slate-700 hover:shadow-md"
+               >
                   <Bell size={20} />
-                  <span className="absolute top-2 right-2.5 w-2 h-2 bg-red-500 rounded-full border border-white dark:border-slate-800"></span>
+                  {unreadCount > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center border border-white dark:border-slate-800">
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </span>
+                  )}
                </button>
            </div>
         </header>
+
+        {showMobileSearch && (
+          <div className="md:hidden px-4 pt-3">
+            <div className="flex items-center gap-2 bg-white dark:bg-slate-800 px-4 py-2.5 rounded-full shadow-sm border border-slate-100 dark:border-slate-700">
+              <Search size={16} className="text-slate-400" />
+              <input
+                id="dashboard-search-input-mobile"
+                type="text"
+                placeholder={t.search}
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                className="bg-transparent text-sm w-full outline-none text-slate-600 dark:text-slate-300 placeholder:text-slate-400 font-medium"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                  title="Clear search"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {showAlerts && (
+          <div className="px-4 md:px-8 lg:px-10 max-w-7xl mx-auto pt-4">
+            <div className="rounded-2xl border border-slate-200/70 dark:border-slate-700/70 bg-white dark:bg-slate-800 shadow-sm">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200/70 dark:border-slate-700/70">
+                <div>
+                  <p className="font-semibold text-sm">Alerts</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {unreadCount > 0 ? `${unreadCount} unread` : 'All caught up'}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => markAllAsRead()}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-[#0F5132] hover:underline"
+                  >
+                    <CheckCheck size={14} />
+                    Mark all read
+                  </button>
+                  <button
+                    onClick={() => clearAlerts()}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-red-600"
+                  >
+                    <Trash2 size={14} />
+                    Clear
+                  </button>
+                </div>
+              </div>
+              <div className="max-h-72 overflow-y-auto">
+                {alerts.length === 0 ? (
+                  <div className="px-4 py-6 text-sm text-slate-500 dark:text-slate-400">
+                    No alerts yet.
+                  </div>
+                ) : (
+                  alerts.slice(0, 8).map((alert) => (
+                    <div
+                      key={alert.id}
+                      className="px-4 py-3 border-b last:border-b-0 border-slate-100 dark:border-slate-700/60"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-semibold">{alert.title}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{alert.message}</p>
+                          <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
+                            {new Date(alert.createdAt).toLocaleString()}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {!alert.isRead && <span className="mt-1 w-2 h-2 rounded-full bg-red-500"></span>}
+                          {!alert.isRead && (
+                            <button
+                              onClick={() => markAsRead(alert.id)}
+                              className="text-[11px] font-semibold text-[#0F5132] hover:underline"
+                            >
+                              Mark read
+                            </button>
+                          )}
+                          <button
+                            onClick={() => removeAlert(alert.id)}
+                            className="text-[11px] font-semibold text-slate-500 hover:text-red-600"
+                          >
+                            Dismiss
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* DYNAMIC PAGE CONTENT */}
         <div className="p-4 md:p-8 lg:p-10 max-w-7xl mx-auto">

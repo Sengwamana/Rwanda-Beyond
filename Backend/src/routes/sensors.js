@@ -28,6 +28,16 @@ const getFarmUserId = async (req) => {
   return await db.farms.getUserId(farmId);
 };
 
+const getSensorUserId = async (req) => {
+  const sensorId = req.params.sensorId || req.body.sensorId;
+  if (!sensorId) return null;
+
+  const sensor = await db.sensors.getById(sensorId);
+  if (!sensor?.farm_id) return null;
+
+  return await db.farms.getUserId(sensor.farm_id);
+};
+
 // =====================================================
 // SENSOR MANAGEMENT ROUTES
 // =====================================================
@@ -72,12 +82,12 @@ router.get('/health',
 /**
  * @route POST /api/v1/sensors
  * @desc Register a new sensor
- * @access Admin
+ * @access Owner, Admin, Expert
  */
 router.post('/',
   authenticate,
-  authorize(ROLES.ADMIN),
   validateSensorCreation,
+  requireOwnership(getFarmUserId),
   asyncHandler(async (req, res) => {
     const sensor = await sensorService.registerSensor(req.body);
     return createdResponse(res, sensor, 'Sensor registered successfully');
@@ -112,13 +122,13 @@ router.get('/:sensorId',
 /**
  * @route PUT /api/v1/sensors/:sensorId
  * @desc Update sensor
- * @access Admin
+ * @access Owner, Admin, Expert
  */
 router.put('/:sensorId',
   authenticate,
-  authorize(ROLES.ADMIN),
   ...validateUUID('sensorId'),
   handleValidationErrors,
+  requireOwnership(getSensorUserId),
   asyncHandler(async (req, res) => {
     const sensor = await sensorService.updateSensor(req.params.sensorId, req.body);
     return successResponse(res, sensor, 'Sensor updated successfully');
@@ -267,20 +277,17 @@ router.get('/data/farm/:farmId/daily',
 
 /**
  * @route DELETE /api/v1/sensors/:sensorId
- * @desc Delete/deactivate a sensor (sets status to decommissioned)
- * @access Admin
+ * @desc Delete a sensor
+ * @access Owner, Admin, Expert
  */
 router.delete('/:sensorId',
   authenticate,
-  authorize(ROLES.ADMIN),
   ...validateUUID('sensorId'),
   handleValidationErrors,
+  requireOwnership(getSensorUserId),
   asyncHandler(async (req, res) => {
-    const sensor = await sensorService.updateSensor(req.params.sensorId, {
-      status: 'decommissioned',
-      updated_at: new Date().toISOString()
-    });
-    return successResponse(res, sensor, 'Sensor decommissioned successfully');
+    await db.sensors.remove(req.params.sensorId);
+    return successResponse(res, { id: req.params.sensorId }, 'Sensor deleted successfully');
   })
 );
 

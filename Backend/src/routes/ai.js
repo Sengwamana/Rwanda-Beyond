@@ -70,7 +70,7 @@ router.post('/advice',
       // Add user context
       const enrichedContext = {
         ...context,
-        userId: req.auth?.userId,
+        userId: req.user?.id,
         language: req.headers['accept-language'] || 'en'
       };
       
@@ -141,8 +141,9 @@ router.post('/chat',
       .withMessage('Conversation history must be an array'),
     body('farmId')
       .optional()
-      .isUUID()
-      .withMessage('Farm ID must be a valid UUID')
+      .isString()
+      .notEmpty()
+      .withMessage('Farm ID must be a valid resource ID')
   ],
   validateRequest,
   async (req, res) => {
@@ -152,7 +153,7 @@ router.post('/chat',
       // Build context from conversation history and farm data
       const context = {
         conversationHistory: conversationHistory.slice(-10), // Last 10 messages
-        userId: req.auth?.userId
+        userId: req.user?.id
       };
       
       // If farm ID provided, get farm context
@@ -183,7 +184,7 @@ router.post('/chat',
 router.get('/capabilities', (req, res) => {
   const capabilities = {
     provider: 'Google Gemini',
-    model: 'gemini-1.5-flash',
+    model: config.ai.geminiModel,
     features: [
       {
         name: 'Agricultural Advice',

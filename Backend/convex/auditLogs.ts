@@ -5,9 +5,19 @@ export const create = mutation({
   args: { data: v.any() },
   returns: v.null(),
   handler: async (ctx, { data }) => {
+    const payload =
+      data &&
+      typeof data === "object" &&
+      !Array.isArray(data) &&
+      (data as any).data &&
+      typeof (data as any).data === "object" &&
+      !(data as any).action
+        ? (data as any).data
+        : data;
+
     await ctx.db.insert("audit_logs", {
-      ...data,
-      created_at: data.created_at ?? Date.now(),
+      ...payload,
+      created_at: payload.created_at ?? Date.now(),
     });
     return null;
   },

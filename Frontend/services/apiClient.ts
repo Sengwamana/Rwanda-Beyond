@@ -9,6 +9,7 @@ import axios, {
   AxiosError,
   InternalAxiosRequestConfig,
   AxiosResponse,
+  AxiosProgressEvent,
 } from 'axios';
 
 // =====================================================
@@ -44,6 +45,10 @@ export interface ApiResponse<T> {
 export type RequestConfig = InternalAxiosRequestConfig & {
   _retry?: boolean;
   _retryCount?: number;
+};
+
+type UploadOptions = {
+  onUploadProgress?: (progressEvent: AxiosProgressEvent) => void;
 };
 
 // Error types for categorization
@@ -323,9 +328,8 @@ const createApiClient = (config: Partial<ApiConfig> = {}): AxiosInstance => {
             originalRequest.headers.Authorization = `Bearer ${newToken}`;
             return client(originalRequest);
           }
+          return Promise.reject(error);
         } catch (refreshError) {
-          // Token refresh failed - redirect to login
-          window.dispatchEvent(new CustomEvent('auth:logout', { detail: { reason: 'token_expired' } }));
           return Promise.reject(error);
         }
       }
@@ -444,18 +448,25 @@ export const api = {
   upload: async <T>(
     url: string,
     formData: FormData,
-    onProgress?: (progress: number) => void
+    onProgressOrOptions?: ((progress: number) => void) | UploadOptions
   ): Promise<T> => {
+    const options: UploadOptions =
+      typeof onProgressOrOptions === 'function'
+        ? {
+            onUploadProgress: (progressEvent: AxiosProgressEvent) => {
+              if (progressEvent.total) {
+                const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+                onProgressOrOptions(progress);
+              }
+            },
+          }
+        : onProgressOrOptions || {};
+
     const response = await apiClient.post<T>(url, formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
-      onUploadProgress: (progressEvent) => {
-        if (onProgress && progressEvent.total) {
-          const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-          onProgress(progress);
-        }
-      },
+      onUploadProgress: options.onUploadProgress,
     });
     return response.data;
   },

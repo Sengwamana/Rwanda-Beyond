@@ -18,6 +18,7 @@ export interface UserQueryParams {
   limit?: number;
   role?: string;
   isActive?: boolean;
+  status?: 'active' | 'inactive';
   search?: string;
 }
 
@@ -33,6 +34,15 @@ export interface SystemConfigUpdate {
   isActive?: boolean;
 }
 
+export interface SystemConfigItem {
+  value: any;
+  description?: string;
+  updatedAt?: string | number;
+  isActive?: boolean;
+}
+
+export type SystemConfigMap = Record<string, Record<string, SystemConfigItem>>;
+
 // Admin service functions
 export const adminService = {
   // ===== User Management =====
@@ -41,7 +51,13 @@ export const adminService = {
    * Get all users (admin only)
    */
   getUsers: async (params?: UserQueryParams): Promise<PaginatedResponse<User>> => {
-    const response = await apiClient.get<PaginatedResponse<User>>('/admin/users', { params });
+    const requestParams = {
+      ...params,
+      status:
+        params?.status ??
+        (params?.isActive === undefined ? undefined : params.isActive ? 'active' : 'inactive'),
+    };
+    const response = await apiClient.get<PaginatedResponse<User>>('/admin/users', { params: requestParams });
     return response.data;
   },
 
@@ -57,16 +73,42 @@ export const adminService = {
    * Update user (admin only)
    */
   updateUser: async (id: string, data: AdminUserUpdate): Promise<ApiResponse<User>> => {
-    const response = await apiClient.put<ApiResponse<User>>(`/admin/users/${id}`, data);
-    return response.data;
+    let latestResponse: ApiResponse<User> | null = null;
+
+    if (data.role) {
+      const roleResponse = await apiClient.put<ApiResponse<User>>(`/admin/users/${id}/role`, { role: data.role });
+      latestResponse = roleResponse.data;
+    }
+
+    if (data.isActive === false) {
+      const deactivateResponse = await apiClient.post<ApiResponse<User>>(`/admin/users/${id}/deactivate`, {});
+      latestResponse = deactivateResponse.data;
+    }
+
+    if (data.isActive === true) {
+      const reactivateResponse = await apiClient.post<ApiResponse<User>>(`/admin/users/${id}/reactivate`);
+      latestResponse = reactivateResponse.data;
+    }
+
+    if (latestResponse) {
+      return latestResponse;
+    }
+
+    const userResponse = await apiClient.get<ApiResponse<User>>(`/admin/users/${id}`);
+    return userResponse.data;
   },
 
   /**
    * Delete user (admin only)
    */
   deleteUser: async (id: string): Promise<ApiResponse<{ message: string }>> => {
-    const response = await apiClient.delete<ApiResponse<{ message: string }>>(`/admin/users/${id}`);
-    return response.data;
+    await apiClient.post<ApiResponse<User>>(`/admin/users/${id}/deactivate`, {});
+    return {
+      success: true,
+      message: 'User deactivated successfully',
+      data: { message: 'User deactivated successfully' },
+      timestamp: new Date().toISOString(),
+    };
   },
 
   /**
@@ -162,8 +204,8 @@ export const adminService = {
   /**
    * Get all system configurations
    */
-  getConfigs: async (): Promise<ApiResponse<SystemConfig[]>> => {
-    const response = await apiClient.get<ApiResponse<SystemConfig[]>>('/admin/config');
+  getConfigs: async (): Promise<ApiResponse<SystemConfigMap>> => {
+    const response = await apiClient.get<ApiResponse<SystemConfigMap>>('/admin/config');
     return response.data;
   },
 
@@ -171,7 +213,7 @@ export const adminService = {
    * Update a system configuration
    */
   updateConfig: async (key: string, data: SystemConfigUpdate): Promise<ApiResponse<SystemConfig>> => {
-    const response = await apiClient.put<ApiResponse<SystemConfig>>(`/admin/config/${key}`, data);
+    const response = await apiClient.put<ApiResponse<SystemConfig>>(`/admin/config/${encodeURIComponent(key)}`, data);
     return response.data;
   },
 
@@ -199,22 +241,38 @@ export const adminService = {
    * Get system analytics
    */
   getAnalytics: async (params?: {
-    period?: 'day' | 'week' | 'month' | 'year';
+    period?: '7d' | '30d' | '90d';
     startDate?: string;
     endDate?: string;
   }): Promise<ApiResponse<{
-    apiCalls: Array<{ date: string; count: number }>;
-    activeUsers: Array<{ date: string; count: number }>;
-    sensorReadings: Array<{ date: string; count: number }>;
-    recommendations: Array<{ date: string; count: number }>;
-    pestDetections: Array<{ date: string; count: number }>;
+    period?: string;
+    since?: string;
+    metrics?: {
+      sensorReadings?: number;
+      recommendationsGenerated?: number;
+      messagesSent?: number;
+      errors?: number;
+    };
+    apiCalls?: Array<{ date: string; count: number }>;
+    activeUsers?: Array<{ date: string; count: number }>;
+    sensorReadings?: Array<{ date: string; count: number }>;
+    recommendations?: Array<{ date: string; count: number }>;
+    pestDetections?: Array<{ date: string; count: number }>;
   }>> => {
     const response = await apiClient.get<ApiResponse<{
-      apiCalls: Array<{ date: string; count: number }>;
-      activeUsers: Array<{ date: string; count: number }>;
-      sensorReadings: Array<{ date: string; count: number }>;
-      recommendations: Array<{ date: string; count: number }>;
-      pestDetections: Array<{ date: string; count: number }>;
+      period?: string;
+      since?: string;
+      metrics?: {
+        sensorReadings?: number;
+        recommendationsGenerated?: number;
+        messagesSent?: number;
+        errors?: number;
+      };
+      apiCalls?: Array<{ date: string; count: number }>;
+      activeUsers?: Array<{ date: string; count: number }>;
+      sensorReadings?: Array<{ date: string; count: number }>;
+      recommendations?: Array<{ date: string; count: number }>;
+      pestDetections?: Array<{ date: string; count: number }>;
     }>>('/admin/analytics', { params });
     return response.data;
   },
@@ -250,14 +308,15 @@ export const adminService = {
    * Generate system report
    */
   generateReport: async (params: {
-    type: 'farms' | 'users' | 'sensors' | 'recommendations' | 'pest-detections';
+    type: 'summary' | 'farms' | 'users' | 'sensors' | 'recommendations' | 'pest-detections';
     format: 'json' | 'csv';
     startDate?: string;
     endDate?: string;
     filters?: Record<string, any>;
-  }): Promise<Blob> => {
+  }): Promise<Blob | any> => {
+    const isCsv = params.format === 'csv';
     const response = await apiClient.post('/admin/reports/generate', params, {
-      responseType: 'blob',
+      responseType: isCsv ? 'blob' : 'json',
     });
     return response.data;
   },
@@ -357,7 +416,7 @@ export const adminService = {
     expiresAt: string;
   }>> => {
     const response = await apiClient.post<ApiResponse<any>>(
-      '/admin/devices/token',
+      '/admin/devices/generate',
       data
     );
     return response.data;
@@ -380,15 +439,8 @@ export const adminService = {
    */
   getSystemHealth: async (): Promise<ApiResponse<{
     status: 'healthy' | 'degraded' | 'unhealthy';
-    services: {
-      database: { status: string; latency: number };
-      redis: { status: string; latency: number };
-      weatherApi: { status: string; latency: number };
-      aiService: { status: string; latency: number };
-      smsGateway: { status: string; latency: number };
-    };
-    uptime: number;
-    lastCheck: string;
+    timestamp?: string;
+    checks?: Record<string, any>;
   }>> => {
     const response = await apiClient.get<ApiResponse<any>>('/admin/health');
     return response.data;
@@ -398,14 +450,16 @@ export const adminService = {
    * Get system metrics
    */
   getSystemMetrics: async (params?: {
-    period?: 'hour' | 'day' | 'week';
+    period?: '1h' | '6h' | '24h' | '7d';
   }): Promise<ApiResponse<{
-    cpu: Array<{ timestamp: string; value: number }>;
-    memory: Array<{ timestamp: string; value: number }>;
-    activeConnections: Array<{ timestamp: string; value: number }>;
-    requestsPerMinute: Array<{ timestamp: string; value: number }>;
-    errorRate: Array<{ timestamp: string; value: number }>;
-    avgResponseTime: Array<{ timestamp: string; value: number }>;
+    period?: string;
+    since?: string;
+    metrics?: {
+      sensorReadings?: number;
+      recommendationsGenerated?: number;
+      messagesSent?: number;
+      errors?: number;
+    };
   }>> => {
     const response = await apiClient.get<ApiResponse<any>>(
       '/admin/metrics',
@@ -421,14 +475,14 @@ export const adminService = {
    */
   sendBroadcast: async (data: {
     message: string;
+    messageKinyarwanda?: string;
     channel: 'sms' | 'push' | 'email' | 'all';
     targetRole?: 'farmer' | 'expert' | 'admin' | 'all';
     targetDistrict?: string;
     priority?: 'low' | 'normal' | 'high' | 'critical';
   }): Promise<ApiResponse<{
-    sent: number;
-    failed: number;
     queued: number;
+    targetedUsers: number;
   }>> => {
     const response = await apiClient.post<ApiResponse<any>>(
       '/admin/broadcast',

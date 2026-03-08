@@ -11,6 +11,12 @@ import logger from '../utils/logger.js';
 import { AppError } from '../utils/errors.js';
 import config from '../config/index.js';
 
+const isDatabaseUnavailableError = (err) => {
+  const code = err?.cause?.code || err?.code;
+  const message = String(err?.message || '').toLowerCase();
+  return code === 'ECONNREFUSED' || code === 'ENOTFOUND' || message.includes('fetch failed');
+};
+
 /**
  * Not Found handler for undefined routes
  */
@@ -74,6 +80,15 @@ export const errorHandler = (err, req, res, next) => {
       success: false,
       message,
       code: 'DATABASE_ERROR',
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  if (isDatabaseUnavailableError(err)) {
+    return res.status(503).json({
+      success: false,
+      message: 'Database service unavailable',
+      code: 'DB_UNAVAILABLE',
       timestamp: new Date().toISOString()
     });
   }

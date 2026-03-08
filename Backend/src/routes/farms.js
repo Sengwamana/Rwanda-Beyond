@@ -20,7 +20,8 @@ const router = Router();
  * Get farm user ID for ownership check
  */
 const getFarmUserId = async (req) => {
-  return await db.farms.getUserId(req.params.farmId);
+  const farmOwner = await db.farms.getUserId(req.params.farmId);
+  return farmOwner?.user_id || farmOwner?.userId || farmOwner || null;
 };
 
 /**
@@ -206,9 +207,18 @@ router.post('/:farmId/irrigation',
   handleValidationErrors,
   requireOwnership(getFarmUserId),
   asyncHandler(async (req, res) => {
+    const body = req.body || {};
     const data = {
-      ...req.body,
-      farmId: req.params.farmId,
+      farm_id: req.params.farmId,
+      scheduled_date: body.scheduledDate || body.scheduled_date,
+      scheduled_time: body.scheduledTime || body.scheduled_time,
+      duration_minutes: body.durationMinutes ?? body.duration_minutes,
+      water_volume_liters: body.waterVolumeLiters ?? body.water_volume_liters,
+      trigger_source: body.triggerSource || body.trigger_source,
+      notes: body.notes,
+      recommendation_id: body.recommendationId || body.recommendation_id,
+      soil_moisture_at_scheduling: body.soilMoistureAtScheduling ?? body.soil_moisture_at_scheduling,
+      target_soil_moisture: body.targetSoilMoisture ?? body.target_soil_moisture,
     };
     const schedule = await db.irrigationSchedules.create(data);
     return createdResponse(res, schedule, 'Irrigation schedule created successfully');
@@ -226,10 +236,13 @@ router.put('/:farmId/irrigation/:scheduleId/execute',
   handleValidationErrors,
   requireOwnership(getFarmUserId),
   asyncHandler(async (req, res) => {
+    const { actualDurationMinutes, actualWaterVolume, notes } = req.body || {};
     const schedule = await db.irrigationSchedules.update(req.params.scheduleId, {
-      isExecuted: true,
-      executedAt: new Date().toISOString(),
-      ...req.body,
+      is_executed: true,
+      executed_at: Date.now(),
+      ...(actualDurationMinutes !== undefined ? { actual_duration_minutes: actualDurationMinutes } : {}),
+      ...(actualWaterVolume !== undefined ? { actual_water_volume: actualWaterVolume } : {}),
+      ...(notes !== undefined ? { notes } : {}),
     });
     return successResponse(res, schedule, 'Irrigation schedule marked as executed');
   })
@@ -269,9 +282,20 @@ router.post('/:farmId/fertilization',
   handleValidationErrors,
   requireOwnership(getFarmUserId),
   asyncHandler(async (req, res) => {
+    const body = req.body || {};
     const data = {
-      ...req.body,
-      farmId: req.params.farmId,
+      farm_id: req.params.farmId,
+      scheduled_date: body.scheduledDate || body.scheduled_date,
+      fertilizer_type: body.fertilizerType || body.fertilizer_type,
+      application_method: body.applicationMethod || body.application_method,
+      nitrogen_kg: body.nitrogenKg ?? body.nitrogen_kg,
+      phosphorus_kg: body.phosphorusKg ?? body.phosphorus_kg,
+      potassium_kg: body.potassiumKg ?? body.potassium_kg,
+      total_quantity_kg: body.totalQuantityKg ?? body.total_quantity_kg,
+      notes: body.notes,
+      recommendation_id: body.recommendationId || body.recommendation_id,
+      growth_stage: body.growthStage || body.growth_stage,
+      soil_npk_at_scheduling: body.soilNpkAtScheduling || body.soil_npk_at_scheduling,
     };
     const schedule = await db.fertilizationSchedules.create(data);
     return createdResponse(res, schedule, 'Fertilization schedule created successfully');
@@ -289,12 +313,78 @@ router.put('/:farmId/fertilization/:scheduleId/execute',
   handleValidationErrors,
   requireOwnership(getFarmUserId),
   asyncHandler(async (req, res) => {
+    const { actualQuantityKg, notes } = req.body || {};
     const schedule = await db.fertilizationSchedules.update(req.params.scheduleId, {
-      isExecuted: true,
-      executedAt: new Date().toISOString(),
-      ...req.body,
+      is_executed: true,
+      executed_at: Date.now(),
+      ...(actualQuantityKg !== undefined ? { actual_quantity_kg: actualQuantityKg } : {}),
+      ...(notes !== undefined ? { notes } : {}),
     });
     return successResponse(res, schedule, 'Fertilization schedule marked as executed');
+  })
+);
+
+/**
+ * @route PUT /api/v1/farms/:farmId/fertilization/:scheduleId
+ * @desc Update a fertilization schedule
+ * @access Owner, Admin
+ */
+router.put('/:farmId/fertilization/:scheduleId',
+  authenticate,
+  ...validateUUID('farmId'),
+  handleValidationErrors,
+  requireOwnership(getFarmUserId),
+  asyncHandler(async (req, res) => {
+    const body = req.body || {};
+    const updates = {
+      ...(body.scheduledDate !== undefined || body.scheduled_date !== undefined
+        ? { scheduled_date: body.scheduledDate || body.scheduled_date }
+        : {}),
+      ...(body.fertilizerType !== undefined || body.fertilizer_type !== undefined
+        ? { fertilizer_type: body.fertilizerType || body.fertilizer_type }
+        : {}),
+      ...(body.applicationMethod !== undefined || body.application_method !== undefined
+        ? { application_method: body.applicationMethod || body.application_method }
+        : {}),
+      ...(body.nitrogenKg !== undefined || body.nitrogen_kg !== undefined
+        ? { nitrogen_kg: body.nitrogenKg ?? body.nitrogen_kg }
+        : {}),
+      ...(body.phosphorusKg !== undefined || body.phosphorus_kg !== undefined
+        ? { phosphorus_kg: body.phosphorusKg ?? body.phosphorus_kg }
+        : {}),
+      ...(body.potassiumKg !== undefined || body.potassium_kg !== undefined
+        ? { potassium_kg: body.potassiumKg ?? body.potassium_kg }
+        : {}),
+      ...(body.totalQuantityKg !== undefined || body.total_quantity_kg !== undefined
+        ? { total_quantity_kg: body.totalQuantityKg ?? body.total_quantity_kg }
+        : {}),
+      ...(body.notes !== undefined ? { notes: body.notes } : {}),
+      ...(body.growthStage !== undefined || body.growth_stage !== undefined
+        ? { growth_stage: body.growthStage || body.growth_stage }
+        : {}),
+      ...(body.soilNpkAtScheduling !== undefined || body.soil_npk_at_scheduling !== undefined
+        ? { soil_npk_at_scheduling: body.soilNpkAtScheduling || body.soil_npk_at_scheduling }
+        : {}),
+    };
+
+    const schedule = await db.fertilizationSchedules.update(req.params.scheduleId, updates);
+    return successResponse(res, schedule, 'Fertilization schedule updated successfully');
+  })
+);
+
+/**
+ * @route DELETE /api/v1/farms/:farmId/fertilization/:scheduleId
+ * @desc Delete a fertilization schedule
+ * @access Owner, Admin
+ */
+router.delete('/:farmId/fertilization/:scheduleId',
+  authenticate,
+  ...validateUUID('farmId'),
+  handleValidationErrors,
+  requireOwnership(getFarmUserId),
+  asyncHandler(async (req, res) => {
+    await db.fertilizationSchedules.remove(req.params.scheduleId);
+    return successResponse(res, { id: req.params.scheduleId }, 'Fertilization schedule deleted successfully');
   })
 );
 
@@ -315,14 +405,14 @@ router.put('/:farmId/growth-stage',
     if (!growthStage) {
       return res.status(400).json({ success: false, message: 'growthStage is required' });
     }
-    const farm = await db.farms.update(req.params.farmId, { growthStage });
+    const farm = await db.farms.update(req.params.farmId, { current_growth_stage: growthStage });
     return successResponse(res, farm, 'Growth stage updated successfully');
   })
 );
 
 /**
  * @route POST /api/v1/farms/:farmId/image
- * @desc Upload farm image (placeholder)
+ * @desc Save farm image metadata
  * @access Owner, Admin
  */
 router.post('/:farmId/image',
@@ -331,13 +421,36 @@ router.post('/:farmId/image',
   handleValidationErrors,
   requireOwnership(getFarmUserId),
   asyncHandler(async (req, res) => {
-    // Placeholder: accept image URL from body and store it on the farm record
-    const { imageUrl } = req.body;
+    const body = req.body || {};
+    const imageUrl = body.imageUrl || body.image_url || (Array.isArray(body.images) ? body.images[0] : undefined);
+
     if (!imageUrl) {
-      return res.status(400).json({ success: false, message: 'imageUrl is required' });
+      return res.status(400).json({ success: false, message: 'imageUrl is required (or images[0])' });
     }
-    const farm = await db.farms.update(req.params.farmId, { imageUrl });
-    return successResponse(res, farm, 'Farm image updated successfully');
+
+    const farm = await db.farms.getById(req.params.farmId);
+    const existingMetadata = (farm?.metadata && typeof farm.metadata === 'object') ? farm.metadata : {};
+    const existingImages = Array.isArray(existingMetadata.images) ? existingMetadata.images : [];
+
+    const imageEntry = {
+      url: imageUrl,
+      uploaded_at: Date.now(),
+      uploaded_by: req.user.id,
+    };
+
+    const metadata = {
+      ...existingMetadata,
+      latest_image_url: imageUrl,
+      images: [...existingImages, imageEntry],
+    };
+
+    const updatedFarm = await db.farms.update(req.params.farmId, { metadata });
+
+    return successResponse(res, {
+      farm: updatedFarm,
+      image: imageEntry,
+      totalImages: metadata.images.length,
+    }, 'Farm image updated successfully');
   })
 );
 

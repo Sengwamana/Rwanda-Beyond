@@ -63,6 +63,14 @@ const config = {
     webhookSecret: process.env.CLERK_WEBHOOK_SECRET || ''
   },
 
+  // Auth role bootstrap configuration
+  auth: {
+    bootstrapAdminEmails: (process.env.ADMIN_BOOTSTRAP_EMAILS || '')
+      .split(',')
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean),
+  },
+
   // Cloudinary media management
   cloudinary: {
     cloudName: process.env.CLOUDINARY_CLOUD_NAME || '',
@@ -96,7 +104,7 @@ const config = {
   ai: {
     provider: process.env.AI_PROVIDER || 'gemini',
     geminiApiKey: process.env.GEMINI_API_KEY || '',
-    geminiModel: process.env.GEMINI_MODEL || 'gemini-1.5-flash',
+    geminiModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
     serviceUrl: process.env.AI_SERVICE_URL || 'https://generativelanguage.googleapis.com/v1beta',
     apiKey: process.env.AI_SERVICE_API_KEY || process.env.GEMINI_API_KEY || '',
     pestDetectionThreshold: parseFloat(process.env.PEST_DETECTION_THRESHOLD) || 0.75,

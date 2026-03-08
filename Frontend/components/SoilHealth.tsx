@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { Beaker, Sprout, RefreshCw, CheckCircle2, CheckSquare, Sparkles, Loader2 } from 'lucide-react';
 import { Language, translations } from '../utils/translations';
-import { GoogleGenAI } from "@google/genai";
-
-const API_KEY = process.env.API_KEY || '';
+import { getAgriculturalAdvice } from '../services/ai';
+import { useFarmStore } from '../store';
 
 interface SoilHealthProps {
     language?: Language;
@@ -11,6 +10,7 @@ interface SoilHealthProps {
 
 export const SoilHealth: React.FC<SoilHealthProps> = ({ language = 'en' }) => {
     const t = translations[language].soil;
+    const { selectedFarm, farms } = useFarmStore();
     const [isSyncing, setIsSyncing] = useState(false);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [aiInsight, setAiInsight] = useState<string | null>(null);
@@ -67,12 +67,6 @@ export const SoilHealth: React.FC<SoilHealthProps> = ({ language = 'en' }) => {
         if (isAnalyzing) return;
         setIsAnalyzing(true);
         try {
-            if (!API_KEY) {
-                console.warn("API Key missing, cannot run AI analysis.");
-                throw new Error("API Key missing");
-            }
-
-            const ai = new GoogleGenAI({ apiKey: API_KEY });
             const prompt = `Act as an expert agronomist for Maize farming in Rwanda. 
             Analyze the following soil sensor data:
             - Nitrogen (N): ${nutrients[0].value} ppm (Status: ${nutrients[0].status})
@@ -86,13 +80,19 @@ export const SoilHealth: React.FC<SoilHealthProps> = ({ language = 'en' }) => {
             1. Suggest a specific fertilizer common in Rwanda (e.g., DAP, NPK 17-17-17, Urea, or Lime for pH).
             2. Mention the optimal timing for application (e.g., planting, top dressing).`;
 
-            const response = await ai.models.generateContent({
-                model: 'gemini-3-flash-preview',
-                contents: prompt
+            const farmId = selectedFarm?.id || farms[0]?.id;
+            const response = await getAgriculturalAdvice({
+                question: prompt,
+                context: {
+                    cropType: 'maize',
+                    location: 'Rwamagana, Rwanda',
+                    farmId,
+                    growthStage: 'vegetative'
+                }
             });
 
-            if (response.text) {
-                setAiInsight(response.text);
+            if (response.answer) {
+                setAiInsight(response.answer);
             }
         } catch (e) {
             console.error("AI Soil Analysis failed", e);
