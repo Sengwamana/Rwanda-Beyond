@@ -17,13 +17,21 @@ export const getLatestByFarm = query({
   args: { farmId: v.id("farms"), validOnly: v.optional(v.boolean()) },
   returns: v.any(),
   handler: async (ctx, args) => {
-    let q = ctx.db
+    if (args.validOnly !== false) {
+      return await ctx.db
+        .query("sensor_data")
+        .withIndex("by_farm_valid_timestamp", (q) =>
+          q.eq("farm_id", args.farmId).eq("is_valid", true)
+        )
+        .order("desc")
+        .first();
+    }
+
+    return await ctx.db
       .query("sensor_data")
       .withIndex("by_farm_timestamp", (q) => q.eq("farm_id", args.farmId))
-      .order("desc");
-    const results = await q.collect();
-    const filtered = args.validOnly !== false ? results.filter((r) => r.is_valid) : results;
-    return filtered[0] ?? null;
+      .order("desc")
+      .first();
   },
 });
 
@@ -35,29 +43,145 @@ export const getByFarm = query({
     startDate: v.optional(v.number()),
     endDate: v.optional(v.number()),
     validOnly: v.optional(v.boolean()),
-    sensorId: v.optional(v.string()),
+    sensorId: v.optional(v.id("sensors")),
   },
   returns: v.any(),
   handler: async (ctx, args) => {
     const page = args.page ?? 1;
     const limit = args.limit ?? 50;
-
-    let data = await ctx.db
-      .query("sensor_data")
-      .withIndex("by_farm_timestamp", (q) => q.eq("farm_id", args.farmId))
-      .order("desc")
-      .collect();
-
-    if (args.startDate) data = data.filter((d) => d.reading_timestamp >= args.startDate!);
-    if (args.endDate) data = data.filter((d) => d.reading_timestamp <= args.endDate!);
-    if (args.validOnly !== false) data = data.filter((d) => d.is_valid);
-    if (args.sensorId) data = data.filter((d) => d.sensor_id === args.sensorId);
-
-    const total = data.length;
     const offset = (page - 1) * limit;
-    const paginated = data.slice(offset, offset + limit);
+    const sensorId = args.sensorId;
 
-    return { data: paginated, count: total };
+    const query =
+      sensorId
+        ? ctx.db
+            .query("sensor_data")
+            .withIndex("by_farm_sensor_timestamp", (q) => {
+              const base = q.eq("farm_id", args.farmId).eq("sensor_id", sensorId);
+              if (args.startDate !== undefined && args.endDate !== undefined) {
+                return base.gte("reading_timestamp", args.startDate).lte("reading_timestamp", args.endDate);
+              }
+              if (args.startDate !== undefined) {
+                return base.gte("reading_timestamp", args.startDate);
+              }
+              if (args.endDate !== undefined) {
+                return base.lte("reading_timestamp", args.endDate);
+              }
+              return base;
+            })
+            .order("desc")
+        : args.validOnly !== false
+          ? ctx.db
+              .query("sensor_data")
+              .withIndex("by_farm_valid_timestamp", (q) => {
+                const base = q.eq("farm_id", args.farmId).eq("is_valid", true);
+                if (args.startDate !== undefined && args.endDate !== undefined) {
+                  return base.gte("reading_timestamp", args.startDate).lte("reading_timestamp", args.endDate);
+                }
+                if (args.startDate !== undefined) {
+                  return base.gte("reading_timestamp", args.startDate);
+                }
+                if (args.endDate !== undefined) {
+                  return base.lte("reading_timestamp", args.endDate);
+                }
+                return base;
+              })
+              .order("desc")
+          : ctx.db
+              .query("sensor_data")
+              .withIndex("by_farm_timestamp", (q) => {
+                const base = q.eq("farm_id", args.farmId);
+                if (args.startDate !== undefined && args.endDate !== undefined) {
+                  return base.gte("reading_timestamp", args.startDate).lte("reading_timestamp", args.endDate);
+                }
+                if (args.startDate !== undefined) {
+                  return base.gte("reading_timestamp", args.startDate);
+                }
+                if (args.endDate !== undefined) {
+                  return base.lte("reading_timestamp", args.endDate);
+                }
+                return base;
+              })
+              .order("desc");
+
+    const paginated = [];
+    let count = 0;
+
+    for await (const row of query) {
+      if (args.validOnly !== false && row.is_valid !== true) {
+        continue;
+      }
+
+      if (count >= offset && paginated.length < limit) {
+        paginated.push(row);
+      }
+
+      count += 1;
+    }
+
+    return { data: paginated, count };
+  },
+});
+
+export const list = query({
+  args: {
+    page: v.optional(v.number()),
+    limit: v.optional(v.number()),
+    since: v.optional(v.number()),
+    until: v.optional(v.number()),
+    validOnly: v.optional(v.boolean()),
+  },
+  returns: v.any(),
+  handler: async (ctx, args) => {
+    const page = args.page ?? 1;
+    const limit = args.limit ?? 50;
+    const offset = (page - 1) * limit;
+
+    const query =
+      args.validOnly === true
+        ? ctx.db
+            .query("sensor_data")
+            .withIndex("by_valid", (q) => q.eq("is_valid", true))
+            .order("desc")
+        : ctx.db
+            .query("sensor_data")
+            .withIndex("by_timestamp", (q) => {
+              if (args.since !== undefined && args.until !== undefined) {
+                return q.gte("reading_timestamp", args.since).lte("reading_timestamp", args.until);
+              }
+              if (args.since !== undefined) {
+                return q.gte("reading_timestamp", args.since);
+              }
+              if (args.until !== undefined) {
+                return q.lte("reading_timestamp", args.until);
+              }
+              return q;
+            })
+            .order("desc");
+
+    const data = [];
+    let count = 0;
+
+    for await (const row of query) {
+      if (args.validOnly === true && row.is_valid !== true) {
+        continue;
+      }
+
+      if (args.since !== undefined && row.reading_timestamp < args.since) {
+        continue;
+      }
+      if (args.until !== undefined && row.reading_timestamp > args.until) {
+        continue;
+      }
+
+      if (count >= offset && data.length < limit) {
+        data.push(row);
+      }
+
+      count += 1;
+    }
+
+    return { data, count };
   },
 });
 
@@ -66,12 +190,13 @@ export const getLatestReadings = query({
   returns: v.any(),
   handler: async (ctx, args) => {
     const lim = args.limit ?? 1;
-    const data = await ctx.db
+    return await ctx.db
       .query("sensor_data")
-      .withIndex("by_farm_timestamp", (q) => q.eq("farm_id", args.farmId))
+      .withIndex("by_farm_valid_timestamp", (q) =>
+        q.eq("farm_id", args.farmId).eq("is_valid", true)
+      )
       .order("desc")
-      .collect();
-    return data.filter((d) => d.is_valid).slice(0, lim);
+      .take(lim);
   },
 });
 
@@ -82,14 +207,17 @@ export const getDailyAggregates = query({
   },
   returns: v.any(),
   handler: async (ctx, args) => {
-    let data = await ctx.db
+    const data = await ctx.db
       .query("sensor_data")
-      .withIndex("by_farm_timestamp", (q) => q.eq("farm_id", args.farmId))
+      .withIndex("by_farm_valid_timestamp", (q) => {
+        const base = q.eq("farm_id", args.farmId).eq("is_valid", true);
+        if (args.startDate !== undefined) {
+          return base.gte("reading_timestamp", args.startDate);
+        }
+        return base;
+      })
       .order("asc")
       .collect();
-
-    data = data.filter((d) => d.is_valid);
-    if (args.startDate) data = data.filter((d) => d.reading_timestamp >= args.startDate!);
 
     // Group by day
     const groups: Record<string, typeof data> = {};
@@ -114,6 +242,7 @@ export const getDailyAggregates = query({
         avg_soil_moisture: avg((r) => r.soil_moisture),
         min_soil_moisture: sm.min,
         max_soil_moisture: sm.max,
+        avg_soil_temperature: avg((r) => r.soil_temperature),
         avg_temperature: avg((r) => r.air_temperature),
         avg_humidity: avg((r) => r.humidity),
         avg_nitrogen: avg((r) => r.nitrogen),
@@ -129,12 +258,17 @@ export const insertBatch = mutation({
   args: { records: v.array(v.any()) },
   returns: v.any(),
   handler: async (ctx, { records }) => {
+    if (records.length === 0) {
+      return [];
+    }
+
+    const createdAt = Date.now();
     const ids = [];
     for (const record of records) {
       const id = await ctx.db.insert("sensor_data", {
         ...record,
         is_valid: record.is_valid ?? true,
-        created_at: record.created_at ?? Date.now(),
+        created_at: record.created_at ?? createdAt,
       });
       ids.push(id);
     }
@@ -146,10 +280,10 @@ export const deleteOlderThan = mutation({
   args: { timestamp: v.number() },
   returns: v.any(),
   handler: async (ctx, { timestamp }) => {
-    const allData = await ctx.db
+    const old = await ctx.db
       .query("sensor_data")
+      .withIndex("by_timestamp", (q) => q.lt("reading_timestamp", timestamp))
       .collect();
-    const old = allData.filter((d) => d.reading_timestamp < timestamp);
     for (const doc of old) {
       await ctx.db.delete(doc._id);
     }
@@ -161,10 +295,10 @@ export const countSince = query({
   args: { since: v.number() },
   returns: v.any(),
   handler: async (ctx, { since }) => {
-    const allData = await ctx.db
+    const data = await ctx.db
       .query("sensor_data")
+      .withIndex("by_timestamp", (q) => q.gte("reading_timestamp", since))
       .collect();
-    const data = allData.filter((d) => d.reading_timestamp >= since);
     return data.length;
   },
 });

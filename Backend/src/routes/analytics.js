@@ -12,8 +12,26 @@ import { validateUUID, handleValidationErrors } from '../middleware/validation.j
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { successResponse } from '../utils/response.js';
 import { db } from '../database/convex.js';
+import * as sensorService from '../services/sensorService.js';
 
 const router = Router();
+
+const toTimestamp = (value, fallback) => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+};
+
+const extractCount = (result) => {
+  if (typeof result?.count === 'number') return result.count;
+  if (typeof result?.total === 'number') return result.total;
+  if (Array.isArray(result?.data)) return result.data.length;
+  if (Array.isArray(result)) return result.length;
+  return 0;
+};
 
 /**
  * Get farm user ID for ownership check
@@ -23,6 +41,38 @@ const getFarmUserId = async (req) => {
   if (!farmId) return null;
   
   return await db.farms.getUserId(farmId);
+};
+
+const getFarmDashboardPayload = async (farmId, recentSince) => {
+  const [
+    farm,
+    latestReadings,
+    activeRecommendations,
+    recentAlerts,
+    irrigationSchedule,
+    recentPestDetections
+  ] = await Promise.all([
+    db.farms.getById(farmId),
+    sensorService.getLatestReadings(farmId),
+    db.recommendations.getByFarm(farmId, { statuses: ['pending', 'accepted'], limit: 5 }),
+    db.recommendations.getByFarm(farmId, {
+      priorities: ['critical', 'high'],
+      since: recentSince,
+      limit: 5
+    }),
+    db.irrigationSchedules.getUpcoming(farmId, new Date().toISOString().split('T')[0], 7),
+    db.pestDetections.getRecent(farmId, 5)
+  ]);
+
+  return {
+    farm,
+    latestReadings: latestReadings || null,
+    latestSensorData: latestReadings ? [latestReadings] : [],
+    activeRecommendations: activeRecommendations || [],
+    recentAlerts: recentAlerts || [],
+    irrigationSchedule: irrigationSchedule || [],
+    recentPestDetections: recentPestDetections || []
+  };
 };
 
 // =====================================================
@@ -42,47 +92,9 @@ router.get('/farm/:farmId/dashboard',
   asyncHandler(async (req, res) => {
     const farmId = req.params.farmId;
     const recentSince = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const payload = await getFarmDashboardPayload(farmId, recentSince);
 
-    // Parallel queries for dashboard data
-    const [
-      farm,
-      latestSensorData,
-      activeRecommendations,
-      recentAlerts,
-      irrigationSchedule,
-      recentPestDetections
-    ] = await Promise.all([
-      // Farm info
-      db.farms.getById(farmId),
-      
-      // Latest sensor readings
-      db.sensorData.getLatestByFarm(farmId, false),
-      
-      // Active recommendations
-      db.recommendations.getByFarm(farmId, { statuses: ['pending', 'accepted'], limit: 5 }),
-      
-      // Recent alerts (high priority recommendations)
-      db.recommendations.getByFarm(farmId, { 
-        priorities: ['critical', 'high'],
-        since: recentSince,
-        limit: 5
-      }),
-      
-      // Upcoming irrigation schedule
-      db.irrigationSchedules.getUpcoming(farmId, new Date().toISOString().split('T')[0], 7),
-      
-      // Recent pest detections
-      db.pestDetections.getRecent(farmId, 5)
-    ]);
-
-    return successResponse(res, {
-      farm,
-      latestSensorData: latestSensorData || [],
-      activeRecommendations: activeRecommendations || [],
-      recentAlerts: recentAlerts || [],
-      irrigationSchedule: irrigationSchedule || [],
-      recentPestDetections: recentPestDetections || []
-    }, 'Dashboard data retrieved successfully');
+    return successResponse(res, payload, 'Dashboard data retrieved successfully');
   })
 );
 
@@ -566,23 +578,26 @@ router.get('/export',
   requireMinimumRole(ROLES.ADMIN),
   asyncHandler(async (req, res) => {
     const { format = 'json', startDate, endDate } = req.query;
+    const now = Date.now();
+    const startMs = toTimestamp(startDate, 0);
+    const endMs = toTimestamp(endDate, now);
 
     // Gather analytics data
     const [farms, users, sensors, recommendations] = await Promise.all([
-      db.farms.list({ page: 1, limit: 1000 }),
-      db.users.list({ page: 1, limit: 1000 }),
-      db.sensorData.list({ page: 1, limit: 1 }),
-      db.recommendations.list({ page: 1, limit: 1 }),
+      db.farms.list({ page: 1, limit: 1, since: startMs }),
+      db.users.list({ page: 1, limit: 1, since: startMs }),
+      db.sensorData.list({ page: 1, limit: 1, since: startMs, until: endMs }),
+      db.recommendations.list({ page: 1, limit: 1, since: startMs }),
     ]);
 
     const exportData = {
       exportedAt: new Date().toISOString(),
       period: { startDate: startDate || null, endDate: endDate || null },
       summary: {
-        totalFarms: (farms.data || farms).length || farms.total || 0,
-        totalUsers: (users.data || users).length || users.total || 0,
-        totalSensorReadings: sensors.total || 0,
-        totalRecommendations: recommendations.total || 0,
+        totalFarms: extractCount(farms),
+        totalUsers: extractCount(users),
+        totalSensorReadings: extractCount(sensors),
+        totalRecommendations: extractCount(recommendations),
       },
     };
 
@@ -612,35 +627,9 @@ router.get('/dashboard',
 
     if (farmId) {
       const recentSince = Date.now() - 7 * 24 * 60 * 60 * 1000;
-      // Proxy to farm dashboard logic
-      const [
-        farm,
-        latestSensorData,
-        activeRecommendations,
-        recentAlerts,
-        irrigationSchedule,
-        recentPestDetections
-      ] = await Promise.all([
-        db.farms.getById(farmId),
-        db.sensorData.getLatestByFarm(farmId, false),
-        db.recommendations.getByFarm(farmId, { statuses: ['pending', 'accepted'], limit: 5 }),
-        db.recommendations.getByFarm(farmId, {
-          priorities: ['critical', 'high'],
-          since: recentSince,
-          limit: 5
-        }),
-        db.irrigationSchedules.getUpcoming(farmId, new Date().toISOString().split('T')[0], 7),
-        db.pestDetections.getRecent(farmId, 5)
-      ]);
+      const payload = await getFarmDashboardPayload(farmId, recentSince);
 
-      return successResponse(res, {
-        farm,
-        latestSensorData: latestSensorData || [],
-        activeRecommendations: activeRecommendations || [],
-        recentAlerts: recentAlerts || [],
-        irrigationSchedule: irrigationSchedule || [],
-        recentPestDetections: recentPestDetections || []
-      }, 'Dashboard data retrieved successfully');
+      return successResponse(res, payload, 'Dashboard data retrieved successfully');
     }
 
     // If no farmId, return system-level summary for admin/expert

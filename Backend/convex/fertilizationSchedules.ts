@@ -6,18 +6,36 @@ export const getByFarm = query({
     farmId: v.id("farms"),
     since: v.optional(v.string()),
     isExecuted: v.optional(v.boolean()),
+    limit: v.optional(v.number()),
   },
   returns: v.any(),
   handler: async (ctx, args) => {
-    let schedules = await ctx.db
-      .query("fertilization_schedules")
-      .withIndex("by_farm", (q) => q.eq("farm_id", args.farmId))
-      .order("desc")
-      .collect();
+    const limit = args.limit ?? 100;
 
-    if (args.since) schedules = schedules.filter((s) => s.scheduled_date >= args.since!);
-    if (typeof args.isExecuted === "boolean") schedules = schedules.filter((s) => s.is_executed === args.isExecuted);
-    return schedules;
+    const scheduleQuery =
+      typeof args.isExecuted === "boolean"
+        ? ctx.db
+            .query("fertilization_schedules")
+            .withIndex("by_farm_executed_date", (q) => {
+              const base = q.eq("farm_id", args.farmId).eq("is_executed", args.isExecuted!);
+              if (args.since) {
+                return base.gte("scheduled_date", args.since);
+              }
+              return base;
+            })
+            .order("desc")
+        : ctx.db
+            .query("fertilization_schedules")
+            .withIndex("by_farm_date", (q) => {
+              const base = q.eq("farm_id", args.farmId);
+              if (args.since) {
+                return base.gte("scheduled_date", args.since);
+              }
+              return base;
+            })
+            .order("desc");
+
+    return await scheduleQuery.take(limit);
   },
 });
 
@@ -27,10 +45,12 @@ export const getLastExecuted = query({
   handler: async (ctx, { farmId }) => {
     const scheds = await ctx.db
       .query("fertilization_schedules")
-      .withIndex("by_farm", (q) => q.eq("farm_id", farmId))
+      .withIndex("by_farm_executed_date", (q) =>
+        q.eq("farm_id", farmId).eq("is_executed", true)
+      )
       .order("desc")
-      .collect();
-    return scheds.find((s) => s.is_executed) ?? null;
+      .take(1);
+    return scheds[0] ?? null;
   },
 });
 
@@ -68,15 +88,23 @@ export const remove = mutation({
 });
 
 export const getHistory = query({
-  args: { farmId: v.id("farms"), since: v.optional(v.string()) },
+  args: {
+    farmId: v.id("farms"),
+    since: v.optional(v.string()),
+    limit: v.optional(v.number()),
+  },
   returns: v.any(),
   handler: async (ctx, args) => {
-    let scheds = await ctx.db
+    return await ctx.db
       .query("fertilization_schedules")
-      .withIndex("by_farm", (q) => q.eq("farm_id", args.farmId))
+      .withIndex("by_farm_date", (q) => {
+        const base = q.eq("farm_id", args.farmId);
+        if (args.since) {
+          return base.gte("scheduled_date", args.since);
+        }
+        return base;
+      })
       .order("desc")
-      .collect();
-    if (args.since) scheds = scheds.filter((s) => s.scheduled_date >= args.since!);
-    return scheds;
+      .take(args.limit ?? 200);
   },
 });

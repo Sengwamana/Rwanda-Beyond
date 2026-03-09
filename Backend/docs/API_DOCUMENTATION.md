@@ -279,8 +279,22 @@ Ingest sensor readings from IoT devices.
 ```http
 X-Device-ID: device_001
 X-Device-Token: your_device_token
+```
+
+Or:
+```http
+X-Device-ID: device_001
+Authorization: Bearer your_device_token
+```
+
+For HMAC-authenticated devices:
+```http
+X-Device-ID: device_001
+X-HMAC-Signature: <signature>
 X-Timestamp: 1705312200
 ```
+
+`X-Timestamp` may be an epoch timestamp in seconds or milliseconds.
 
 **Request Body:**
 ```json
@@ -307,7 +321,11 @@ X-Timestamp: 1705312200
   "data": {
     "received": 2,
     "processed": 2,
-    "failed": 0
+    "failed": 0,
+    "duplicates": 0,
+    "valid": 2,
+    "invalid": 0,
+    "inserted": ["reading_1", "reading_2"]
   }
 }
 ```

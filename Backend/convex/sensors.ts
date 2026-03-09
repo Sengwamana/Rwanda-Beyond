@@ -42,13 +42,27 @@ export const getByFarm = query({
   },
   returns: v.any(),
   handler: async (ctx, args) => {
-    let sensors = await ctx.db
-      .query("sensors")
-      .withIndex("by_farm", (q) => q.eq("farm_id", args.farmId))
-      .order("desc")
-      .collect();
-    if (args.status) sensors = sensors.filter((s) => s.status === args.status);
-    if (args.sensorType) sensors = sensors.filter((s) => s.sensor_type === args.sensorType);
+    const sensors = [];
+    const sensorQuery =
+      args.status
+        ? ctx.db
+            .query("sensors")
+            .withIndex("by_farm_status_created", (q) =>
+              q.eq("farm_id", args.farmId).eq("status", args.status as any)
+            )
+            .order("desc")
+        : ctx.db
+            .query("sensors")
+            .withIndex("by_farm_created", (q) => q.eq("farm_id", args.farmId))
+            .order("desc");
+
+    for await (const sensor of sensorQuery) {
+      if (args.sensorType && sensor.sensor_type !== args.sensorType) {
+        continue;
+      }
+      sensors.push(sensor);
+    }
+
     return sensors;
   },
 });
@@ -57,10 +71,17 @@ export const listActive = query({
   args: {},
   returns: v.any(),
   handler: async (ctx) => {
-    return await ctx.db
+    const sensors = [];
+    const rows = ctx.db
       .query("sensors")
-      .withIndex("by_status", (q) => q.eq("status", "active"))
-      .collect();
+      .withIndex("by_status_created", (q) => q.eq("status", "active"))
+      .order("desc");
+
+    for await (const sensor of rows) {
+      sensors.push(sensor);
+    }
+
+    return sensors;
   },
 });
 
@@ -68,13 +89,27 @@ export const listActiveWithFarm = query({
   args: {},
   returns: v.any(),
   handler: async (ctx) => {
-    const sensors = await ctx.db
+    const sensors = [];
+    const sensorRows = ctx.db
       .query("sensors")
-      .withIndex("by_status", (q) => q.eq("status", "active"))
-      .collect();
+      .withIndex("by_status_created", (q) => q.eq("status", "active"))
+      .order("desc");
+
+    for await (const sensor of sensorRows) {
+      sensors.push(sensor);
+    }
+
+    const farmIds = [...new Set(sensors.map((sensor) => sensor.farm_id))];
+    const farms = await Promise.all(farmIds.map((farmId) => ctx.db.get(farmId)));
+    const farmById = new Map(
+      farms
+        .filter(Boolean)
+        .map((farm) => [(farm as any)._id, farm])
+    );
+
     return await Promise.all(
       sensors.map(async (s) => {
-        const farm = await ctx.db.get(s.farm_id);
+        const farm = farmById.get(s.farm_id as any);
         return {
           ...s,
           id: s._id,
@@ -89,23 +124,34 @@ export const getHealth = query({
   args: {},
   returns: v.any(),
   handler: async (ctx) => {
-    const sensors = await ctx.db.query("sensors").collect();
-    return await Promise.all(
-      sensors.map(async (s) => {
-        const farm = await ctx.db.get(s.farm_id);
-        return {
-          id: s._id,
-          device_id: s.device_id,
-          farm_id: s.farm_id,
-          name: s.name,
-          status: s.status,
-          battery_level: s.battery_level,
-          last_reading_at: s.last_reading_at,
-          firmware_version: s.firmware_version,
-          farm: farm ? { id: farm._id, name: farm.name } : null,
-        };
-      })
+    const sensors = [];
+    const sensorRows = ctx.db.query("sensors").withIndex("by_created").order("desc");
+    for await (const sensor of sensorRows) {
+      sensors.push(sensor);
+    }
+
+    const farmIds = [...new Set(sensors.map((sensor) => sensor.farm_id))];
+    const farms = await Promise.all(farmIds.map((farmId) => ctx.db.get(farmId)));
+    const farmById = new Map(
+      farms
+        .filter(Boolean)
+        .map((farm) => [(farm as any)._id, farm])
     );
+
+    return sensors.map((sensor) => {
+      const farm = farmById.get(sensor.farm_id as any);
+      return {
+        id: sensor._id,
+        device_id: sensor.device_id,
+        farm_id: sensor.farm_id,
+        name: sensor.name,
+        status: sensor.status,
+        battery_level: sensor.battery_level,
+        last_reading_at: sensor.last_reading_at,
+        firmware_version: sensor.firmware_version,
+        farm: farm ? { id: (farm as any)._id, name: (farm as any).name } : null,
+      };
+    });
   },
 });
 
@@ -177,10 +223,14 @@ export const listAllStats = query({
   args: {},
   returns: v.any(),
   handler: async (ctx) => {
-    const sensors = await ctx.db.query("sensors").collect();
-    return sensors.map((s) => ({
-      status: s.status,
-      sensor_type: s.sensor_type,
-    }));
+    const stats = [];
+    const rows = ctx.db.query("sensors").withIndex("by_created").order("desc");
+    for await (const sensor of rows) {
+      stats.push({
+        status: sensor.status,
+        sensor_type: sensor.sensor_type,
+      });
+    }
+    return stats;
   },
 });

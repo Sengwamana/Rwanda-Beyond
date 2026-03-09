@@ -24,6 +24,7 @@ export { recommendationService } from './recommendations';
 export { adminService } from './admin';
 export { analyticsService } from './analytics';
 export { default as aiService } from './ai';
+export { default as voiceAssistantService } from './voiceAssistant';
 export { contentService } from './content';
 export { ussdService } from './ussd';
 
@@ -78,6 +79,10 @@ export type {
   TranslationRequest,
   TranslationResponse,
 } from './ai';
+export type {
+  VoiceAssistantRequest,
+  VoiceAssistantResponse,
+} from './voiceAssistant';
 export type {
   UssdCallbackRequest,
   UssdCallbackV2Request,

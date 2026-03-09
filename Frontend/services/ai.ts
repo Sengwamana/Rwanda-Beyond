@@ -72,6 +72,45 @@ export interface ChatResponse {
   confidence: number;
 }
 
+function getResponsePayload<T>(response: AxiosResponse<ApiResponse<T> | T>): unknown {
+  const body = response.data as ApiResponse<T> | T;
+
+  if (body && typeof body === 'object' && 'data' in (body as ApiResponse<T>)) {
+    return (body as ApiResponse<T>).data;
+  }
+
+  return body;
+}
+
+function normalizeAdviceResponse(payload: unknown): AgriculturalAdviceResponse {
+  const response = (payload ?? {}) as Partial<AgriculturalAdviceResponse>;
+
+  return {
+    success: response.success ?? true,
+    answer: typeof response.answer === 'string' ? response.answer : '',
+    suggestions: Array.isArray(response.suggestions) ? response.suggestions : [],
+    relatedTopics: Array.isArray(response.relatedTopics) ? response.relatedTopics : [],
+    confidence: typeof response.confidence === 'number' ? response.confidence : 0,
+    sources: Array.isArray(response.sources) ? response.sources : [],
+    aiProvider: typeof response.aiProvider === 'string' ? response.aiProvider : 'unknown',
+  };
+}
+
+function normalizeChatResponse(payload: unknown): ChatResponse {
+  const response = (payload ?? {}) as Partial<ChatResponse> & { answer?: string };
+
+  return {
+    reply:
+      typeof response.reply === 'string'
+        ? response.reply
+        : typeof response.answer === 'string'
+          ? response.answer
+          : '',
+    suggestions: Array.isArray(response.suggestions) ? response.suggestions : [],
+    confidence: typeof response.confidence === 'number' ? response.confidence : 0,
+  };
+}
+
 export interface AICapabilities {
   provider: string;
   model: string;
@@ -112,7 +151,7 @@ export const getAgriculturalAdvice = async (
   request: AgriculturalAdviceRequest
 ): Promise<AgriculturalAdviceResponse> => {
   const response: AxiosResponse<ApiResponse<AgriculturalAdviceResponse>> = await apiClient.post('/ai/advice', request);
-  return response.data.data;
+  return normalizeAdviceResponse(getResponsePayload(response));
 };
 
 /**
@@ -132,7 +171,7 @@ export const sendChatMessage = async (
   request: ChatRequest
 ): Promise<ChatResponse> => {
   const response: AxiosResponse<ApiResponse<ChatResponse>> = await apiClient.post('/ai/chat', request);
-  return response.data.data;
+  return normalizeChatResponse(getResponsePayload(response));
 };
 
 /**

@@ -11,6 +11,7 @@ import { Router } from 'express';
 import { body, query } from 'express-validator';
 import { validateRequest } from '../middleware/validation.js';
 import { authenticate, optionalAuth } from '../middleware/auth.js';
+import config from '../config/index.js';
 import * as aiService from '../services/aiService.js';
 import { successResponse, errorResponse } from '../utils/response.js';
 import logger from '../utils/logger.js';
@@ -177,6 +178,55 @@ router.post('/chat',
 );
 
 /**
+ * @route POST /api/v1/ai/voice-assistant
+ * @desc Dedicated voice assistant endpoint with a lighter response contract
+ * @access Private
+ */
+router.post('/voice-assistant',
+  authenticate,
+  [
+    body('message')
+      .notEmpty()
+      .withMessage('Message is required')
+      .isLength({ min: 1, max: 600 })
+      .withMessage('Message must be between 1 and 600 characters'),
+    body('conversationHistory')
+      .optional()
+      .isArray()
+      .withMessage('Conversation history must be an array'),
+    body('farmId')
+      .optional()
+      .isString()
+      .notEmpty()
+      .withMessage('Farm ID must be a valid resource ID')
+  ],
+  validateRequest,
+  async (req, res) => {
+    try {
+      const { message, conversationHistory = [], farmId } = req.body;
+
+      const context = {
+        conversationHistory: conversationHistory.slice(-6),
+        userId: req.user?.id,
+        farmId,
+      };
+
+      const response = await aiService.getVoiceAssistantReply(message, context);
+
+      return successResponse(res, {
+        reply: response.answer,
+        suggestions: response.suggestions,
+        confidence: response.confidence,
+        channel: 'voice'
+      }, 'Voice assistant response generated');
+    } catch (error) {
+      logger.error('Voice assistant failed:', error);
+      return errorResponse(res, error.message || 'Failed to process voice request', 500);
+    }
+  }
+);
+
+/**
  * @route GET /api/v1/ai/capabilities
  * @desc Get AI service capabilities and supported features
  * @access Public
@@ -215,6 +265,11 @@ router.get('/capabilities', (req, res) => {
         name: 'Interactive Chat',
         endpoint: '/api/v1/ai/chat',
         description: 'Conversational AI assistant for farming questions'
+      },
+      {
+        name: 'Voice Assistant',
+        endpoint: '/api/v1/ai/voice-assistant',
+        description: 'Dedicated low-latency voice assistant responses optimized for speech'
       }
     ],
     supportedLanguages: ['English', 'Kinyarwanda (partial)'],

@@ -149,6 +149,8 @@ curl -X POST http://localhost:3000/api/v1/sensors/data/ingest \
   -d '{"readings":[{"sensorType":"soil_moisture","value":42.5,"unit":"percent"}]}'
 ```
 
+The same endpoint also accepts `Authorization: Bearer DEMO_TOKEN_FOR_TESTING` instead of `X-Device-Token`, and HMAC-authenticated devices may send `X-Timestamp` in epoch seconds or milliseconds.
+
 ---
 
 ## Troubleshooting

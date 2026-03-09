@@ -44,6 +44,43 @@ const toTimestamp = (value, fallback) => {
   return fallback;
 };
 
+const normalizeActiveStatus = (value) =>
+  value === 'active'
+    ? true
+    : value === 'inactive'
+      ? false
+      : undefined;
+
+const getSensorReadingTimestamp = (reading) => {
+  if (!reading || typeof reading !== 'object') {
+    return undefined;
+  }
+
+  if (typeof reading.reading_timestamp === 'number' && Number.isFinite(reading.reading_timestamp)) {
+    return reading.reading_timestamp;
+  }
+
+  if (typeof reading.recorded_at === 'number' && Number.isFinite(reading.recorded_at)) {
+    return reading.recorded_at;
+  }
+
+  if (typeof reading.reading_timestamp === 'string') {
+    const parsed = Date.parse(reading.reading_timestamp);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  if (typeof reading.recorded_at === 'string') {
+    const parsed = Date.parse(reading.recorded_at);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return undefined;
+};
+
 const extractTimestamp = (row) => {
   if (!row || typeof row !== 'object') return undefined;
   const candidateKeys = ['created_at', 'updated_at', 'reading_timestamp', 'executed_at', 'responded_at'];
@@ -168,18 +205,24 @@ router.get('/users',
   handleValidationErrors,
   asyncHandler(async (req, res) => {
     const { page = 1, limit = 20, role, status, search } = req.query;
+    const normalizedStatus =
+      status === 'active'
+        ? true
+        : status === 'inactive'
+          ? false
+          : undefined;
 
     const opts = {
       page: parseInt(page),
       limit: parseInt(limit),
       role: role || undefined,
-      status: status || undefined,
+      isActive: normalizedStatus,
       search: search || undefined
     };
 
     const result = await db.users.list(opts);
     const data = result.data || result;
-    const count = result.total || data.length;
+    const count = result.count ?? result.total ?? data.length;
 
     return paginatedResponse(res, data, parseInt(page), parseInt(limit), count, 'Users retrieved successfully');
   })
@@ -203,10 +246,30 @@ router.put('/users/:userId/role',
       });
     }
 
-    const user = await db.users.update(userId, { role, updated_at: new Date().toISOString() });
+    const existingUser = await db.users.getById(userId);
+    if (!existingUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+        code: 'NOT_FOUND',
+      });
+    }
+
+    const user = await db.users.update(userId, { role });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+        code: 'NOT_FOUND',
+      });
+    }
 
     await logAuditEvent(req.user._id, 'ROLE_CHANGE', {
+      entityType: 'users',
+      entityId: userId,
       targetUserId: userId,
+      oldValues: { role: existingUser?.role },
+      newValues: { role },
       newRole: role
     });
 
@@ -224,14 +287,39 @@ router.post('/users/:userId/deactivate',
     const { userId } = req.params;
     const { reason } = req.body;
 
+    const existingUser = await db.users.getById(userId);
+    if (!existingUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+        code: 'NOT_FOUND',
+      });
+    }
+
     const user = await db.users.update(userId, { 
-      status: 'inactive', 
+      is_active: false,
       deactivation_reason: reason,
-      updated_at: new Date().toISOString() 
     });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+        code: 'NOT_FOUND',
+      });
+    }
 
     await logAuditEvent(req.user._id, 'USER_DEACTIVATED', {
+      entityType: 'users',
+      entityId: userId,
       targetUserId: userId,
+      oldValues: {
+        is_active: existingUser?.is_active,
+        deactivation_reason: existingUser?.deactivation_reason,
+      },
+      newValues: {
+        is_active: false,
+        deactivation_reason: reason,
+      },
       reason
     });
 
@@ -249,14 +337,39 @@ router.post('/users/:userId/reactivate',
   asyncHandler(async (req, res) => {
     const { userId } = req.params;
 
+    const existingUser = await db.users.getById(userId);
+    if (!existingUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+        code: 'NOT_FOUND',
+      });
+    }
+
     const user = await db.users.update(userId, {
-      status: 'active',
+      is_active: true,
       deactivation_reason: null,
-      updated_at: new Date().toISOString()
     });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+        code: 'NOT_FOUND',
+      });
+    }
 
     await logAuditEvent(req.user._id, 'USER_REACTIVATED', {
-      targetUserId: userId
+      entityType: 'users',
+      entityId: userId,
+      targetUserId: userId,
+      oldValues: {
+        is_active: existingUser?.is_active,
+        deactivation_reason: existingUser?.deactivation_reason,
+      },
+      newValues: {
+        is_active: true,
+        deactivation_reason: null,
+      },
     });
 
     return successResponse(res, user, 'User reactivated successfully');
@@ -276,16 +389,17 @@ router.get('/devices',
   handleValidationErrors,
   asyncHandler(async (req, res) => {
     const { page = 1, limit = 20, status } = req.query;
+    const normalizedStatus = normalizeActiveStatus(status);
 
     const opts = {
       page: parseInt(page),
       limit: parseInt(limit),
-      status: status || undefined
+      isActive: normalizedStatus
     };
 
     const result = await db.iotDeviceTokens.list(opts);
     const data = result.data || result;
-    const count = result.total || data.length;
+    const count = result.count ?? result.total ?? data.length;
 
     return paginatedResponse(res, data, parseInt(page), parseInt(limit), count, 'Devices retrieved successfully');
   })
@@ -327,11 +441,8 @@ router.post('/devices/generate',
 
     const data = await db.iotDeviceTokens.create({
       device_id: deviceId,
-      farm_id: farmId,
-      device_name: deviceName,
       token_hash: crypto.createHash('sha256').update(token).digest('hex'),
-      expires_at: expiresAt.toISOString(),
-      created_by: req.user._id
+      expires_at: expiresAt.getTime(),
     });
 
     await logAuditEvent(req.user._id, 'DEVICE_CREATED', { deviceId, farmId });
@@ -360,19 +471,21 @@ router.get('/audit-logs',
   handleValidationErrors,
   asyncHandler(async (req, res) => {
     const { page = 1, limit = 50, action, userId, startDate, endDate } = req.query;
+    const since = startDate ? Date.parse(String(startDate)) : undefined;
+    const until = endDate ? Date.parse(String(endDate)) : undefined;
 
     const opts = {
       page: parseInt(page),
       limit: parseInt(limit),
       action: action || undefined,
       userId: userId || undefined,
-      startDate: startDate || undefined,
-      endDate: endDate || undefined
+      since: Number.isFinite(since) ? since : undefined,
+      until: Number.isFinite(until) ? until : undefined,
     };
 
     const result = await db.auditLogs.list(opts);
     const data = result.data || result;
-    const count = result.total || data.length;
+    const count = result.count ?? result.total ?? data.length;
 
     return paginatedResponse(res, data, parseInt(page), parseInt(limit), count, 'Audit logs retrieved successfully');
   })
@@ -409,10 +522,15 @@ router.get('/health',
       const latestReading = await db.sensorData.getLatestOne();
 
       if (latestReading) {
-        const lastReading = new Date(latestReading.recorded_at);
-        const minutesAgo = (Date.now() - lastReading.getTime()) / (1000 * 60);
-        health.checks.sensorIngestion = minutesAgo < 60 ? 'healthy' : 'stale';
-        health.checks.lastSensorReading = latestReading.recorded_at;
+        const lastReadingTimestamp = getSensorReadingTimestamp(latestReading);
+
+        if (lastReadingTimestamp !== undefined) {
+          const minutesAgo = (Date.now() - lastReadingTimestamp) / (1000 * 60);
+          health.checks.sensorIngestion = minutesAgo < 60 ? 'healthy' : 'stale';
+          health.checks.lastSensorReading = new Date(lastReadingTimestamp).toISOString();
+        } else {
+          health.checks.sensorIngestion = 'unknown';
+        }
       }
     } catch (e) {
       health.checks.sensorIngestion = 'unknown';
@@ -488,20 +606,25 @@ router.post('/broadcast',
     const { message, messageKinyarwanda, targetRole, targetDistrict, channel = 'sms' } = req.body;
 
     // Get target users
-    const users = await db.users.listActive(targetRole || undefined);
+    const users = (await db.users.listActive(targetRole || undefined))
+      .filter((user) => user.phone_number);
 
     // Queue messages (actual sending handled by notification service)
     const messageDocs = users.map(user => ({
       user_id: user._id,
-      recipient: user.phone,
+      recipient: user.phone_number,
       channel,
-      message: user.preferred_language === 'rw' ? (messageKinyarwanda || message) : message,
+      content: user.preferred_language === 'rw' ? (messageKinyarwanda || message) : message,
       status: 'queued',
-      priority: 'routine',
-      metadata: { broadcast: true, initiatedBy: req.user._id }
+      metadata: {
+        broadcast: true,
+        initiatedBy: req.user._id,
+        ...(targetDistrict ? { targetDistrict } : {}),
+      }
     }));
 
     const inserted = await db.messages.createBatch(messageDocs);
+    const queuedCount = inserted?.count ?? inserted?.length ?? 0;
 
     await logAuditEvent(req.user._id, 'BROADCAST_SENT', {
       recipientCount: users.length,
@@ -510,7 +633,7 @@ router.post('/broadcast',
     });
 
     return successResponse(res, {
-      queued: inserted.length,
+      queued: queuedCount,
       targetedUsers: users.length
     }, 'Broadcast queued successfully');
   })
@@ -573,18 +696,19 @@ router.get('/farms',
   handleValidationErrors,
   asyncHandler(async (req, res) => {
     const { page = 1, limit = 20, status, district, search } = req.query;
+    const normalizedStatus = normalizeActiveStatus(status);
 
     const opts = {
       page: parseInt(page),
       limit: parseInt(limit),
-      status: status || undefined,
-      district: district || undefined,
+      isActive: normalizedStatus,
+      districtId: district || undefined,
       search: search || undefined
     };
 
     const result = await db.farms.list(opts);
     const data = result.data || result;
-    const count = result.total || data.length;
+    const count = result.count ?? result.total ?? data.length;
 
     return paginatedResponse(res, data, parseInt(page), parseInt(limit), count, 'Farms retrieved successfully');
   })
@@ -907,11 +1031,8 @@ router.post('/devices/token',
 
     const data = await db.iotDeviceTokens.create({
       device_id: deviceId,
-      farm_id: farmId,
-      device_name: deviceName,
       token_hash: crypto.createHash('sha256').update(token).digest('hex'),
-      expires_at: expiresAt.toISOString(),
-      created_by: req.user._id
+      expires_at: expiresAt.getTime(),
     });
 
     await logAuditEvent(req.user._id, 'DEVICE_CREATED', { deviceId, farmId });
@@ -930,13 +1051,22 @@ router.post('/devices/token',
  */
 async function logAuditEvent(userId, action, details) {
   try {
+    const {
+      entityType,
+      entityId,
+      oldValues,
+      newValues,
+      ...metadata
+    } = details || {};
+
     await db.auditLogs.create({
       user_id: userId || undefined,
       action,
-      entity_type: details?.entityType || 'system',
-      entity_id: details?.entityId ? String(details.entityId) : undefined,
-      old_values: details?.oldValues,
-      new_values: details && typeof details === 'object' ? details : undefined,
+      entity_type: entityType || 'system',
+      entity_id: entityId ? String(entityId) : undefined,
+      old_values: oldValues,
+      new_values:
+        newValues || (Object.keys(metadata).length > 0 ? metadata : undefined),
       ip_address: null,
       user_agent: null,
       created_at: Date.now(),

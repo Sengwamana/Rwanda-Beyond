@@ -9,8 +9,30 @@
 
 import { db } from '../database/convex.js';
 import { NotFoundError, BadRequestError } from '../utils/errors.js';
+import config from '../config/index.js';
 import logger from '../utils/logger.js';
 import * as notificationService from './notificationService.js';
+
+const runWithConcurrency = async (items, concurrency, worker) => {
+  if (!Array.isArray(items) || items.length === 0) {
+    return [];
+  }
+
+  const limit = Math.max(1, Math.min(concurrency || 1, items.length));
+  const results = new Array(items.length);
+  let nextIndex = 0;
+
+  const executeWorker = async () => {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await worker(items[currentIndex], currentIndex);
+    }
+  };
+
+  await Promise.all(Array.from({ length: limit }, () => executeWorker()));
+  return results;
+};
 
 /**
  * Get recommendation by ID
@@ -165,7 +187,9 @@ export const createRecommendation = async (recommendationData) => {
     irrigationScheduleId,
     fertilizationScheduleId,
     pestDetectionId,
-    expiresAt
+    expiresAt,
+    resolvedFarm,
+    resolvedUser,
   } = recommendationData;
 
   const data = await db.recommendations.create({
@@ -191,18 +215,28 @@ export const createRecommendation = async (recommendationData) => {
 
   logger.info(`Recommendation created: ${data._id} (${type}) for farm ${farmId}`);
 
-  // Resolve relations for notification
-  if (data.farm_id) {
-    const farm = await db.farms.getById(data.farm_id);
-    data.farm = farm ? { id: farm._id, name: farm.name } : null;
-  }
-  if (data.user_id) {
-    const user = await db.users.getById(data.user_id);
-    data.user = user || null;
-  }
+  const [farm, user] = await Promise.all([
+    resolvedFarm
+      ? resolvedFarm
+      : data.farm_id
+        ? db.farms.getById(data.farm_id)
+        : null,
+    resolvedUser
+      ? resolvedUser
+      : data.user_id
+        ? db.users.getById(data.user_id)
+        : null,
+  ]);
 
-  // Trigger notification based on priority
-  await triggerRecommendationNotification(data);
+  data.farm = farm ? { id: farm._id, name: farm.name } : null;
+  data.user = user || null;
+
+  // Notifications should not block recommendation creation latency.
+  Promise.resolve()
+    .then(() => triggerRecommendationNotification(data))
+    .catch((error) => {
+      logger.error('Failed to trigger recommendation notification:', error);
+    });
 
   return data;
 };
@@ -409,7 +443,6 @@ export const createIrrigationRecommendation = async (farmId, analysisData) => {
     confidence
   } = analysisData;
 
-  // Get farm and user info
   const farm = await db.farms.getById(farmId);
 
   // Create irrigation schedule
@@ -455,7 +488,8 @@ export const createIrrigationRecommendation = async (farmId, analysisData) => {
     },
     confidenceScore: confidence,
     irrigationScheduleId: schedule._id,
-    expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString()
+    expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+    resolvedFarm: farm,
   });
 };
 
@@ -472,7 +506,9 @@ export const createPestAlertRecommendation = async (farmId, detectionData) => {
     severity,
     confidence,
     affectedArea,
-    imageUrl
+    imageUrl,
+    expertVerified = false,
+    expertId = null,
   } = detectionData;
 
   // Get farm and user info
@@ -507,10 +543,10 @@ export const createPestAlertRecommendation = async (farmId, detectionData) => {
     userId: farm.user_id,
     type: 'pest_alert',
     priority,
-    title: `Fall Armyworm Alert - ${severity.toUpperCase()}`,
-    titleRw: `Imenyesha ry'Inzuki z'Intambara - ${severity.toUpperCase()}`,
-    description: `Fall Armyworm detected with ${Math.round(confidence * 100)}% confidence. Severity: ${severity}. Affected area: approximately ${affectedArea}%.`,
-    descriptionRw: `Inzuki z'Intambara zabonetse n'icyizere cya ${Math.round(confidence * 100)}%. Uburemere: ${severity}. Ahantu hahatiwe: hafi ${affectedArea}%.`,
+    title: `${expertVerified ? 'Expert Confirmed' : 'Preliminary AI Screening'} - Fall Armyworm ${severity.toUpperCase()}`,
+    titleRw: `${expertVerified ? 'Byemejwe n\'Umuhanga' : 'Isuzuma rya AI ryo Mbere'} - Inzuki z'Intambara ${severity.toUpperCase()}`,
+    description: `${expertVerified ? 'Expert-confirmed' : 'Preliminary AI screening'} detected Fall Armyworm with ${Math.round(confidence * 100)}% confidence. Severity: ${severity}. Affected area: approximately ${affectedArea}%.`,
+    descriptionRw: `${expertVerified ? 'Byemejwe n\'umuhanga' : 'Isuzuma rya AI ryo mbere'} ryabonye Inzuki z'Intambara n'icyizere cya ${Math.round(confidence * 100)}%. Uburemere: ${severity}. Ahantu hahatiwe: hafi ${affectedArea}%.`,
     recommendedAction: actionMap[severity],
     actionDeadline: priority === 'critical' 
       ? new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString()
@@ -520,7 +556,9 @@ export const createPestAlertRecommendation = async (farmId, detectionData) => {
       severity,
       confidence,
       affectedArea,
-      imageUrl
+      imageUrl,
+      expertVerified,
+      expertId,
     },
     confidenceScore: confidence,
     pestDetectionId,
@@ -542,11 +580,12 @@ export const createFertilizationRecommendation = async (farmId, analysisData) =>
     fertilizerType,
     quantities,
     growthStage,
-    scheduledDate
+    scheduledDate,
+    resolvedFarm,
   } = analysisData;
 
   // Get farm and user info
-  const farm = await db.farms.getById(farmId);
+  const farm = resolvedFarm || await db.farms.getById(farmId);
 
   // Create fertilization schedule
   const schedule = await db.fertilizationSchedules.create({
@@ -594,7 +633,8 @@ export const createFertilizationRecommendation = async (farmId, analysisData) =>
       growthStage
     },
     fertilizationScheduleId: schedule._id,
-    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    resolvedFarm: farm,
   });
 };
 
@@ -686,23 +726,27 @@ export const bulkGenerateRecommendations = async (options = {}) => {
   const errors = [];
   let generated = 0;
 
-  for (const farmId of targetFarmIds) {
-    try {
-      if (type === 'irrigation') {
-        await aiService.analyzeIrrigationNeeds(farmId);
-      } else if (type === 'fertilization') {
-        await aiService.analyzeNutrientNeeds(farmId);
-      } else {
-        await aiService.runComprehensiveAnalysis(farmId);
+  await runWithConcurrency(
+    targetFarmIds,
+    config.ai.recommendationGenerationConcurrency,
+    async (farmId) => {
+      try {
+        if (type === 'irrigation') {
+          await aiService.analyzeIrrigationNeeds(farmId);
+        } else if (type === 'fertilization') {
+          await aiService.analyzeNutrientNeeds(farmId);
+        } else {
+          await aiService.runComprehensiveAnalysis(farmId);
+        }
+        generated += 1;
+      } catch (error) {
+        errors.push({
+          farmId,
+          error: error.message || 'Generation failed',
+        });
       }
-      generated += 1;
-    } catch (error) {
-      errors.push({
-        farmId,
-        error: error.message || 'Generation failed',
-      });
     }
-  }
+  );
 
   return {
     generated,

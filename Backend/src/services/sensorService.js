@@ -12,6 +12,271 @@ import { NotFoundError, BadRequestError, SensorDataError } from '../utils/errors
 import config from '../config/index.js';
 import logger from '../utils/logger.js';
 
+const pickDefinedFields = (source, fields) =>
+  Object.fromEntries(
+    fields
+      .filter((field) => source?.[field] !== undefined)
+      .map((field) => [field, source[field]])
+  );
+
+const logSensorAuditEvent = async (entry) => {
+  try {
+    await db.auditLogs.create({
+      ...entry,
+      created_at: Date.now(),
+    });
+  } catch (error) {
+    logger.warn('Failed to write sensor audit log:', error?.message || error);
+  }
+};
+
+const LATEST_READING_FIELDS = [
+  'soil_moisture',
+  'soil_temperature',
+  'air_temperature',
+  'humidity',
+  'nitrogen',
+  'phosphorus',
+  'potassium',
+  'ph_level',
+  'light_intensity',
+  'rainfall_mm',
+];
+
+const INPUT_READING_FIELDS = [
+  'soilMoisture',
+  'soilTemperature',
+  'airTemperature',
+  'humidity',
+  'nitrogen',
+  'phosphorus',
+  'potassium',
+  'phLevel',
+  'lightIntensity',
+  'rainfallMm',
+];
+
+const INPUT_FIELD_ALIASES = [
+  ['soil_moisture', 'soilMoisture'],
+  ['soil_temperature', 'soilTemperature'],
+  ['air_temperature', 'airTemperature'],
+  ['ph_level', 'phLevel'],
+  ['light_intensity', 'lightIntensity'],
+  ['rainfall_mm', 'rainfallMm'],
+];
+
+const LEGACY_SENSOR_TYPE_FIELD_MAP = {
+  soil_moisture: ['soilMoisture'],
+  soil_temperature: ['soilTemperature'],
+  air_temperature: ['airTemperature'],
+  humidity: ['humidity'],
+  nitrogen: ['nitrogen'],
+  phosphorus: ['phosphorus'],
+  potassium: ['potassium'],
+  ph: ['phLevel'],
+  ph_level: ['phLevel'],
+  light: ['lightIntensity'],
+  light_intensity: ['lightIntensity'],
+  rainfall: ['rainfallMm'],
+  rainfall_mm: ['rainfallMm'],
+  npk: ['nitrogen', 'phosphorus', 'potassium'],
+};
+
+const parseSensorTimestamp = (timestampCandidate) => {
+  if (timestampCandidate === null || timestampCandidate === undefined || timestampCandidate === '') {
+    return null;
+  }
+
+  if (typeof timestampCandidate === 'number' && Number.isFinite(timestampCandidate)) {
+    return timestampCandidate < 1e12 ? timestampCandidate * 1000 : timestampCandidate;
+  }
+
+  if (typeof timestampCandidate === 'string') {
+    const trimmedValue = timestampCandidate.trim();
+    if (!trimmedValue) {
+      return null;
+    }
+
+    if (/^\d+(\.\d+)?$/.test(trimmedValue)) {
+      const numericValue = Number(trimmedValue);
+      if (Number.isFinite(numericValue)) {
+        return numericValue < 1e12 ? numericValue * 1000 : numericValue;
+      }
+    }
+
+    const parsedTimestamp = Date.parse(trimmedValue);
+    return Number.isFinite(parsedTimestamp) ? parsedTimestamp : null;
+  }
+
+  return null;
+};
+
+const FROZEN_SENSOR_FIELDS = [
+  ['soilMoisture', 'soil_moisture'],
+  ['airTemperature', 'air_temperature'],
+  ['humidity', 'humidity'],
+];
+
+const buildLatestReadingsSnapshot = (readings = []) => {
+  if (!Array.isArray(readings) || readings.length === 0) {
+    return null;
+  }
+
+  const sortedReadings = [...readings].sort(
+    (left, right) => (right?.reading_timestamp || 0) - (left?.reading_timestamp || 0)
+  );
+
+  const latestOverallReading = sortedReadings[0];
+  const snapshot = {
+    farm_id: latestOverallReading?.farm_id,
+    reading_timestamp: latestOverallReading?.reading_timestamp || Date.now(),
+    last_updated: latestOverallReading?.reading_timestamp || Date.now(),
+    sensor_count: 0,
+    contributing_sensor_ids: [],
+  };
+
+  const contributingSensorIds = new Set();
+
+  for (const reading of sortedReadings) {
+    let contributed = false;
+
+    for (const field of LATEST_READING_FIELDS) {
+      if (
+        snapshot[field] === undefined &&
+        reading?.[field] !== undefined &&
+        reading?.[field] !== null
+      ) {
+        snapshot[field] = reading[field];
+        contributed = true;
+      }
+    }
+
+    if (contributed && reading?.sensor_id) {
+      contributingSensorIds.add(reading.sensor_id);
+    }
+
+    const hasAllFields = LATEST_READING_FIELDS.every((field) => snapshot[field] !== undefined);
+    if (hasAllFields) {
+      break;
+    }
+  }
+
+  snapshot.contributing_sensor_ids = Array.from(contributingSensorIds);
+  snapshot.sensor_count = snapshot.contributing_sensor_ids.length;
+
+  return snapshot;
+};
+
+const normalizeReadingTimestamp = (reading, fallbackTimestamp = Date.now()) => {
+  const timestampCandidate =
+    reading?.timestamp ??
+    reading?.readingTimestamp ??
+    reading?.reading_timestamp;
+
+  if (timestampCandidate === null || timestampCandidate === undefined) {
+    return fallbackTimestamp;
+  }
+
+  const parsedTimestamp = parseSensorTimestamp(timestampCandidate);
+  return parsedTimestamp ?? fallbackTimestamp;
+};
+
+const normalizeReadingValues = (reading = {}) => {
+  const normalized = { ...reading };
+  const sensorType = String(
+    normalized.sensorType ??
+      normalized.sensor_type ??
+      ''
+  )
+    .trim()
+    .toLowerCase();
+
+  for (const [inputField, canonicalField] of INPUT_FIELD_ALIASES) {
+    if (normalized[canonicalField] === undefined && normalized[inputField] !== undefined) {
+      normalized[canonicalField] = normalized[inputField];
+    }
+  }
+
+  if (sensorType && normalized.value !== undefined) {
+    const mappedFields = LEGACY_SENSOR_TYPE_FIELD_MAP[sensorType] || [];
+
+    if (sensorType === 'npk' && normalized.value && typeof normalized.value === 'object') {
+      if (normalized.nitrogen === undefined) {
+        normalized.nitrogen = normalized.value.nitrogen ?? normalized.value.n;
+      }
+      if (normalized.phosphorus === undefined) {
+        normalized.phosphorus = normalized.value.phosphorus ?? normalized.value.p;
+      }
+      if (normalized.potassium === undefined) {
+        normalized.potassium = normalized.value.potassium ?? normalized.value.k;
+      }
+    } else if (mappedFields.length === 1 && normalized[mappedFields[0]] === undefined) {
+      normalized[mappedFields[0]] = normalized.value;
+    }
+  }
+
+  for (const field of INPUT_READING_FIELDS) {
+    if (normalized[field] === null || normalized[field] === undefined || normalized[field] === '') {
+      delete normalized[field];
+      continue;
+    }
+
+    const parsedValue = Number(normalized[field]);
+    if (!Number.isNaN(parsedValue)) {
+      normalized[field] = parsedValue;
+    }
+  }
+
+  return normalized;
+};
+
+const hasAtLeastOneMeasurement = (reading = {}) =>
+  INPUT_READING_FIELDS.some((field) => reading[field] !== undefined && reading[field] !== null);
+
+const hasMatchingMeasurements = (left = {}, right = {}) =>
+  INPUT_READING_FIELDS.every((field) => {
+    const leftValue = left[field];
+    const rightValue = right[field];
+
+    if (leftValue === undefined && rightValue === undefined) {
+      return true;
+    }
+
+    return leftValue === rightValue;
+  });
+
+const isDuplicateReading = (reading, previousReading) => {
+  if (!previousReading) {
+    return false;
+  }
+
+  const currentTimestamp = reading?.readingTimestamp ?? reading?.reading_timestamp;
+  const previousTimestamp = previousReading?.reading_timestamp ?? previousReading?.readingTimestamp;
+
+  if (currentTimestamp === undefined || previousTimestamp === undefined) {
+    return false;
+  }
+
+  if (currentTimestamp !== previousTimestamp) {
+    return false;
+  }
+
+  const previousComparableReading = {
+    soilMoisture: previousReading?.soilMoisture ?? previousReading?.soil_moisture,
+    soilTemperature: previousReading?.soilTemperature ?? previousReading?.soil_temperature,
+    airTemperature: previousReading?.airTemperature ?? previousReading?.air_temperature,
+    humidity: previousReading?.humidity,
+    nitrogen: previousReading?.nitrogen,
+    phosphorus: previousReading?.phosphorus,
+    potassium: previousReading?.potassium,
+    phLevel: previousReading?.phLevel ?? previousReading?.ph_level,
+    lightIntensity: previousReading?.lightIntensity ?? previousReading?.light_intensity,
+    rainfallMm: previousReading?.rainfallMm ?? previousReading?.rainfall_mm,
+  };
+
+  return hasMatchingMeasurements(reading, previousComparableReading);
+};
+
 /**
  * Get sensor by ID
  * @param {string} sensorId - Sensor UUID
@@ -99,6 +364,24 @@ export const registerSensor = async (sensorData) => {
       metadata
     });
 
+    await logSensorAuditEvent({
+      action: 'CREATE_SENSOR',
+      entity_type: 'sensors',
+      entity_id: data._id,
+      new_values: pickDefinedFields(data, [
+        'device_id',
+        'farm_id',
+        'sensor_type',
+        'name',
+        'location_description',
+        'latitude',
+        'longitude',
+        'firmware_version',
+        'metadata',
+        'status',
+      ]),
+    });
+
     logger.info(`Sensor registered: ${data._id} (${deviceId})`);
     return data;
   } catch (error) {
@@ -116,6 +399,8 @@ export const registerSensor = async (sensorData) => {
  * @returns {Promise<Object>} Updated sensor
  */
 export const updateSensor = async (sensorId, updateData) => {
+  const existingSensor = await db.sensors.getById(sensorId);
+
   const allowedFields = [
     'name',
     'location_description',
@@ -141,9 +426,12 @@ export const updateSensor = async (sensorId, updateData) => {
     }
   });
 
-  // Handle coordinates update
-  if (updateData.latitude !== undefined && updateData.longitude !== undefined) {
-    updates.coordinates = `POINT(${updateData.longitude} ${updateData.latitude})`;
+  if (updateData.latitude !== undefined) {
+    updates.latitude = updateData.latitude;
+  }
+
+  if (updateData.longitude !== undefined) {
+    updates.longitude = updateData.longitude;
   }
 
   const data = await db.sensors.update(sensorId, updates);
@@ -151,6 +439,14 @@ export const updateSensor = async (sensorId, updateData) => {
   if (!data) {
     throw new NotFoundError('Sensor not found');
   }
+
+  await logSensorAuditEvent({
+    action: 'UPDATE_SENSOR',
+    entity_type: 'sensors',
+    entity_id: sensorId,
+    old_values: pickDefinedFields(existingSensor, Object.keys(updates)),
+    new_values: updates,
+  });
 
   return data;
 };
@@ -207,9 +503,17 @@ const validateReading = (reading, previousReading = null) => {
     }
   });
 
+  if (!hasAtLeastOneMeasurement(reading)) {
+    flags.missingMeasurements = true;
+    isValid = false;
+  }
+
   // Rate of change validation (if previous reading available)
   if (previousReading) {
-    const timeDiffHours = (new Date(reading.timestamp) - new Date(previousReading.reading_timestamp)) / (1000 * 60 * 60);
+    const readingTimestamp =
+      reading.readingTimestamp ?? normalizeReadingTimestamp(reading);
+    const timeDiffHours =
+      (readingTimestamp - previousReading.reading_timestamp) / (1000 * 60 * 60);
     
     if (timeDiffHours > 0 && timeDiffHours < 24) {
       // Check soil moisture rate of change
@@ -232,10 +536,16 @@ const validateReading = (reading, previousReading = null) => {
 
   // Check for frozen sensor (identical consecutive readings)
   if (previousReading) {
-    const isFrozen = ['soil_moisture', 'air_temperature', 'humidity'].every(field => {
-      const currentField = field.replace(/_([a-z])/g, (m, c) => c.toUpperCase());
-      return reading[currentField] === previousReading[field];
-    });
+    const comparableFields = FROZEN_SENSOR_FIELDS.filter(([currentField, previousField]) =>
+      reading[currentField] !== undefined &&
+      previousReading[previousField] !== undefined
+    );
+
+    const isFrozen =
+      comparableFields.length > 0 &&
+      comparableFields.every(([currentField, previousField]) =>
+        reading[currentField] === previousReading[previousField]
+      );
     
     if (isFrozen) {
       flags.frozenSensor = true;
@@ -245,6 +555,25 @@ const validateReading = (reading, previousReading = null) => {
   return { isValid, flags };
 };
 
+const buildInsertedRecord = (sensorId, farmId, reading, validation) => ({
+  sensor_id: sensorId,
+  farm_id: farmId,
+  reading_timestamp: reading.readingTimestamp,
+  soil_moisture: reading.soilMoisture,
+  soil_temperature: reading.soilTemperature,
+  air_temperature: reading.airTemperature,
+  humidity: reading.humidity,
+  nitrogen: reading.nitrogen,
+  phosphorus: reading.phosphorus,
+  potassium: reading.potassium,
+  ph_level: reading.phLevel,
+  light_intensity: reading.lightIntensity,
+  rainfall_mm: reading.rainfallMm,
+  is_valid: validation.isValid,
+  validation_flags: validation.flags,
+  raw_payload: reading
+});
+
 /**
  * Ingest sensor data
  * @param {string} deviceId - Device identifier
@@ -252,52 +581,83 @@ const validateReading = (reading, previousReading = null) => {
  * @returns {Promise<Object>} Ingestion result
  */
 export const ingestSensorData = async (deviceId, readings) => {
-  // Get sensor info
-  const sensor = await getSensorByDeviceId(deviceId);
+  const deviceContext =
+    deviceId && typeof deviceId === 'object'
+      ? deviceId
+      : { id: deviceId };
+
+  const resolvedDeviceId = deviceContext.id;
+  const resolvedSensorId = deviceContext.sensorId;
+  const resolvedFarmId = deviceContext.farmId;
+
+  if (!resolvedDeviceId) {
+    throw new BadRequestError('Device identifier is required');
+  }
+
+  let sensor = null;
+  if (!resolvedSensorId || !resolvedFarmId) {
+    sensor = await getSensorByDeviceId(resolvedDeviceId);
+  }
+
+  const sensorId = resolvedSensorId || sensor?._id || sensor?.id;
+  const farmId = resolvedFarmId || sensor?.farm_id;
+
+  if (!sensorId || !farmId) {
+    throw new NotFoundError('Sensor not found');
+  }
 
   // Get last reading for validation
-  const lastReading = await db.sensorData.getLatestBySensor(sensor._id);
+  const lastReading = await db.sensorData.getLatestBySensor(sensorId);
 
   const results = {
     total: readings.length,
+    received: readings.length,
     valid: 0,
+    processed: 0,
     invalid: 0,
+    failed: 0,
+    duplicates: 0,
     inserted: []
   };
 
   // Process each reading
   const dataToInsert = [];
+  const fallbackBaseTimestamp = Date.now();
+  const normalizedReadings = readings
+    .map((reading, index) => {
+      const normalizedReading = normalizeReadingValues(reading);
+      return {
+        ...normalizedReading,
+        readingTimestamp: normalizeReadingTimestamp(normalizedReading, fallbackBaseTimestamp + index),
+      };
+    })
+    .sort((left, right) => left.readingTimestamp - right.readingTimestamp);
   let previousReading = lastReading;
+  let latestReadingTimestamp = lastReading?.reading_timestamp ?? 0;
 
-  for (const reading of readings) {
+  for (const reading of normalizedReadings) {
     const validation = validateReading(reading, previousReading);
-
-    const record = {
-      sensor_id: sensor._id,
-      farm_id: sensor.farm_id,
-      reading_timestamp: reading.timestamp ? new Date(reading.timestamp).getTime() : Date.now(),
-      soil_moisture: reading.soilMoisture,
-      soil_temperature: reading.soilTemperature,
-      air_temperature: reading.airTemperature,
-      humidity: reading.humidity,
-      nitrogen: reading.nitrogen,
-      phosphorus: reading.phosphorus,
-      potassium: reading.potassium,
-      ph_level: reading.phLevel,
-      light_intensity: reading.lightIntensity,
-      rainfall_mm: reading.rainfallMm,
-      is_valid: validation.isValid,
-      validation_flags: validation.flags,
-      raw_payload: reading
-    };
-
-    dataToInsert.push(record);
 
     if (validation.isValid) {
       results.valid++;
+      results.processed++;
     } else {
       results.invalid++;
+      results.failed++;
     }
+
+    if (!hasAtLeastOneMeasurement(reading)) {
+      continue;
+    }
+
+    if (isDuplicateReading(reading, previousReading)) {
+      results.duplicates += 1;
+      continue;
+    }
+
+    const record = buildInsertedRecord(sensorId, farmId, reading, validation);
+    dataToInsert.push(record);
+    latestReadingTimestamp = Math.max(latestReadingTimestamp, record.reading_timestamp);
 
     // Update previous reading for next iteration
     previousReading = {
@@ -307,16 +667,47 @@ export const ingestSensorData = async (deviceId, readings) => {
   }
 
   // Batch insert
-  const insertedData = await db.sensorData.insertBatch(dataToInsert);
+  const insertedData = dataToInsert.length > 0
+    ? await db.sensorData.insertBatch(dataToInsert)
+    : [];
 
   results.inserted = Array.isArray(insertedData)
     ? insertedData.map(d => d._id || d)
     : [];
+  const persistedInsertCount = results.inserted.length;
 
   // Update sensor last reading timestamp
-  await db.sensors.update(sensor._id, { last_reading_at: Date.now() });
+  if (persistedInsertCount > 0) {
+    try {
+      await db.sensors.update(sensorId, {
+        last_reading_at: latestReadingTimestamp || Date.now(),
+      });
+    } catch (error) {
+      logger.warn(
+        `Failed to update last reading timestamp for sensor ${sensorId}:`,
+        error?.message || error
+      );
+    }
 
-  logger.info(`Sensor data ingested: ${results.valid} valid, ${results.invalid} invalid readings from ${deviceId}`);
+    await logSensorAuditEvent({
+      action: 'INGEST_SENSOR_DATA',
+      entity_type: 'sensor_data',
+      entity_id: sensorId,
+      new_values: {
+        device_id: resolvedDeviceId,
+        sensor_id: sensorId,
+        farm_id: farmId,
+        received: results.received,
+        processed: results.processed,
+        invalid: results.invalid,
+        duplicates: results.duplicates,
+        inserted: persistedInsertCount,
+        last_reading_at: latestReadingTimestamp || Date.now(),
+      },
+    });
+  }
+
+  logger.info(`Sensor data ingested: ${results.valid} valid, ${results.invalid} invalid readings from ${resolvedDeviceId}`);
 
   return results;
 };
@@ -347,7 +738,7 @@ export const getSensorData = async (farmId, options = {}) => {
   });
 
   const data = result?.data || result || [];
-  const total = result?.total ?? data.length;
+  const total = result?.total ?? result?.count ?? data.length;
 
   return {
     data,
@@ -364,9 +755,8 @@ export const getSensorData = async (farmId, options = {}) => {
  * @returns {Promise<Object>} Latest readings by sensor type
  */
 export const getLatestReadings = async (farmId) => {
-  const data = await db.sensorData.getLatestByFarm(farmId, true);
-
-  return data || null;
+  const recentReadings = await db.sensorData.getLatestReadings(farmId, 50);
+  return buildLatestReadingsSnapshot(recentReadings);
 };
 
 /**
@@ -381,7 +771,20 @@ export const getDailyAggregates = async (farmId, days = 7) => {
 
   const data = await db.sensorData.getDailyAggregates(farmId, startDate.getTime());
 
-  return data || [];
+  return (data || []).map((item) => ({
+    farmId: String(item?.farm_id || farmId),
+    date: item?.reading_date || item?.date || new Date().toISOString().split('T')[0],
+    avgSoilMoisture: item?.avg_soil_moisture ?? item?.avgSoilMoisture ?? null,
+    minSoilMoisture: item?.min_soil_moisture ?? item?.minSoilMoisture ?? null,
+    maxSoilMoisture: item?.max_soil_moisture ?? item?.maxSoilMoisture ?? null,
+    avgSoilTemperature: item?.avg_soil_temperature ?? item?.avgSoilTemperature ?? null,
+    avgTemperature: item?.avg_temperature ?? item?.avgTemperature ?? null,
+    avgHumidity: item?.avg_humidity ?? item?.avgHumidity ?? null,
+    avgNitrogen: item?.avg_nitrogen ?? item?.avgNitrogen ?? null,
+    avgPhosphorus: item?.avg_phosphorus ?? item?.avgPhosphorus ?? null,
+    avgPotassium: item?.avg_potassium ?? item?.avgPotassium ?? null,
+    readingsCount: item?.reading_count ?? item?.readingsCount ?? 0,
+  }));
 };
 
 /**

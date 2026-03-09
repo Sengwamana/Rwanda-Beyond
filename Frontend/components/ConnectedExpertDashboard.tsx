@@ -16,6 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/
 import { LoadingState, ErrorState, EmptyState, Spinner } from './ui/Spinner';
 import { Button } from './ui/Button';
 import { Badge } from './ui/Badge';
+import { FormattedAiResponse } from './ui/FormattedAiResponse';
 
 interface ConnectedExpertDashboardProps {
   searchQuery?: string;
@@ -910,7 +911,7 @@ function ExpertAiAdvicePanel() {
           {adviceMutation.data && (
             <div className="rounded-lg border p-4 space-y-3 bg-muted/30">
               <p className="font-semibold">AI Response</p>
-              <p className="text-sm whitespace-pre-wrap">{adviceMutation.data.answer}</p>
+              <FormattedAiResponse content={adviceMutation.data.answer} />
               {adviceMutation.data.suggestions?.length > 0 && (
                 <div>
                   <p className="text-xs font-medium text-muted-foreground mb-1">Suggestions</p>

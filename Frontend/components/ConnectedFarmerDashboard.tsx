@@ -27,6 +27,7 @@ import { Card, CardHeader, CardContent, CardTitle, CardDescription } from './ui/
 import { Button } from './ui/Button';
 import { Badge } from './ui/Badge';
 import { Spinner, LoadingState, ErrorState, EmptyState } from './ui/Spinner';
+import { FormattedAiResponse } from './ui/FormattedAiResponse';
 import {
   XAxis,
   YAxis,
@@ -124,11 +125,11 @@ const farmerTabCopy: Record<string, { title: string; description: string }> = {
     description: 'Review previous pest scans, findings, and follow-up recommendations.',
   },
   analytics: {
-    title: 'Analytics',
+    title: 'District Analytics',
     description: 'Inspect trends, forecasts, and farm performance metrics.',
   },
   'ai-chat': {
-    title: 'AI Assistant',
+    title: 'AI Advice',
     description: 'Ask questions about the selected farm and get contextual guidance.',
   },
 };
@@ -210,6 +211,8 @@ function RecommendationCard({
   };
 
   const Icon = getIcon();
+  const isPreliminaryPestAlert =
+    recommendation.type === 'pest_alert' && recommendation.supportingData?.expertVerified !== true;
 
   return (
     <Card className="border-l-4 border-l-primary">
@@ -224,6 +227,11 @@ function RecommendationCard({
               <Badge className={priorityColors[recommendation.priority]}>{recommendation.priority}</Badge>
             </div>
             <p className="text-sm text-muted-foreground mt-1">{recommendation.description}</p>
+            {isPreliminaryPestAlert && (
+              <p className="text-xs text-amber-700 mt-2">
+                Preliminary AI screening. Confirm with an agricultural expert before treatment decisions.
+              </p>
+            )}
             {recommendation.actionDeadline && (
               <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
                 <Clock size={12} />
@@ -984,10 +992,24 @@ export function ConnectedFarmerDashboard({
                   </p>
                 )}
               </div>
-              <Badge variant={latestPestAnalysis.detection.pestDetected ? 'default' : 'secondary'}>
-                {latestPestAnalysis.detection.pestDetected ? 'Pest detected' : 'No pest detected'}
-              </Badge>
+              <div className="flex flex-col items-start md:items-end gap-2">
+                <Badge variant={latestPestAnalysis.detection.pestDetected ? 'default' : 'secondary'}>
+                  {latestPestAnalysis.detection.pestDetected ? 'Pest detected' : 'No pest detected'}
+                </Badge>
+                <Badge variant={latestPestAnalysis.detection.isConfirmed ? 'default' : 'secondary'}>
+                  {latestPestAnalysis.detection.isConfirmed ? 'Expert confirmed' : 'Preliminary AI screening'}
+                </Badge>
+              </div>
             </div>
+
+            {!latestPestAnalysis.detection.isConfirmed && (
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                This result is a preliminary AI screening. Confirm with an agricultural expert before treatment decisions.
+                {latestPestAnalysis.detection.severity === 'severe'
+                  ? ' Severe findings are held for expert confirmation before alerts are issued.'
+                  : ''}
+              </div>
+            )}
 
             {Array.isArray(latestPestAnalysis.analysis?.symptoms) && latestPestAnalysis.analysis.symptoms.length > 0 && (
               <div>
@@ -2082,11 +2104,14 @@ function PestHistoryPanel({ farmId }: { farmId: string }) {
               {d.createdAt ? new Date(d.createdAt).toLocaleDateString() : ''}
               {d.severity ? ` | Severity: ${d.severity}` : ''}
             </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {d.isConfirmed ? 'Expert-confirmed detection.' : 'Preliminary AI screening pending expert review.'}
+            </p>
             {d.expertNotes && <p className="text-sm mt-1 line-clamp-2">{d.expertNotes}</p>}
           </div>
           <div className="flex flex-col items-end gap-2 flex-shrink-0">
             <Badge variant={d.isConfirmed ? 'default' : 'secondary'}>
-              {d.isConfirmed ? 'confirmed' : 'pending'}
+              {d.isConfirmed ? 'Expert confirmed' : 'Pending expert review'}
             </Badge>
             <Button
               size="sm"
@@ -2178,6 +2203,13 @@ function AiChatPanel({ farmId }: { farmId?: string | null }) {
   const chatMutation = useAiChat();
   const adviceMutation = useAiAdvice();
   const bottomRef = React.useRef<HTMLDivElement>(null);
+  const scrollToBottom = React.useCallback(() => {
+    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+  }, []);
+  const appendAssistantMessage = React.useCallback((content: string) => {
+    setMessages((prev) => [...prev, { role: 'assistant', content }]);
+    scrollToBottom();
+  }, [scrollToBottom]);
 
   const handleSend = async () => {
     if (!input.trim()) return;
@@ -2185,21 +2217,40 @@ function AiChatPanel({ farmId }: { farmId?: string | null }) {
     setInput('');
     const history = messages.map((m) => ({ role: m.role, content: m.content, timestamp: new Date().toISOString() }));
     setMessages((prev) => [...prev, { role: 'user', content: userMsg }]);
-    const res = await chatMutation.mutateAsync({ message: userMsg, conversationHistory: history, farmId: farmId ?? undefined });
-    setMessages((prev) => [...prev, { role: 'assistant', content: res.reply }]);
-    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+    try {
+      const res = await chatMutation.mutateAsync({
+        message: userMsg,
+        conversationHistory: history,
+        farmId: farmId ?? undefined,
+      });
+      appendAssistantMessage(res?.reply?.trim() || 'I could not generate a response right now.');
+    } catch {
+      appendAssistantMessage('I could not reach the AI assistant right now. Please try again.');
+    }
   };
 
   const handleAdvice = async () => {
     if (!adviceQ.trim()) return;
     const q = adviceQ.trim();
     setAdviceQ('');
-    const res = await adviceMutation.mutateAsync({ question: q, context: { farmId: farmId ?? undefined } });
+    const res = await adviceMutation
+      .mutateAsync({ question: q, context: { farmId: farmId ?? undefined } })
+      .catch(() => null);
+    if (!res) {
+      setMessages((prev) => [
+        ...prev,
+        { role: 'user', content: `[Advice] ${q}` },
+        { role: 'assistant', content: 'I could not generate advice right now.' },
+      ]);
+      scrollToBottom();
+      return;
+    }
     setMessages((prev) => [
       ...prev,
       { role: 'user', content: `[Advice] ${q}` },
       { role: 'assistant', content: res.answer + (res.suggestions?.length ? '\n\nSuggestions:\n• ' + res.suggestions.join('\n• ') : '') },
     ]);
+    scrollToBottom();
   };
 
   return (
@@ -2218,7 +2269,9 @@ function AiChatPanel({ farmId }: { farmId?: string | null }) {
               <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div className={`rounded-lg px-3 py-2 max-w-[80%] text-sm whitespace-pre-wrap ${
                   m.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-card border'
-                }`}>{m.content}</div>
+                }`}>
+                  {m.role === 'user' ? m.content : <FormattedAiResponse content={m.content} className="space-y-2" />}
+                </div>
               </div>
             ))}
             <div ref={bottomRef} />
@@ -2256,7 +2309,7 @@ function AiChatPanel({ farmId }: { farmId?: string | null }) {
           {adviceMutation.data && (
             <div className="rounded-lg border p-3 bg-muted/30 text-sm space-y-2">
               <p className="font-medium">Answer</p>
-              <p className="whitespace-pre-wrap">{adviceMutation.data.answer}</p>
+              <FormattedAiResponse content={adviceMutation.data.answer} />
               {adviceMutation.data.suggestions?.length > 0 && (
                 <ul className="list-disc pl-5 text-muted-foreground">
                   {adviceMutation.data.suggestions.map((s: string, i: number) => <li key={i}>{s}</li>)}

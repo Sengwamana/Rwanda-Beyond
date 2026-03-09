@@ -29,6 +29,7 @@ import { authService } from './services/auth';
 import { configureAuth } from './services/apiClient';
 import { queryClient } from './config/queryClient';
 import { wsManager as webSocketManager } from './services/websocket';
+import env from './config/env';
 import { Language, UserRole } from './types';
 
 // Get Clerk publishable key from environment
@@ -291,6 +292,7 @@ function AppRoutes({ authEnabled }: { authEnabled: boolean }) {
   const hideFooterPaths = ['/dashboard'];
   const showNavbar = !hideNavbarPaths.some(path => location.pathname.startsWith(path));
   const showFooter = !hideFooterPaths.some(path => location.pathname.startsWith(path));
+  const showVoiceAssistant = env.enableVoiceAssistant && location.pathname.startsWith('/dashboard');
 
   return (
     <div className="min-h-screen bg-background font-sans text-foreground selection:bg-primary selection:text-primary-foreground flex flex-col transition-colors duration-300">
@@ -423,7 +425,7 @@ function AppRoutes({ authEnabled }: { authEnabled: boolean }) {
       {showFooter && <Footer onNavigate={handleNavigate} />}
 
       {/* Voice Assistant FAB */}
-      <VoiceAssistant />
+      {showVoiceAssistant && <VoiceAssistant />}
     </div>
   );
 }

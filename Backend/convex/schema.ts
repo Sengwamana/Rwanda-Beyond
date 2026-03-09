@@ -43,6 +43,7 @@ export default defineSchema({
     profile_image_url: v.optional(v.string()),
     is_active: v.boolean(),
     is_verified: v.boolean(),
+    deactivation_reason: v.optional(v.string()),
     last_login_at: v.optional(v.number()),
     metadata: v.optional(v.any()),
     created_at: v.number(),
@@ -52,7 +53,10 @@ export default defineSchema({
     .index("by_email", ["email"])
     .index("by_phone", ["phone_number"])
     .index("by_role", ["role"])
-    .index("by_active_role", ["is_active", "role"]),
+    .index("by_active_role", ["is_active", "role"])
+    .index("by_created", ["created_at"])
+    .index("by_role_created", ["role", "created_at"])
+    .index("by_active_created", ["is_active", "created_at"]),
 
   districts: defineTable({
     name: v.string(),
@@ -85,7 +89,11 @@ export default defineSchema({
     .index("by_user", ["user_id"])
     .index("by_district", ["district_id"])
     .index("by_active", ["is_active"])
-    .index("by_user_active", ["user_id", "is_active"]),
+    .index("by_user_active", ["user_id", "is_active"])
+    .index("by_created", ["created_at"])
+    .index("by_user_created", ["user_id", "created_at"])
+    .index("by_active_created", ["is_active", "created_at"])
+    .index("by_district_created", ["district_id", "created_at"]),
 
   sensors: defineTable({
     farm_id: v.id("farms"),
@@ -108,7 +116,11 @@ export default defineSchema({
     .index("by_device_id", ["device_id"])
     .index("by_type", ["sensor_type"])
     .index("by_status", ["status"])
-    .index("by_farm_status", ["farm_id", "status"]),
+    .index("by_farm_status", ["farm_id", "status"])
+    .index("by_created", ["created_at"])
+    .index("by_status_created", ["status", "created_at"])
+    .index("by_farm_created", ["farm_id", "created_at"])
+    .index("by_farm_status_created", ["farm_id", "status", "created_at"]),
 
   sensor_data: defineTable({
     sensor_id: v.id("sensors"),
@@ -128,13 +140,15 @@ export default defineSchema({
     validation_flags: v.optional(v.any()),
     raw_payload: v.optional(v.any()),
     created_at: v.number(),
-  })
-    .index("by_sensor", ["sensor_id"])
-    .index("by_farm", ["farm_id"])
-    .index("by_timestamp", ["reading_timestamp"])
-    .index("by_farm_timestamp", ["farm_id", "reading_timestamp"])
-    .index("by_sensor_timestamp", ["sensor_id", "reading_timestamp"])
-    .index("by_valid", ["is_valid"]),
+    })
+      .index("by_sensor", ["sensor_id"])
+      .index("by_farm", ["farm_id"])
+      .index("by_timestamp", ["reading_timestamp"])
+      .index("by_farm_timestamp", ["farm_id", "reading_timestamp"])
+      .index("by_farm_valid_timestamp", ["farm_id", "is_valid", "reading_timestamp"])
+      .index("by_farm_sensor_timestamp", ["farm_id", "sensor_id", "reading_timestamp"])
+      .index("by_sensor_timestamp", ["sensor_id", "reading_timestamp"])
+      .index("by_valid", ["is_valid"]),
 
   weather_data: defineTable({
     district_id: v.optional(v.id("districts")),
@@ -163,6 +177,7 @@ export default defineSchema({
     .index("by_district", ["district_id"])
     .index("by_date", ["forecast_date"])
     .index("by_district_date", ["district_id", "forecast_date"])
+    .index("by_district_date_time", ["district_id", "forecast_date", "forecast_time"])
     .index("by_fetched", ["fetched_at"]),
 
   pest_detections: defineTable({
@@ -193,7 +208,10 @@ export default defineSchema({
     .index("by_detected", ["pest_detected"])
     .index("by_severity", ["severity"])
     .index("by_created", ["created_at"])
-    .index("by_farm_detected", ["farm_id", "pest_detected"]),
+    .index("by_farm_created", ["farm_id", "created_at"])
+    .index("by_farm_detected", ["farm_id", "pest_detected"])
+    .index("by_farm_detected_created", ["farm_id", "pest_detected", "created_at"])
+    .index("by_detected_created", ["pest_detected", "created_at"]),
 
   irrigation_schedules: defineTable({
     farm_id: v.id("farms"),
@@ -217,7 +235,9 @@ export default defineSchema({
     .index("by_farm", ["farm_id"])
     .index("by_date", ["scheduled_date"])
     .index("by_executed", ["is_executed"])
-    .index("by_farm_executed", ["farm_id", "is_executed"]),
+    .index("by_farm_date", ["farm_id", "scheduled_date"])
+    .index("by_farm_executed", ["farm_id", "is_executed"])
+    .index("by_farm_executed_date", ["farm_id", "is_executed", "scheduled_date"]),
 
   fertilization_schedules: defineTable({
     farm_id: v.id("farms"),
@@ -242,7 +262,8 @@ export default defineSchema({
     .index("by_farm", ["farm_id"])
     .index("by_date", ["scheduled_date"])
     .index("by_executed", ["is_executed"])
-    .index("by_farm_date", ["farm_id", "scheduled_date"]),
+    .index("by_farm_date", ["farm_id", "scheduled_date"])
+    .index("by_farm_executed_date", ["farm_id", "is_executed", "scheduled_date"]),
 
   recommendations: defineTable({
     farm_id: v.id("farms"),
@@ -301,9 +322,12 @@ export default defineSchema({
     created_at: v.number(),
   })
     .index("by_user", ["user_id"])
+    .index("by_user_created", ["user_id", "created_at"])
     .index("by_recommendation", ["recommendation_id"])
     .index("by_status", ["status"])
+    .index("by_status_created", ["status", "created_at"])
     .index("by_channel", ["channel"])
+    .index("by_channel_created", ["channel", "created_at"])
     .index("by_created", ["created_at"]),
 
   system_config: defineTable({
@@ -329,8 +353,11 @@ export default defineSchema({
     created_at: v.number(),
   })
     .index("by_user", ["user_id"])
+    .index("by_user_created", ["user_id", "created_at"])
     .index("by_action", ["action"])
+    .index("by_action_created", ["action", "created_at"])
     .index("by_entity", ["entity_type", "entity_id"])
+    .index("by_entity_created", ["entity_type", "created_at"])
     .index("by_created", ["created_at"]),
 
   iot_device_tokens: defineTable({
@@ -340,8 +367,13 @@ export default defineSchema({
     last_used_at: v.optional(v.number()),
     expires_at: v.optional(v.number()),
     created_at: v.number(),
-  })
-    .index("by_device", ["device_id"])
-    .index("by_active", ["is_active"])
-    .index("by_device_active", ["device_id", "is_active"]),
-});
+    })
+      .index("by_device", ["device_id"])
+      .index("by_active", ["is_active"])
+      .index("by_created", ["created_at"])
+      .index("by_device_active", ["device_id", "is_active"])
+      .index("by_active_created", ["is_active", "created_at"])
+      .index("by_device_created", ["device_id", "created_at"])
+      .index("by_device_active_created", ["device_id", "is_active", "created_at"])
+      .index("by_device_active_hash", ["device_id", "is_active", "token_hash"]),
+  });

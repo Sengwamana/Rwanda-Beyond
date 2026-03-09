@@ -15,8 +15,20 @@ import { asyncHandler } from '../middleware/errorHandler.js';
 import { successResponse, createdResponse, paginatedResponse } from '../utils/response.js';
 import { db } from '../database/convex.js';
 import * as sensorService from '../services/sensorService.js';
+import logger from '../utils/logger.js';
 
 const router = Router();
+
+const logSensorAuditEvent = async (entry) => {
+  try {
+    await db.auditLogs.create({
+      ...entry,
+      created_at: Date.now(),
+    });
+  } catch (error) {
+    logger.warn('Failed to write sensor route audit log:', error?.message || error);
+  }
+};
 
 /**
  * Get farm user ID for ownership check
@@ -150,7 +162,7 @@ router.post('/data/ingest',
   validateSensorData,
   asyncHandler(async (req, res) => {
     const result = await sensorService.ingestSensorData(
-      req.device.id,
+      req.device,
       req.body.readings
     );
 
@@ -166,23 +178,21 @@ router.post('/data/ingest',
 router.post('/data/batch',
   iotLimiter,
   authenticateDevice,
+  validateSensorData,
   asyncHandler(async (req, res) => {
     const { readings } = req.body;
-    
-    if (!Array.isArray(readings) || readings.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Readings array is required',
-        code: 'VALIDATION_ERROR'
-      });
-    }
 
     const result = await sensorService.ingestSensorData(
-      req.device.id,
+      req.device,
       readings
     );
 
-    return successResponse(res, result, `Batch data ingested: ${result.valid} valid, ${result.invalid} invalid readings`);
+    const duplicateSummary = result.duplicates > 0 ? `, ${result.duplicates} duplicates skipped` : '';
+    return successResponse(
+      res,
+      result,
+      `Batch data ingested: ${result.processed} processed, ${result.failed} failed${duplicateSummary}`
+    );
   })
 );
 
@@ -286,7 +296,31 @@ router.delete('/:sensorId',
   handleValidationErrors,
   requireOwnership(getSensorUserId),
   asyncHandler(async (req, res) => {
+    const existingSensor = await db.sensors.getById(req.params.sensorId);
+    if (!existingSensor) {
+      return res.status(404).json({
+        success: false,
+        message: 'Sensor not found',
+        code: 'NOT_FOUND',
+      });
+    }
+
     await db.sensors.remove(req.params.sensorId);
+    await logSensorAuditEvent({
+      user_id: req.user?.id || req.user?._id,
+      action: 'DELETE_SENSOR',
+      entity_type: 'sensors',
+      entity_id: req.params.sensorId,
+      old_values: existingSensor
+        ? {
+            device_id: existingSensor.device_id,
+            farm_id: existingSensor.farm_id,
+            sensor_type: existingSensor.sensor_type,
+            status: existingSensor.status,
+          }
+        : undefined,
+      new_values: { deleted: true },
+    });
     return successResponse(res, { id: req.params.sensorId }, 'Sensor deleted successfully');
   })
 );

@@ -10,6 +10,8 @@
 import { db } from '../database/convex.js';
 import logger from '../utils/logger.js';
 import * as recommendationService from './recommendationService.js';
+import * as sensorService from './sensorService.js';
+import { NotFoundError } from '../utils/errors.js';
 
 /**
  * USSD Menu translations
@@ -73,6 +75,17 @@ export const TRANSLATIONS = {
  * Session storage (in production, use Redis)
  */
 const sessions = new Map();
+
+const logUssdAuditEvent = async (entry) => {
+  try {
+    await db.auditLogs.create({
+      ...entry,
+      created_at: Date.now(),
+    });
+  } catch (error) {
+    logger.warn('Failed to write USSD audit log:', error?.message || error);
+  }
+};
 
 /**
  * Get translation for a key
@@ -145,9 +158,8 @@ const getUserByPhone = async (phoneNumber) => {
  * @returns {Promise<Array>} User's farms
  */
 const getUserFarms = async (userId) => {
-  const farms = await db.farms.getByUser(userId, { limit: 5, isActive: true });
-  
-  return farms || [];
+  const result = await db.farms.getByUser(userId, { limit: 5, isActive: true });
+  return result?.data || result || [];
 };
 
 /**
@@ -167,9 +179,7 @@ const getPendingCount = async (userId) => {
  * @returns {Promise<Object|null>} Latest readings
  */
 const getLatestReadings = async (farmId) => {
-  const data = await db.sensorData.getLatestByFarm(farmId, true);
-  
-  return data;
+  return await sensorService.getLatestReadings(farmId);
 };
 
 /**
@@ -530,7 +540,19 @@ const handleSettingsMenu = async (sessionId, inputs, user, lang) => {
     const newLang = langMap[langChoice] || 'rw';
     
     if (user) {
-      await db.users.update(user._id, { preferred_language: newLang });
+      const updatedUser = await db.users.update(user._id, { preferred_language: newLang });
+      if (!updatedUser) {
+        throw new NotFoundError('User not found');
+      }
+
+      await logUssdAuditEvent({
+        user_id: user._id,
+        action: 'UPDATE_USER_LANGUAGE',
+        entity_type: 'users',
+        entity_id: user._id,
+        old_values: { preferred_language: user.preferred_language },
+        new_values: { preferred_language: newLang, channel: 'ussd' },
+      });
     }
     
     return `CON ${t('languageChanged', newLang)}`;

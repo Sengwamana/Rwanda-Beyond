@@ -81,6 +81,7 @@ export const db = {
 
   // ============ SENSOR DATA ============
   sensorData: {
+    list: (opts = {}) => client.query(api.sensorData.list, opts),
     getLatestBySensor: (sensorId) => client.query(api.sensorData.getLatestBySensor, { sensorId }),
     getLatestByFarm: (farmId, validOnly = true) => client.query(api.sensorData.getLatestByFarm, { farmId, validOnly }),
     getByFarm: (farmId, opts = {}) => client.query(api.sensorData.getByFarm, { farmId, ...opts }),
@@ -103,6 +104,7 @@ export const db = {
   pestDetections: {
     getById: (id) => client.query(api.pestDetections.getById, { id }),
     getByFarm: (farmId, opts = {}) => client.query(api.pestDetections.getByFarm, { farmId, ...opts }),
+    list: (opts = {}) => client.query(api.pestDetections.list, opts),
     getRecent: (farmId, limit) => client.query(api.pestDetections.getRecent, { farmId, limit }),
     getUnreviewed: (opts = {}) => client.query(api.pestDetections.getUnreviewed, opts),
     getStats: (opts = {}) => client.query(api.pestDetections.getStats, opts),
@@ -125,7 +127,11 @@ export const db = {
   fertilizationSchedules: {
     getByFarm: (farmId, opts = {}) => client.query(api.fertilizationSchedules.getByFarm, { farmId, ...opts }),
     getLastExecuted: (farmId) => client.query(api.fertilizationSchedules.getLastExecuted, { farmId }),
-    getHistory: (farmId, since) => client.query(api.fertilizationSchedules.getHistory, { farmId, since }),
+    getHistory: (farmId, since, limit) => client.query(api.fertilizationSchedules.getHistory, {
+      farmId,
+      ...(since ? { since } : {}),
+      ...(limit !== undefined ? { limit } : {}),
+    }),
     create: (data) => client.mutation(api.fertilizationSchedules.create, { data }),
     update: (id, updates) => client.mutation(api.fertilizationSchedules.update, { id, updates }),
     remove: (id) => client.mutation(api.fertilizationSchedules.remove, { id }),
@@ -151,6 +157,7 @@ export const db = {
     create: (data) => client.mutation(api.messages.create, { data }),
     createBatch: (messages) => client.mutation(api.messages.createBatch, { messages }),
     update: (id, updates) => client.mutation(api.messages.update, { id, updates }),
+    getQueued: (opts = {}) => client.query(api.messages.getQueued, opts),
     getFailed: (opts = {}) => client.query(api.messages.getFailed, opts),
     getStats: (opts = {}) => client.query(api.messages.getStats, opts),
     countSince: (since) => client.query(api.messages.countSince, { since }),

@@ -1,16 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { 
   LayoutGrid, Sprout, Settings as SettingsIcon, LogOut, 
-  Bell, Search, Menu, Activity, Server, Sun, Moon, Users, FileClock, Cpu, SlidersHorizontal, RadioTower, FileSpreadsheet, Send, CheckCheck, X, Trash2,
+  Bell, Search, Menu, Activity, Server, Sun, Moon, Users, FileClock, Cpu, SlidersHorizontal, RadioTower, FileSpreadsheet, Send, CheckCheck, X, Trash2, PanelLeftClose, PanelLeftOpen,
   BarChart2, Bot, Wifi, BookOpen, MessageSquare, Droplets, Bug
 } from 'lucide-react';
 import { Settings } from './Settings';
 import { ConnectedFarmerDashboard } from './ConnectedFarmerDashboard';
 import { ConnectedExpertDashboard } from './ConnectedExpertDashboard';
 import { ConnectedAdminDashboard } from './ConnectedAdminDashboard';
+import { useSystemHealth } from '../hooks/useApi';
 import { UserRole } from '../types';
 import { Language, translations } from '../utils/translations';
-import { useAlertStore } from '../store';
+import { useAlertStore, useAppStore, useAuthStore, useFarmStore } from '../store';
 
 interface DashboardProps {
   userRole: UserRole;
@@ -31,6 +32,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
   const [showMobileSearch, setShowMobileSearch] = useState(false);
 
   const { alerts, unreadCount, markAllAsRead, markAsRead, removeAlert, clearAlerts } = useAlertStore();
+  const { sidebarCollapsed, toggleSidebar } = useAppStore();
+  const { user } = useAuthStore();
+  const { selectedFarm } = useFarmStore();
+  const { data: systemHealth } = useSystemHealth(userRole === 'admin');
   
   const t = translations[language].dashboard;
 
@@ -74,8 +79,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
           { id: 'sensors', label: 'Sensors', icon: Wifi },
           { id: 'fertilization', label: 'Fertilization', icon: Droplets },
           { id: 'pest-history', label: 'Pest History', icon: Bug },
-          { id: 'analytics', label: 'Analytics', icon: BarChart2 },
-          { id: 'ai-chat', label: 'AI Assistant', icon: Bot },
+          { id: 'analytics', label: 'District Analytics', icon: BarChart2 },
+          { id: 'ai-chat', label: 'AI Advice', icon: Bot },
           ...common,
         ];
       case 'expert':
@@ -106,6 +111,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
   };
 
   const navItems = getNavItems(userRole);
+  const farmerShortcutItems = userRole === 'farmer'
+    ? navItems.filter((item) => ['analytics', 'ai-chat', 'settings'].includes(item.id))
+    : [];
+  const primaryNavItems =
+    userRole === 'farmer'
+      ? navItems.filter((item) => !['analytics', 'ai-chat', 'settings'].includes(item.id))
+      : navItems;
 
   useEffect(() => {
     if (!navItems.some((item) => item.id === activeTab)) {
@@ -135,21 +147,37 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
 
   // Role-based Label helpers
   const getRoleLabel = (role: UserRole) => {
-      if (role === 'admin') return 'System Administrator';
-      if (role === 'expert') return 'Senior Agronomist';
-      return 'Head Farmer';
-  };
-
-  const getPageTitle = (role: UserRole) => {
-      if (role === 'admin') return 'System Control Center';
-      if (role === 'expert') return 'Rwamagana District Analysis';
-      return 'Rwamagana District - Farm A';
+    if (role === 'admin') return 'System Administrator';
+    if (role === 'expert') return 'Agricultural Expert';
+    return 'Farmer Dashboard';
   };
 
   const getTabLabel = (tabId: string) => {
     const active = navItems.find((item) => item.id === tabId);
     return active?.label || tabId;
   };
+
+  const displayName =
+    [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.email || userRole;
+  const compactSidebar = sidebarCollapsed && !isMobileNavOpen;
+  const pageTitle =
+    userRole === 'farmer'
+      ? selectedFarm?.name || 'My Farm Dashboard'
+      : userRole === 'expert'
+        ? `${getTabLabel(activeTab)} Workspace`
+        : `${getTabLabel(activeTab)} Control Center`;
+  const pageSubtitle =
+    userRole === 'farmer'
+      ? selectedFarm?.locationName || 'Live farm monitoring and actions'
+      : userRole === 'expert'
+        ? 'Live district review and recommendation workflow'
+        : 'Live platform operations and system management';
+  const statusLabel =
+    userRole === 'admin'
+      ? `System: ${systemHealth?.status || 'Checking'}`
+      : selectedFarm?.currentGrowthStage
+        ? `Growth stage: ${selectedFarm.currentGrowthStage.replace(/_/g, ' ')}`
+        : 'Live data connected';
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -194,14 +222,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
         setIsMobileNavOpen(false);
         setShowMobileSearch(false);
       }}
-      className={`w-full flex items-center gap-3 px-6 py-4 rounded-full transition-all duration-300 font-bold text-sm group ${
+      title={compactSidebar ? label : undefined}
+      className={`w-full flex ${compactSidebar ? 'flex-col justify-center px-2 py-3' : 'items-center gap-3 px-6 py-4'} rounded-3xl transition-all duration-300 font-bold text-sm group ${
         activeTab === id
           ? 'bg-[#0F5132] text-white shadow-lg'
           : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-[#0F5132] dark:hover:text-[#0F5132]'
       }`}
     >
       <Icon size={20} className={activeTab === id ? 'text-white' : 'text-slate-400 group-hover:text-[#0F5132]'} />
-      {label}
+      {compactSidebar ? (
+        <span className="mt-1 text-[10px] leading-tight text-center font-semibold">
+          {label}
+        </span>
+      ) : (
+        label
+      )}
     </button>
   );
 
@@ -241,36 +276,53 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
 
       {/* SIDEBAR */}
       <aside className={`
-        fixed md:sticky top-0 left-0 h-screen w-72 bg-white dark:bg-slate-800 flex flex-col z-50 
+        fixed md:sticky top-0 left-0 h-screen ${compactSidebar ? 'w-24' : 'w-72'} bg-white dark:bg-slate-800 flex flex-col z-50 
         transition-transform duration-300 ease-out border-r border-slate-100 dark:border-slate-700
         ${isMobileNavOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0 md:shadow-none'}
       `}>
-        <div className="p-8">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => setActiveTab('overview')}>
+        <div className={`p-6 ${compactSidebar ? 'px-4' : 'px-8'}`}>
+          <div className={`flex items-center ${compactSidebar ? 'justify-center' : 'gap-2'} cursor-pointer`} onClick={() => setActiveTab('overview')}>
             <div className="bg-[#0F5132] p-2 rounded-xl">
                 <Sprout size={20} className="text-white fill-current" />
             </div>
-            <span className="text-xl font-bold tracking-tight text-[#0F5132]">RwandaBeyond</span>
+            {!compactSidebar && <span className="text-xl font-bold tracking-tight text-[#0F5132]">RwandaBeyond</span>}
           </div>
         </div>
 
-        <nav className="flex-1 px-6 space-y-2 overflow-y-auto custom-scrollbar">
-          <div className="px-4 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+        <nav className={`flex-1 ${compactSidebar ? 'px-3' : 'px-6'} space-y-2 overflow-y-auto custom-scrollbar`}>
+          {!compactSidebar && (
+            <div className="px-4 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
              {userRole === 'admin' ? 'Admin Console' : userRole === 'expert' ? 'Expert Tools' : 'Main Menu'}
-          </div>
-          {navItems.map(item => (
+            </div>
+          )}
+          {primaryNavItems.map(item => (
               <NavItem key={item.id} id={item.id} label={item.label} icon={item.icon} />
           ))}
         </nav>
 
-        <div className="p-6 border-t border-slate-50 dark:border-slate-700 space-y-4">
-           {/* Mini Profile */}
-           <div className="bg-[#FAFAF9] dark:bg-slate-700 p-4 rounded-[2rem] flex items-center gap-3">
-              <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${userRole}`} className="w-10 h-10 rounded-full bg-white border-2 border-white shadow-sm" />
-              <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-slate-900 dark:text-white truncate capitalize">{userRole}</p>
-                  <p className="text-[10px] font-bold text-slate-400 truncate uppercase tracking-wider">{getRoleLabel(userRole)}</p>
+        {farmerShortcutItems.length > 0 && (
+          <div className={`shrink-0 border-t border-slate-100 dark:border-slate-700 ${compactSidebar ? 'px-3 py-3' : 'px-6 py-4'} space-y-2`}>
+            {!compactSidebar && (
+              <div className="px-4 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                Insights
               </div>
+            )}
+            {farmerShortcutItems.map((item) => (
+              <NavItem key={item.id} id={item.id} label={item.label} icon={item.icon} />
+            ))}
+          </div>
+        )}
+
+        <div className={`p-6 border-t border-slate-50 dark:border-slate-700 space-y-4 ${compactSidebar ? 'px-3' : ''}`}>
+           {/* Mini Profile */}
+           <div className={`bg-[#FAFAF9] dark:bg-slate-700 p-4 rounded-[2rem] flex items-center ${compactSidebar ? 'justify-center' : 'gap-3'}`}>
+              <img src={user?.profileImageUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.email || userRole}`} className="w-10 h-10 rounded-full bg-white border-2 border-white shadow-sm" />
+              {!compactSidebar && (
+                <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{displayName}</p>
+                    <p className="text-[10px] font-bold text-slate-400 truncate uppercase tracking-wider">{getRoleLabel(userRole)}</p>
+                </div>
+              )}
            </div>
 
            <button 
@@ -278,7 +330,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
              className="flex items-center justify-center gap-2 w-full py-3 rounded-full text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all font-bold text-xs uppercase tracking-wider"
            >
              <LogOut size={16} />
-             <span>{t.signOut}</span>
+             {!compactSidebar && <span>{t.signOut}</span>}
            </button>
         </div>
       </aside>
@@ -292,12 +344,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
                <button className="md:hidden p-2 -ml-2 text-slate-500" onClick={() => setIsMobileNavOpen(true)}>
                    <Menu size={24} />
                </button>
+               <button
+                 className="hidden md:flex p-2 text-slate-500 hover:text-[#0F5132] transition-colors"
+                 onClick={toggleSidebar}
+                 title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+               >
+                 {sidebarCollapsed ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />}
+               </button>
                <div>
-                  <h1 className="text-lg md:text-xl font-bold text-slate-900 dark:text-white tracking-tight">{getPageTitle(userRole)}</h1>
+                  <h1 className="text-lg md:text-xl font-bold text-slate-900 dark:text-white tracking-tight">{pageTitle}</h1>
                   <div className="flex items-center gap-2 mt-0.5">
                       <div className={`w-2 h-2 rounded-full ${userRole === 'admin' ? 'bg-blue-500 animate-pulse' : 'bg-[#0F5132] animate-pulse'}`}></div>
                       <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">
-                          {`${getTabLabel(activeTab)} | ${userRole === 'admin' ? t.systemHealthy : t.ussdOnline}`}
+                          {`${pageSubtitle} | ${statusLabel}`}
                       </p>
                   </div>
                </div>

@@ -321,6 +321,9 @@ export const PestControl: React.FC<PestControlProps> = ({ language = 'en' }) => 
                                         <SeverityIcon size={12} />
                                         {activeResult.pest !== 'Healthy' ? t.pestDetected : t.healthy}
                                     </div>
+                                    <p className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-3 py-1 inline-flex mb-3">
+                                        Preliminary AI screening. Confirm with an expert before treatment decisions.
+                                    </p>
                                     <h2 className="text-4xl font-bold text-slate-900 dark:text-white leading-tight mb-2 tracking-tight">{activeResult.pest}</h2>
                                     <p className="text-slate-500 dark:text-slate-400 text-lg italic font-serif">{activeResult.scientific}</p>
                                 </div>

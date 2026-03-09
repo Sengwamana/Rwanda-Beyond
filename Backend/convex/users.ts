@@ -55,32 +55,68 @@ export const list = query({
   handler: async (ctx, args) => {
     const page = args.page ?? 1;
     const limit = args.limit ?? 20;
-    let users = await ctx.db.query("users").order("desc").collect();
-
-    if (args.role) {
-      users = users.filter((u) => u.role === args.role);
-    }
-    if (typeof args.isActive === "boolean") {
-      users = users.filter((u) => u.is_active === args.isActive);
-    }
-    if (args.search) {
-      const s = args.search.toLowerCase();
-      users = users.filter(
-        (u) =>
-          (u.first_name?.toLowerCase().includes(s)) ||
-          (u.last_name?.toLowerCase().includes(s)) ||
-          (u.email?.toLowerCase().includes(s))
-      );
-    }
-    if (args.since) {
-      users = users.filter((u) => u.created_at >= args.since!);
-    }
-
-    const total = users.length;
     const offset = (page - 1) * limit;
-    const paginated = users.slice(offset, offset + limit);
+    const paginated = [];
+    let count = 0;
+    const searchTerm = args.search?.toLowerCase();
 
-    return { data: paginated, count: total };
+    const baseQuery =
+      args.role
+        ? ctx.db
+            .query("users")
+            .withIndex("by_role_created", (q) => {
+              const base = q.eq("role", args.role as any);
+              if (args.since) {
+                return base.gte("created_at", args.since);
+              }
+              return base;
+            })
+            .order("desc")
+        : typeof args.isActive === "boolean"
+          ? ctx.db
+              .query("users")
+              .withIndex("by_active_created", (q) => {
+                const base = q.eq("is_active", args.isActive!);
+                if (args.since) {
+                  return base.gte("created_at", args.since);
+                }
+                return base;
+              })
+              .order("desc")
+          : ctx.db
+              .query("users")
+              .withIndex("by_created", (q) => {
+                if (args.since) {
+                  return q.gte("created_at", args.since);
+                }
+                return q;
+              })
+              .order("desc");
+
+    for await (const user of baseQuery) {
+      if (typeof args.isActive === "boolean" && user.is_active !== args.isActive) {
+        continue;
+      }
+
+      if (searchTerm) {
+        const matchesSearch =
+          user.first_name?.toLowerCase().includes(searchTerm) ||
+          user.last_name?.toLowerCase().includes(searchTerm) ||
+          user.email?.toLowerCase().includes(searchTerm);
+
+        if (!matchesSearch) {
+          continue;
+        }
+      }
+
+      if (count >= offset && paginated.length < limit) {
+        paginated.push(user);
+      }
+
+      count += 1;
+    }
+
+    return { data: paginated, count };
   },
 });
 
@@ -88,7 +124,12 @@ export const listAll = query({
   args: {},
   returns: v.any(),
   handler: async (ctx) => {
-    return await ctx.db.query("users").collect();
+    const users = [];
+    const rows = ctx.db.query("users").withIndex("by_created").order("desc");
+    for await (const user of rows) {
+      users.push(user);
+    }
+    return users;
   },
 });
 
@@ -96,9 +137,20 @@ export const listActive = query({
   args: { role: v.optional(v.string()) },
   returns: v.any(),
   handler: async (ctx, { role }) => {
-    let users = await ctx.db.query("users").collect();
-    users = users.filter((u) => u.is_active);
-    if (role) users = users.filter((u) => u.role === role);
+    const users = [];
+    const rows = role
+      ? ctx.db
+          .query("users")
+          .withIndex("by_active_role", (q) => q.eq("is_active", true).eq("role", role as any))
+          .order("desc")
+      : ctx.db
+          .query("users")
+          .withIndex("by_active_created", (q) => q.eq("is_active", true))
+          .order("desc");
+
+    for await (const user of rows) {
+      users.push(user);
+    }
     return users;
   },
 });
@@ -172,11 +224,15 @@ export const getStats = query({
   args: {},
   returns: v.any(),
   handler: async (ctx) => {
-    const users = await ctx.db.query("users").collect();
-    return users.map((u) => ({
-      _id: u._id,
-      role: u.role,
-      is_active: u.is_active,
-    }));
+    const stats = [];
+    const rows = ctx.db.query("users").withIndex("by_created").order("desc");
+    for await (const user of rows) {
+      stats.push({
+        _id: user._id,
+        role: user.role,
+        is_active: user.is_active,
+      });
+    }
+    return stats;
   },
 });

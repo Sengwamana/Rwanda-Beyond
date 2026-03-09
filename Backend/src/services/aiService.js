@@ -19,6 +19,96 @@ import * as recommendationService from './recommendationService.js';
 import * as imageService from './imageService.js';
 import * as geminiService from './geminiService.js';
 
+export const requiresExpertConfirmationForPestAlert = (severity) =>
+  String(severity || '').toLowerCase() === 'severe';
+
+export const shouldCreatePestAlertRecommendation = ({
+  pestDetected,
+  confidenceScore,
+  severity,
+  expertVerified = false
+}) => {
+  if (!pestDetected) {
+    return false;
+  }
+
+  if (typeof confidenceScore !== 'number' || confidenceScore < config.ai.pestDetectionThreshold) {
+    return false;
+  }
+
+  if (requiresExpertConfirmationForPestAlert(severity) && !expertVerified) {
+    return false;
+  }
+
+  return true;
+};
+
+const farmContextCache = new Map();
+
+const getFarmContextSnapshot = async (farmId) => {
+  if (!farmId) {
+    return null;
+  }
+
+  const cached = farmContextCache.get(farmId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
+  }
+
+  const farm = await db.farms.getById(farmId);
+  if (!farm) {
+    return null;
+  }
+
+  let district = null;
+  if (farm.district_id) {
+    district = await db.districts.getById(farm.district_id);
+  }
+
+  const snapshot = {
+    farm,
+    districtName: district?.name || null,
+  };
+
+  farmContextCache.set(farmId, {
+    value: snapshot,
+    expiresAt: Date.now() + config.ai.farmContextCacheTtlMs,
+  });
+
+  return snapshot;
+};
+
+const enrichContextWithFarm = async (context = {}) => {
+  if (!context.farmId) {
+    return context;
+  }
+
+  try {
+    const snapshot = await getFarmContextSnapshot(context.farmId);
+    const farm = snapshot?.farm;
+    if (!farm) {
+      return context;
+    }
+
+    let districtName = context.district || context.location || null;
+    if (!districtName) {
+      districtName = snapshot?.districtName || null;
+    }
+
+    return {
+      ...context,
+      cropType: context.cropType || farm.crop_variety || 'Maize',
+      farmSize: context.farmSize || farm.size_hectares || undefined,
+      growthStage: context.growthStage || farm.current_growth_stage || undefined,
+      district: context.district || districtName || undefined,
+      location: context.location || farm.location_name || districtName || undefined,
+    };
+  } catch (error) {
+    logger.warn('Failed to enrich AI context with farm details:', error.message);
+    return context;
+  }
+};
+
 /**
  * Analyze irrigation needs for a farm
  * @param {string} farmId - Farm UUID
@@ -26,27 +116,19 @@ import * as geminiService from './geminiService.js';
  */
 export const analyzeIrrigationNeeds = async (farmId) => {
   try {
-    // Get latest sensor readings
-    const latestReadings = await sensorService.getLatestReadings(farmId);
+    const [latestReadings, weather, farmSnapshot] = await Promise.all([
+      sensorService.getLatestReadings(farmId),
+      weatherService.getWeatherForFarm(farmId, 3),
+      getFarmContextSnapshot(farmId),
+    ]);
     
     if (!latestReadings) {
       logger.warn(`No sensor data for farm ${farmId}`);
       return null;
     }
 
-    // Get weather forecast
-    const weather = await weatherService.getWeatherForFarm(farmId, 3);
     const weatherImpact = weatherService.analyzeWeatherImpact(weather.forecast);
-
-    // Get farm details for growth stage
-    const farm = await db.farms.getById(farmId);
-
-    // Resolve district name
-    let districtName = null;
-    if (farm?.district_id) {
-      const district = await db.districts.getById(farm.district_id);
-      districtName = district?.name;
-    }
+    const farm = farmSnapshot?.farm;
 
     // Use Gemini for intelligent analysis
     let geminiAnalysis = null;
@@ -224,18 +306,13 @@ export const analyzePestImage = async (imageUrl, context = {}) => {
     // Get farm context if available
     let farmContext = {};
     if (farmId) {
-      const farm = await db.farms.getById(farmId);
+      const snapshot = await getFarmContextSnapshot(farmId);
+      const farm = snapshot?.farm;
       
       if (farm) {
-        let districtName = 'Rwanda';
-        if (farm.district_id) {
-          const district = await db.districts.getById(farm.district_id);
-          districtName = district?.name || 'Rwanda';
-        }
-
         farmContext = {
           growthStage: farm.current_growth_stage,
-          location: districtName
+          location: snapshot?.districtName || 'Rwanda'
         };
       }
     }
@@ -265,17 +342,24 @@ export const analyzePestImage = async (imageUrl, context = {}) => {
       await imageService.updateDetectionResults(detectionId, results);
 
       // Create alert recommendation if pest detected above threshold
-      if (results.pestDetected && results.confidenceScore >= config.ai.pestDetectionThreshold) {
-        await recommendationService.createPestAlertRecommendation(farmId, {
-          pestDetectionId: detectionId,
-          pestType: results.pestType,
-          severity: results.severity,
-          confidence: results.confidenceScore,
-          affectedArea: results.affectedAreaPercentage,
-          imageUrl: actualImageUrl,
-          symptoms: results.symptoms,
-          recommendations: results.recommendations
-        });
+      if (shouldCreatePestAlertRecommendation(results)) {
+        Promise.resolve()
+          .then(() =>
+            recommendationService.createPestAlertRecommendation(farmId, {
+              pestDetectionId: detectionId,
+              pestType: results.pestType,
+              severity: results.severity,
+              confidence: results.confidenceScore,
+              affectedArea: results.affectedAreaPercentage,
+              imageUrl: actualImageUrl,
+              symptoms: results.symptoms,
+              recommendations: results.recommendations,
+              expertVerified: false,
+            })
+          )
+          .catch((recommendationError) => {
+            logger.warn('Failed to create pest alert recommendation from analysis:', recommendationError?.message || recommendationError);
+          });
       }
     }
 
@@ -311,8 +395,11 @@ const determineSeverity = (confidence, affectedArea) => {
  */
 export const analyzeNutrientNeeds = async (farmId) => {
   try {
-    // Get latest sensor readings with NPK data
-    const latestReadings = await sensorService.getLatestReadings(farmId);
+    const [latestReadings, farmSnapshot, lastFertilization] = await Promise.all([
+      sensorService.getLatestReadings(farmId),
+      getFarmContextSnapshot(farmId),
+      db.fertilizationSchedules.getLastExecuted(farmId),
+    ]);
     
     if (!latestReadings) {
       logger.warn(`No sensor data for farm ${farmId}`);
@@ -325,18 +412,7 @@ export const analyzeNutrientNeeds = async (farmId) => {
       return { message: 'No nutrient data available', needsFertilization: false };
     }
 
-    // Get farm growth stage and details
-    const farm = await db.farms.getById(farmId);
-
-    // Resolve district name
-    let districtName = null;
-    if (farm?.district_id) {
-      const district = await db.districts.getById(farm.district_id);
-      districtName = district?.name;
-    }
-
-    // Get last fertilization record
-    const lastFertilization = await db.fertilizationSchedules.getLastExecuted(farmId);
+    const farm = farmSnapshot?.farm;
 
     // Use Gemini for intelligent analysis
     let geminiAnalysis = null;
@@ -389,19 +465,26 @@ export const analyzeNutrientNeeds = async (farmId) => {
 
     // Create recommendation if fertilization needed
     if (analysis.needsFertilization && (analysis.deficiencies?.length > 0 || analysis.urgency !== 'none')) {
-      await recommendationService.createFertilizationRecommendation(farmId, {
-        currentNutrients: {
-          nitrogen: latestReadings.nitrogen,
-          phosphorus: latestReadings.phosphorus,
-          potassium: latestReadings.potassium
-        },
-        targetNutrients: analysis.targetNutrients || {},
-        deficiencies: analysis.deficiencies,
-        fertilizerType: analysis.recommendedFertilizer,
-        quantities: analysis.quantities,
-        growthStage: farm?.current_growth_stage,
-        aiReasoning: analysis.reasoning || null
-      });
+      Promise.resolve()
+        .then(() =>
+          recommendationService.createFertilizationRecommendation(farmId, {
+            currentNutrients: {
+              nitrogen: latestReadings.nitrogen,
+              phosphorus: latestReadings.phosphorus,
+              potassium: latestReadings.potassium
+            },
+            targetNutrients: analysis.targetNutrients || {},
+            deficiencies: analysis.deficiencies,
+            fertilizerType: analysis.recommendedFertilizer,
+            quantities: analysis.quantities,
+            growthStage: farm?.current_growth_stage,
+            aiReasoning: analysis.reasoning || null,
+            resolvedFarm: farm,
+          })
+        )
+        .catch((recommendationError) => {
+          logger.warn('Failed to create fertilization recommendation from nutrient analysis:', recommendationError?.message || recommendationError);
+        });
     }
 
     return analysis;
@@ -519,20 +602,23 @@ export const runComprehensiveAnalysis = async (farmId) => {
     timestamp: Date.now()
   };
 
-  try {
-    // Run irrigation analysis
-    results.irrigation = await analyzeIrrigationNeeds(farmId);
-  } catch (error) {
-    logger.error('Irrigation analysis error:', error);
-    results.irrigation = { error: error.message };
+  const [irrigationResult, nutrientResult] = await Promise.allSettled([
+    analyzeIrrigationNeeds(farmId),
+    analyzeNutrientNeeds(farmId),
+  ]);
+
+  if (irrigationResult.status === 'fulfilled') {
+    results.irrigation = irrigationResult.value;
+  } else {
+    logger.error('Irrigation analysis error:', irrigationResult.reason);
+    results.irrigation = { error: irrigationResult.reason?.message || String(irrigationResult.reason) };
   }
 
-  try {
-    // Run nutrient analysis
-    results.nutrients = await analyzeNutrientNeeds(farmId);
-  } catch (error) {
-    logger.error('Nutrient analysis error:', error);
-    results.nutrients = { error: error.message };
+  if (nutrientResult.status === 'fulfilled') {
+    results.nutrients = nutrientResult.value;
+  } else {
+    logger.error('Nutrient analysis error:', nutrientResult.reason);
+    results.nutrients = { error: nutrientResult.reason?.message || String(nutrientResult.reason) };
   }
 
   return results;
@@ -578,7 +664,8 @@ export const runScheduledAnalysis = async () => {
  */
 export const getAgriculturalAdvice = async (question, context = {}) => {
   try {
-    const response = await geminiService.getAgriculturalAdvice(question, context);
+    const enrichedContext = await enrichContextWithFarm(context);
+    const response = await geminiService.getAgriculturalAdvice(question, enrichedContext);
     
     return {
       success: true,
@@ -595,6 +682,26 @@ export const getAgriculturalAdvice = async (question, context = {}) => {
   }
 };
 
+export const getVoiceAssistantReply = async (question, context = {}) => {
+  try {
+    const enrichedContext = await enrichContextWithFarm(context);
+    const response = await geminiService.getVoiceAssistantReply(question, enrichedContext);
+
+    return {
+      success: true,
+      answer: response.answer,
+      suggestions: response.suggestions,
+      relatedTopics: response.relatedTopics,
+      confidence: response.confidence,
+      sources: response.sources,
+      aiProvider: 'gemini-voice'
+    };
+  } catch (error) {
+    logger.error('Voice assistant reply failed:', error);
+    throw new AIServiceError(`Failed to get voice assistant reply: ${error.message}`);
+  }
+};
+
 /**
  * Analyze farm images for general crop health assessment
  * @param {string} imageUrl - URL of the farm image
@@ -603,7 +710,8 @@ export const getAgriculturalAdvice = async (question, context = {}) => {
  */
 export const analyzeFarmImage = async (imageUrl, context = {}) => {
   try {
-    const response = await geminiService.analyzeFarmImages(imageUrl, context);
+    const enrichedContext = await enrichContextWithFarm(context);
+    const response = await geminiService.analyzeFarmImages([imageUrl], enrichedContext);
     
     return {
       success: true,
@@ -653,6 +761,7 @@ export default {
   runComprehensiveAnalysis,
   runScheduledAnalysis,
   getAgriculturalAdvice,
+  getVoiceAssistantReply,
   analyzeFarmImage,
   checkAIServiceHealth
 };

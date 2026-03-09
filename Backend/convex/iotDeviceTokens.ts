@@ -24,14 +24,18 @@ export const verify = query({
   args: { deviceId: v.string(), tokenHash: v.string(), now: v.number() },
   returns: v.any(),
   handler: async (ctx, { deviceId, tokenHash, now }) => {
-    const tokens = await ctx.db
+    const token = await ctx.db
       .query("iot_device_tokens")
-      .withIndex("by_device_active", (q) => q.eq("device_id", deviceId).eq("is_active", true))
-      .collect();
+      .withIndex("by_device_active_hash", (q) =>
+        q.eq("device_id", deviceId).eq("is_active", true).eq("token_hash", tokenHash)
+      )
+      .unique();
 
-    return tokens.find(
-      (t) => t.token_hash === tokenHash && (!t.expires_at || t.expires_at > now)
-    ) ?? null;
+    if (!token || (token.expires_at && token.expires_at <= now)) {
+      return null;
+    }
+
+    return token;
   },
 });
 
@@ -48,15 +52,30 @@ export const revoke = mutation({
   args: { deviceId: v.string(), tokenHash: v.optional(v.string()) },
   returns: v.null(),
   handler: async (ctx, { deviceId, tokenHash }) => {
+    if (tokenHash) {
+      const token = await ctx.db
+        .query("iot_device_tokens")
+        .withIndex("by_device_active_hash", (q) =>
+          q.eq("device_id", deviceId).eq("is_active", true).eq("token_hash", tokenHash)
+        )
+        .unique();
+
+      if (token) {
+        await ctx.db.patch(token._id, { is_active: false });
+      }
+
+      return null;
+    }
+
     const tokens = await ctx.db
       .query("iot_device_tokens")
-      .withIndex("by_device", (q) => q.eq("device_id", deviceId))
+      .withIndex("by_device_active", (q) =>
+        q.eq("device_id", deviceId).eq("is_active", true)
+      )
       .collect();
 
     for (const t of tokens) {
-      if (!tokenHash || t.token_hash === tokenHash) {
-        await ctx.db.patch(t._id, { is_active: false });
-      }
+      await ctx.db.patch(t._id, { is_active: false });
     }
     return null;
   },
@@ -73,14 +92,46 @@ export const list = query({
   handler: async (ctx, args) => {
     const page = args.page ?? 1;
     const limit = args.limit ?? 20;
-
-    let tokens = await ctx.db.query("iot_device_tokens").order("desc").collect();
-
-    if (typeof args.isActive === "boolean") tokens = tokens.filter((t) => t.is_active === args.isActive);
-    if (args.deviceId) tokens = tokens.filter((t) => t.device_id === args.deviceId);
-
-    const total = tokens.length;
     const offset = (page - 1) * limit;
-    return { data: tokens.slice(offset, offset + limit), count: total };
+
+    const tokenQuery =
+      args.deviceId && typeof args.isActive === "boolean"
+        ? ctx.db
+            .query("iot_device_tokens")
+            .withIndex("by_device_active_created", (q) =>
+              q.eq("device_id", args.deviceId!).eq("is_active", args.isActive!)
+            )
+            .order("desc")
+        : args.deviceId
+          ? ctx.db
+              .query("iot_device_tokens")
+              .withIndex("by_device_created", (q) =>
+                q.eq("device_id", args.deviceId!)
+              )
+              .order("desc")
+          : typeof args.isActive === "boolean"
+            ? ctx.db
+                .query("iot_device_tokens")
+                .withIndex("by_active_created", (q) =>
+                  q.eq("is_active", args.isActive!)
+                )
+                .order("desc")
+            : ctx.db
+                .query("iot_device_tokens")
+                .withIndex("by_created")
+                .order("desc");
+
+    const data = [];
+    let count = 0;
+
+    for await (const token of tokenQuery) {
+      if (count >= offset && data.length < limit) {
+        data.push(token);
+      }
+
+      count += 1;
+    }
+
+    return { data, count };
   },
 });

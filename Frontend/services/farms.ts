@@ -269,13 +269,16 @@ export const farmService = {
   getDashboard: async (id: string): Promise<ApiResponse<FarmDashboardData>> => {
     const response = await apiClient.get<ApiResponse<FarmDashboardData>>(`/farms/${id}/summary`);
     const payload: any = response.data.data || {};
+    const latestSensorPayload = payload.latestSensorData || payload.latestReadings;
     return {
       ...response.data,
       data: {
         farm: payload.farm ? normalizeFarm(payload.farm) : ({} as Farm),
-        latestSensorData: Array.isArray(payload.latestSensorData || payload.latestReadings)
-          ? (payload.latestSensorData || payload.latestReadings).map(normalizeSensorDataItem)
-          : [],
+        latestSensorData: Array.isArray(latestSensorPayload)
+          ? latestSensorPayload.map(normalizeSensorDataItem)
+          : latestSensorPayload
+            ? [normalizeSensorDataItem(latestSensorPayload)]
+            : [],
         activeRecommendations: Array.isArray(payload.activeRecommendations) ? payload.activeRecommendations : [],
         recentAlerts: Array.isArray(payload.recentAlerts) ? payload.recentAlerts : [],
         irrigationSchedule: Array.isArray(payload.irrigationSchedule || payload.upcomingIrrigation)
@@ -333,9 +336,13 @@ export const farmService = {
       avgSoilMoisture: number;
       minSoilMoisture: number;
       maxSoilMoisture: number;
+      avgSoilTemperature?: number;
       avgTemperature: number;
       avgHumidity: number;
-      totalRainfall: number;
+      avgNitrogen?: number;
+      avgPhosphorus?: number;
+      avgPotassium?: number;
+      totalRainfall?: number;
       readingsCount: number;
     }>>>(
       `/sensors/data/farm/${id}/daily`,
@@ -347,8 +354,12 @@ export const farmService = {
       avgSoilMoisture: item.avgSoilMoisture,
       minSoilMoisture: item.minSoilMoisture,
       maxSoilMoisture: item.maxSoilMoisture,
+      avgSoilTemperature: item.avgSoilTemperature,
       avgTemperature: item.avgTemperature,
       avgHumidity: item.avgHumidity,
+      avgNitrogen: item.avgNitrogen,
+      avgPhosphorus: item.avgPhosphorus,
+      avgPotassium: item.avgPotassium,
       readingCount: item.readingsCount,
     }));
 

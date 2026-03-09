@@ -13,8 +13,20 @@ import { asyncHandler } from '../middleware/errorHandler.js';
 import { successResponse, createdResponse, paginatedResponse, noContentResponse } from '../utils/response.js';
 import { db } from '../database/convex.js';
 import * as farmService from '../services/farmService.js';
+import logger from '../utils/logger.js';
 
 const router = Router();
+
+const logFarmAuditEvent = async (entry) => {
+  try {
+    await db.auditLogs.create({
+      ...entry,
+      created_at: Date.now(),
+    });
+  } catch (error) {
+    logger.warn('Failed to write farm route audit log:', error?.message || error);
+  }
+};
 
 /**
  * Get farm user ID for ownership check
@@ -405,7 +417,33 @@ router.put('/:farmId/growth-stage',
     if (!growthStage) {
       return res.status(400).json({ success: false, message: 'growthStage is required' });
     }
+    const existingFarm = await db.farms.getById(req.params.farmId);
+    if (!existingFarm) {
+      return res.status(404).json({
+        success: false,
+        message: 'Farm not found',
+        code: 'NOT_FOUND',
+      });
+    }
+
     const farm = await db.farms.update(req.params.farmId, { current_growth_stage: growthStage });
+    if (!farm) {
+      return res.status(404).json({
+        success: false,
+        message: 'Farm not found',
+        code: 'NOT_FOUND',
+      });
+    }
+
+    await logFarmAuditEvent({
+      user_id: req.user.id,
+      action: 'UPDATE_FARM_GROWTH_STAGE',
+      entity_type: 'farms',
+      entity_id: req.params.farmId,
+      old_values: existingFarm ? { current_growth_stage: existingFarm.current_growth_stage } : undefined,
+      new_values: { current_growth_stage: growthStage },
+    });
+
     return successResponse(res, farm, 'Growth stage updated successfully');
   })
 );
@@ -422,18 +460,39 @@ router.post('/:farmId/image',
   requireOwnership(getFarmUserId),
   asyncHandler(async (req, res) => {
     const body = req.body || {};
-    const imageUrl = body.imageUrl || body.image_url || (Array.isArray(body.images) ? body.images[0] : undefined);
+    const firstImage = Array.isArray(body.images) ? body.images[0] : undefined;
+    const imageUrl =
+      body.imageUrl ||
+      body.image_url ||
+      (firstImage && typeof firstImage === 'object'
+        ? firstImage.url || firstImage.imageUrl || firstImage.image_url
+        : firstImage);
 
     if (!imageUrl) {
       return res.status(400).json({ success: false, message: 'imageUrl is required (or images[0])' });
     }
 
     const farm = await db.farms.getById(req.params.farmId);
+    if (!farm) {
+      return res.status(404).json({
+        success: false,
+        message: 'Farm not found',
+        code: 'NOT_FOUND',
+      });
+    }
+
     const existingMetadata = (farm?.metadata && typeof farm.metadata === 'object') ? farm.metadata : {};
     const existingImages = Array.isArray(existingMetadata.images) ? existingMetadata.images : [];
 
     const imageEntry = {
       url: imageUrl,
+      captured_at:
+        body.capturedAt ||
+        body.captured_at ||
+        (firstImage && typeof firstImage === 'object'
+          ? firstImage.capturedAt || firstImage.captured_at
+          : undefined) ||
+        new Date().toISOString(),
       uploaded_at: Date.now(),
       uploaded_by: req.user.id,
     };
@@ -445,6 +504,28 @@ router.post('/:farmId/image',
     };
 
     const updatedFarm = await db.farms.update(req.params.farmId, { metadata });
+    if (!updatedFarm) {
+      return res.status(404).json({
+        success: false,
+        message: 'Farm not found',
+        code: 'NOT_FOUND',
+      });
+    }
+
+    await logFarmAuditEvent({
+      user_id: req.user.id,
+      action: 'ADD_FARM_IMAGE',
+      entity_type: 'farms',
+      entity_id: req.params.farmId,
+      old_values: {
+        latest_image_url: existingMetadata.latest_image_url,
+        image_count: existingImages.length,
+      },
+      new_values: {
+        latest_image_url: imageUrl,
+        image_count: metadata.images.length,
+      },
+    });
 
     return successResponse(res, {
       farm: updatedFarm,

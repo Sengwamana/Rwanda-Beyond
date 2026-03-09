@@ -10,22 +10,32 @@ export const getByFarm = query({
   },
   returns: v.any(),
   handler: async (ctx, args) => {
-    let schedules = await ctx.db
-      .query("irrigation_schedules")
-      .withIndex("by_farm", (q) => q.eq("farm_id", args.farmId))
-      .order("asc")
-      .collect();
+    const limit = args.limit ?? 100;
 
-    if (typeof args.isExecuted === "boolean") {
-      schedules = schedules.filter((s) => s.is_executed === args.isExecuted);
-    }
-    if (args.afterDate) {
-      schedules = schedules.filter((s) => s.scheduled_date >= args.afterDate!);
-    }
-    if (args.limit) {
-      schedules = schedules.slice(0, args.limit);
-    }
-    return schedules;
+    const scheduleQuery =
+      typeof args.isExecuted === "boolean"
+        ? ctx.db
+            .query("irrigation_schedules")
+            .withIndex("by_farm_executed_date", (q) => {
+              const base = q.eq("farm_id", args.farmId).eq("is_executed", args.isExecuted!);
+              if (args.afterDate) {
+                return base.gte("scheduled_date", args.afterDate);
+              }
+              return base;
+            })
+            .order("asc")
+        : ctx.db
+            .query("irrigation_schedules")
+            .withIndex("by_farm_date", (q) => {
+              const base = q.eq("farm_id", args.farmId);
+              if (args.afterDate) {
+                return base.gte("scheduled_date", args.afterDate);
+              }
+              return base;
+            })
+            .order("asc");
+
+    return await scheduleQuery.take(limit);
   },
 });
 
@@ -33,13 +43,16 @@ export const getUpcoming = query({
   args: { farmId: v.id("farms"), afterDate: v.string(), limit: v.optional(v.number()) },
   returns: v.any(),
   handler: async (ctx, args) => {
-    const schedules = await ctx.db
+    return await ctx.db
       .query("irrigation_schedules")
-      .withIndex("by_farm_executed", (q) => q.eq("farm_id", args.farmId).eq("is_executed", false))
+      .withIndex("by_farm_executed_date", (q) =>
+        q
+          .eq("farm_id", args.farmId)
+          .eq("is_executed", false)
+          .gte("scheduled_date", args.afterDate)
+      )
       .order("asc")
-      .collect();
-    const filtered = schedules.filter((s) => s.scheduled_date >= args.afterDate);
-    return filtered.slice(0, args.limit ?? 7);
+      .take(args.limit ?? 7);
   },
 });
 

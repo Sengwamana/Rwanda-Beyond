@@ -108,7 +108,20 @@ const config = {
     serviceUrl: process.env.AI_SERVICE_URL || 'https://generativelanguage.googleapis.com/v1beta',
     apiKey: process.env.AI_SERVICE_API_KEY || process.env.GEMINI_API_KEY || '',
     pestDetectionThreshold: parseFloat(process.env.PEST_DETECTION_THRESHOLD) || 0.75,
-    irrigationModelVersion: process.env.IRRIGATION_MODEL_VERSION || 'v1.0'
+    irrigationModelVersion: process.env.IRRIGATION_MODEL_VERSION || 'v1.0',
+    requestTimeoutMs: parseInt(process.env.AI_REQUEST_TIMEOUT_MS, 10) || 20000,
+    imageFetchTimeoutMs: parseInt(process.env.AI_IMAGE_FETCH_TIMEOUT_MS, 10) || 15000,
+    imageFetchCacheTtlMs: parseInt(process.env.AI_IMAGE_FETCH_CACHE_TTL_MS, 10) || 300000,
+    imageFetchMaxBytes: parseInt(process.env.AI_IMAGE_FETCH_MAX_BYTES, 10) || 5242880,
+    farmContextCacheTtlMs: parseInt(process.env.AI_FARM_CONTEXT_CACHE_TTL_MS, 10) || 60000,
+    responseCacheTtlMs: parseInt(process.env.AI_RESPONSE_CACHE_TTL_MS, 10) || 60000,
+    healthCacheTtlMs: parseInt(process.env.AI_HEALTH_CACHE_TTL_MS, 10) || 30000,
+    comprehensiveAnalysisConcurrency: parseInt(process.env.AI_COMPREHENSIVE_ANALYSIS_CONCURRENCY, 10) || 3,
+    irrigationAnalysisConcurrency: parseInt(process.env.AI_IRRIGATION_ANALYSIS_CONCURRENCY, 10) || 4,
+    recommendationGenerationConcurrency: parseInt(process.env.AI_RECOMMENDATION_GENERATION_CONCURRENCY, 10) || 3,
+    maxWeatherForecastEntries: parseInt(process.env.AI_MAX_WEATHER_FORECAST_ENTRIES, 10) || 6,
+    maxConversationHistoryEntries: parseInt(process.env.AI_MAX_CONVERSATION_HISTORY_ENTRIES, 10) || 6,
+    maxConversationEntryChars: parseInt(process.env.AI_MAX_CONVERSATION_ENTRY_CHARS, 10) || 240
   },
 
   // Security settings
@@ -122,7 +135,9 @@ const config = {
   // IoT device settings
   iot: {
     deviceSecret: process.env.IOT_DEVICE_SECRET || 'dev-iot-secret',
-    tokenExpiry: parseInt(process.env.IOT_TOKEN_EXPIRY, 10) || 86400 // 24 hours
+    tokenExpiry: parseInt(process.env.IOT_TOKEN_EXPIRY, 10) || 86400, // 24 hours
+    maxBatchReadings: parseInt(process.env.IOT_MAX_BATCH_READINGS, 10) || 500,
+    tokenLastUsedWriteIntervalMs: parseInt(process.env.IOT_TOKEN_LAST_USED_WRITE_INTERVAL_MS, 10) || 300000
   },
 
   // Logging configuration
@@ -135,7 +150,10 @@ const config = {
   notifications: {
     criticalAlertDelayMs: parseInt(process.env.CRITICAL_ALERT_DELAY_MS, 10) || 0,
     importantRecommendationDelayMs: parseInt(process.env.IMPORTANT_RECOMMENDATION_DELAY_MS, 10) || 300000, // 5 min
-    routineUpdateBatchIntervalMs: parseInt(process.env.ROUTINE_UPDATE_BATCH_INTERVAL_MS, 10) || 3600000 // 1 hour
+    routineUpdateBatchIntervalMs: parseInt(process.env.ROUTINE_UPDATE_BATCH_INTERVAL_MS, 10) || 3600000, // 1 hour
+    deliveryConcurrency: parseInt(process.env.NOTIFICATION_DELIVERY_CONCURRENCY, 10) || 4,
+    retryConcurrency: parseInt(process.env.NOTIFICATION_RETRY_CONCURRENCY, 10) || 3,
+    summaryConcurrency: parseInt(process.env.NOTIFICATION_SUMMARY_CONCURRENCY, 10) || 4
   },
 
   // Sensor data validation thresholds

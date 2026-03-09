@@ -13,6 +13,144 @@ import config from '../config/index.js';
 
 const isResourceId = (value) => typeof value === 'string' && value.trim().length > 0;
 
+const parseSensorTimestamp = (value) => {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value < 1e12 ? value * 1000 : value;
+  }
+
+  if (typeof value === 'string') {
+    const trimmedValue = value.trim();
+    if (!trimmedValue) {
+      return null;
+    }
+
+    if (/^\d+(\.\d+)?$/.test(trimmedValue)) {
+      const numericValue = Number(trimmedValue);
+      if (Number.isFinite(numericValue)) {
+        return numericValue < 1e12 ? numericValue * 1000 : numericValue;
+      }
+    }
+
+    const parsedTimestamp = Date.parse(trimmedValue);
+    return Number.isFinite(parsedTimestamp) ? parsedTimestamp : null;
+  }
+
+  return null;
+};
+
+const isValidSensorTimestamp = (value) => {
+  return parseSensorTimestamp(value) !== null;
+};
+
+const SENSOR_READING_FIELD_ALIASES = {
+  soilMoisture: ['soilMoisture', 'soil_moisture'],
+  soilTemperature: ['soilTemperature', 'soil_temperature'],
+  airTemperature: ['airTemperature', 'air_temperature'],
+  humidity: ['humidity'],
+  nitrogen: ['nitrogen'],
+  phosphorus: ['phosphorus'],
+  potassium: ['potassium'],
+  phLevel: ['phLevel', 'ph_level'],
+  lightIntensity: ['lightIntensity', 'light_intensity'],
+  rainfallMm: ['rainfallMm', 'rainfall_mm'],
+};
+
+const LEGACY_SENSOR_TYPE_FIELD_MAP = {
+  soil_moisture: ['soilMoisture'],
+  soil_temperature: ['soilTemperature'],
+  air_temperature: ['airTemperature'],
+  humidity: ['humidity'],
+  nitrogen: ['nitrogen'],
+  phosphorus: ['phosphorus'],
+  potassium: ['potassium'],
+  ph: ['phLevel'],
+  ph_level: ['phLevel'],
+  light: ['lightIntensity'],
+  light_intensity: ['lightIntensity'],
+  rainfall: ['rainfallMm'],
+  rainfall_mm: ['rainfallMm'],
+  npk: ['nitrogen', 'phosphorus', 'potassium'],
+};
+
+const normalizeSensorReading = (reading = {}) => {
+  const normalized = {};
+
+  for (const [canonicalField, aliases] of Object.entries(SENSOR_READING_FIELD_ALIASES)) {
+    for (const alias of aliases) {
+      if (reading?.[alias] !== undefined && reading?.[alias] !== null && reading?.[alias] !== '') {
+        normalized[canonicalField] = reading[alias];
+        break;
+      }
+    }
+  }
+
+  const sensorType = String(reading?.sensorType ?? reading?.sensor_type ?? '').trim().toLowerCase();
+  if (sensorType && reading?.value !== undefined) {
+    const mappedFields = LEGACY_SENSOR_TYPE_FIELD_MAP[sensorType] || [];
+    if (sensorType === 'npk' && reading.value && typeof reading.value === 'object') {
+      normalized.nitrogen ??= reading.value.nitrogen ?? reading.value.n;
+      normalized.phosphorus ??= reading.value.phosphorus ?? reading.value.p;
+      normalized.potassium ??= reading.value.potassium ?? reading.value.k;
+    } else if (mappedFields.length === 1) {
+      normalized[mappedFields[0]] ??= reading.value;
+    }
+  }
+
+  return normalized;
+};
+
+const hasEnvironmentalMeasurement = (reading = {}) => {
+  const normalized = normalizeSensorReading(reading);
+  return Object.values(normalized).some((value) => value !== undefined && value !== null && value !== '');
+};
+
+const validateNormalizedSensorReading = (reading = {}) => {
+  const normalized = normalizeSensorReading(reading);
+  const rangeChecks = [
+    ['soilMoisture', 'Soil moisture', config.sensorValidation.soilMoisture],
+    ['soilTemperature', 'Soil temperature', config.sensorValidation.temperature],
+    ['airTemperature', 'Air temperature', config.sensorValidation.temperature],
+    ['humidity', 'Humidity', config.sensorValidation.humidity],
+    ['nitrogen', 'Nitrogen', config.sensorValidation.nitrogen],
+    ['phosphorus', 'Phosphorus', config.sensorValidation.phosphorus],
+    ['potassium', 'Potassium', config.sensorValidation.potassium],
+  ];
+
+  for (const [field, label, constraints] of rangeChecks) {
+    const value = normalized[field];
+    if (value === undefined || value === null || value === '') {
+      continue;
+    }
+
+    if (!validateSensorValue(value, field, constraints)) {
+      throw new Error(`${label} must be between ${constraints.min} and ${constraints.max}`);
+    }
+  }
+
+  return true;
+};
+
+const validateSensorReadingTimestamp = (reading = {}) => {
+  const timestampCandidate =
+    reading?.timestamp ??
+    reading?.readingTimestamp ??
+    reading?.reading_timestamp;
+
+  if (timestampCandidate === undefined || timestampCandidate === null || timestampCandidate === '') {
+    return true;
+  }
+
+  if (!isValidSensorTimestamp(timestampCandidate)) {
+    throw new Error('Timestamp must be a valid reading timestamp');
+  }
+
+  return true;
+};
+
 /**
  * Handle validation errors from express-validator
  */
@@ -288,39 +426,16 @@ const validateSensorValue = (value, field, constraints) => {
 export const validateSensorData = [
   body('readings')
     .isArray({ min: 1 })
-    .withMessage('Readings must be a non-empty array'),
-  body('readings.*.timestamp')
-    .optional()
-    .isISO8601()
-    .withMessage('Timestamp must be a valid ISO 8601 date'),
-  body('readings.*.soilMoisture')
-    .optional()
-    .custom((value) => validateSensorValue(value, 'soilMoisture', config.sensorValidation.soilMoisture))
-    .withMessage(`Soil moisture must be between ${config.sensorValidation.soilMoisture.min} and ${config.sensorValidation.soilMoisture.max}`),
-  body('readings.*.soilTemperature')
-    .optional()
-    .custom((value) => validateSensorValue(value, 'temperature', config.sensorValidation.temperature))
-    .withMessage(`Temperature must be between ${config.sensorValidation.temperature.min} and ${config.sensorValidation.temperature.max}`),
-  body('readings.*.airTemperature')
-    .optional()
-    .custom((value) => validateSensorValue(value, 'temperature', config.sensorValidation.temperature))
-    .withMessage(`Temperature must be between ${config.sensorValidation.temperature.min} and ${config.sensorValidation.temperature.max}`),
-  body('readings.*.humidity')
-    .optional()
-    .custom((value) => validateSensorValue(value, 'humidity', config.sensorValidation.humidity))
-    .withMessage(`Humidity must be between ${config.sensorValidation.humidity.min} and ${config.sensorValidation.humidity.max}`),
-  body('readings.*.nitrogen')
-    .optional()
-    .custom((value) => validateSensorValue(value, 'nitrogen', config.sensorValidation.nitrogen))
-    .withMessage(`Nitrogen must be between ${config.sensorValidation.nitrogen.min} and ${config.sensorValidation.nitrogen.max}`),
-  body('readings.*.phosphorus')
-    .optional()
-    .custom((value) => validateSensorValue(value, 'phosphorus', config.sensorValidation.phosphorus))
-    .withMessage(`Phosphorus must be between ${config.sensorValidation.phosphorus.min} and ${config.sensorValidation.phosphorus.max}`),
-  body('readings.*.potassium')
-    .optional()
-    .custom((value) => validateSensorValue(value, 'potassium', config.sensorValidation.potassium))
-    .withMessage(`Potassium must be between ${config.sensorValidation.potassium.min} and ${config.sensorValidation.potassium.max}`),
+    .withMessage('Readings must be a non-empty array')
+    .custom((value) => Array.isArray(value) && value.length <= config.iot.maxBatchReadings)
+    .withMessage(`Readings batch must contain at most ${config.iot.maxBatchReadings} items`),
+  body('readings.*')
+    .custom((reading) => hasEnvironmentalMeasurement(reading))
+    .withMessage('Each reading must include at least one environmental measurement'),
+  body('readings.*')
+    .custom((reading) => validateSensorReadingTimestamp(reading)),
+  body('readings.*')
+    .custom((reading) => validateNormalizedSensorReading(reading)),
   handleValidationErrors
 ];
 

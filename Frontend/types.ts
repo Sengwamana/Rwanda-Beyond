@@ -19,6 +19,7 @@ export interface User {
   isActive: boolean;
   isVerified: boolean;
   lastLoginAt?: string;
+  metadata?: Record<string, any>;
   createdAt: string;
   updatedAt: string;
 }
@@ -299,6 +300,7 @@ export interface SensorTrends {
   avgSoilMoisture?: number;
   minSoilMoisture?: number;
   maxSoilMoisture?: number;
+  avgSoilTemperature?: number;
   avgTemperature?: number;
   avgHumidity?: number;
   avgNitrogen?: number;

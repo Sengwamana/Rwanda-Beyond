@@ -33,8 +33,7 @@ export const generateDeviceToken = async (deviceId) => {
     await db.iotDeviceTokens.create({
       device_id: deviceId,
       token_hash: tokenHash,
-      expires_at: expiresAt.toISOString(),
-      is_active: true
+      expires_at: expiresAt.getTime()
     });
   } catch (error) {
     logger.error('Failed to store device token:', error);
@@ -62,8 +61,17 @@ const verifyDeviceToken = async (deviceId, token) => {
     return false;
   }
 
-  // Update last used timestamp
-  await db.iotDeviceTokens.updateLastUsed(data._id);
+  const lastUsedAt = data.last_used_at || 0;
+  const shouldUpdateLastUsed =
+    Date.now() - lastUsedAt >= config.iot.tokenLastUsedWriteIntervalMs;
+
+  if (shouldUpdateLastUsed) {
+    try {
+      await db.iotDeviceTokens.updateLastUsed(data._id);
+    } catch (error) {
+      logger.warn('Failed to update device token last-used timestamp:', error?.message || error);
+    }
+  }
 
   return true;
 };
@@ -77,10 +85,18 @@ const verifyDeviceToken = async (deviceId, token) => {
  */
 const verifyHmacSignature = (payload, signature, timestamp) => {
   // Check timestamp is within 5 minutes
-  const requestTime = parseInt(timestamp, 10);
+  const parsedTimestamp = Number(timestamp);
+  if (!Number.isFinite(parsedTimestamp)) {
+    return false;
+  }
+
+  const requestTimeSeconds =
+    parsedTimestamp > 1e12
+      ? Math.floor(parsedTimestamp / 1000)
+      : Math.floor(parsedTimestamp);
   const currentTime = Math.floor(Date.now() / 1000);
   
-  if (Math.abs(currentTime - requestTime) > 300) {
+  if (Math.abs(currentTime - requestTimeSeconds) > 300) {
     logger.warn('Device request timestamp out of range');
     return false;
   }
@@ -89,6 +105,13 @@ const verifyHmacSignature = (payload, signature, timestamp) => {
     .createHmac('sha256', config.iot.deviceSecret)
     .update(`${timestamp}.${payload}`)
     .digest('hex');
+
+  if (
+    typeof signature !== 'string' ||
+    signature.length !== expectedSignature.length
+  ) {
+    return false;
+  }
 
   return crypto.timingSafeEqual(
     Buffer.from(signature),
@@ -103,23 +126,17 @@ const verifyHmacSignature = (payload, signature, timestamp) => {
 export const authenticateDevice = async (req, res, next) => {
   try {
     const deviceId = req.headers['x-device-id'];
-    const deviceToken = req.headers['x-device-token'];
+    const authorizationHeader = req.headers.authorization;
+    const bearerToken =
+      typeof authorizationHeader === 'string'
+        ? authorizationHeader.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() || null
+        : null;
+    const deviceToken = req.headers['x-device-token'] || bearerToken;
     const hmacSignature = req.headers['x-hmac-signature'];
     const timestamp = req.headers['x-timestamp'];
 
     if (!deviceId) {
       throw new DeviceAuthError('Missing device ID');
-    }
-
-    // Verify device exists and is active
-    const sensor = await db.sensors.getDeviceInfo(deviceId);
-
-    if (!sensor) {
-      throw new DeviceAuthError('Unknown device');
-    }
-
-    if (sensor.status !== 'active') {
-      throw new DeviceAuthError(`Device is ${sensor.status}`);
     }
 
     // Method 1: Token-based authentication
@@ -142,10 +159,21 @@ export const authenticateDevice = async (req, res, next) => {
       throw new DeviceAuthError('Missing authentication credentials');
     }
 
+    // Only hit the sensor/device lookup after authentication passes.
+    const sensor = await db.sensors.getDeviceInfo(deviceId);
+
+    if (!sensor) {
+      throw new DeviceAuthError('Unknown device');
+    }
+
+    if (sensor.status !== 'active') {
+      throw new DeviceAuthError(`Device is ${sensor.status}`);
+    }
+
     // Attach device info to request
     req.device = {
       id: deviceId,
-      sensorId: sensor._id,
+      sensorId: sensor.id || sensor._id,
       farmId: sensor.farm_id
     };
 

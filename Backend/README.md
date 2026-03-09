@@ -397,6 +397,18 @@ POST /api/v1/sensors/data/ingest
 }
 ```
 
+Authentication options:
+- `X-Device-ID` + `X-Device-Token`
+- `X-Device-ID` + `Authorization: Bearer <device-token>`
+- `X-Device-ID` + `X-HMAC-Signature` + `X-Timestamp`
+
+Timestamp compatibility:
+- ISO timestamps
+- epoch seconds
+- epoch milliseconds
+
+Batch/ingest acknowledgements include `received`, `processed`, `failed`, and `duplicates` so devices can distinguish retried rows from newly synchronized rows.
+
 ### Supported Sensor Types
 - `soil_moisture` - Soil moisture percentage
 - `soil_temperature` - Soil temperature (°C)

@@ -12,9 +12,50 @@ import cron from 'node-cron';
 import { db } from '../database/convex.js';
 import config from '../config/index.js';
 import logger from '../utils/logger.js';
+import * as sensorService from './sensorService.js';
 
 // Track active cron jobs
 const activeJobs = new Map();
+
+const runWithConcurrency = async (items, concurrency, worker) => {
+  if (!Array.isArray(items) || items.length === 0) {
+    return [];
+  }
+
+  const limit = Math.max(1, Math.min(concurrency || 1, items.length));
+  const results = new Array(items.length);
+  let nextIndex = 0;
+
+  const executeWorker = async () => {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await worker(items[currentIndex], currentIndex);
+    }
+  };
+
+  await Promise.all(Array.from({ length: limit }, () => executeWorker()));
+  return results;
+};
+
+const resolveDistrictCoordinates = (district) => {
+  if (typeof district?.latitude === 'number' && typeof district?.longitude === 'number') {
+    return { lat: district.latitude, lon: district.longitude };
+  }
+
+  return getDistrictCoordinates(district?.name);
+};
+
+const logSchedulerAuditEvent = async (entry) => {
+  try {
+    await db.auditLogs.create({
+      ...entry,
+      created_at: Date.now(),
+    });
+  } catch (error) {
+    logger.error('Failed to write scheduler audit log:', error?.message || error);
+  }
+};
 
 /**
  * Initialize all scheduled tasks
@@ -129,8 +170,7 @@ const updateWeatherData = async () => {
 
   for (const district of districts) {
     try {
-      // Get default coordinates for Rwanda districts
-      const coords = getDistrictCoordinates(district.name);
+      const coords = resolveDistrictCoordinates(district);
       
       // Fetch and store weather data
       const forecast = await weatherService.fetchWeatherForecast(
@@ -204,21 +244,22 @@ const generateDailyRecommendations = async () => {
   let recommendations = 0;
   let errors = 0;
 
-  for (const farm of farms) {
-    try {
-      const result = await aiService.runComprehensiveAnalysis(farm._id);
-      analyzed++;
+  await runWithConcurrency(
+    farms,
+    config.ai.comprehensiveAnalysisConcurrency,
+    async (farm) => {
+      try {
+        const result = await aiService.runComprehensiveAnalysis(farm._id);
+        analyzed++;
 
-      if (result.irrigation?.needsIrrigation) recommendations++;
-      if (result.nutrients?.needsFertilization) recommendations++;
-    } catch (farmError) {
-      logger.warn(`Analysis failed for farm ${farm.name}:`, farmError.message);
-      errors++;
+        if (result.irrigation?.needsIrrigation) recommendations++;
+        if (result.nutrients?.needsFertilization) recommendations++;
+      } catch (farmError) {
+        logger.warn(`Analysis failed for farm ${farm.name}:`, farmError.message);
+        errors++;
+      }
     }
-
-    // Rate limiting
-    await new Promise(resolve => setTimeout(resolve, 500));
-  }
+  );
 
   logger.info(`Daily recommendations: ${analyzed} farms analyzed, ${recommendations} recommendations created, ${errors} errors`);
 };
@@ -254,7 +295,25 @@ const checkSensorHealth = async () => {
       // Check if it's been more than 2 hours - update status to maintenance
       const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
       if (!lastReading || lastReading < twoHoursAgo) {
-        await db.sensors.update(sensor._id, { status: 'maintenance' });
+        const updatedSensor = await db.sensors.update(sensor._id, { status: 'maintenance' });
+        if (!updatedSensor) {
+          logger.warn(`Sensor ${sensor._id} disappeared before maintenance status persistence`);
+          continue;
+        }
+
+        await logSchedulerAuditEvent({
+          action: 'UPDATE_SENSOR_STATUS',
+          entity_type: 'sensors',
+          entity_id: sensor._id,
+          old_values: {
+            status: sensor.status,
+            last_reading_at: lastReading || null,
+          },
+          new_values: {
+            status: 'maintenance',
+            last_reading_at: lastReading || null,
+          },
+        });
 
         // Queue alert for farm owner
         alertsToSend.push({
@@ -351,15 +410,18 @@ const runIrrigationAnalysis = async () => {
   const uniqueFarmIds = [...new Set(activeSensors.map(s => s.farm_id).filter(Boolean))];
   let analyzed = 0;
 
-  for (const farmId of uniqueFarmIds) {
-    try {
-      await aiService.analyzeIrrigationNeeds(farmId);
-      analyzed++;
-    } catch (error) {
-      logger.warn(`Irrigation analysis failed for farm ${farmId}:`, error.message);
+  await runWithConcurrency(
+    uniqueFarmIds,
+    config.ai.irrigationAnalysisConcurrency,
+    async (farmId) => {
+      try {
+        await aiService.analyzeIrrigationNeeds(farmId);
+        analyzed++;
+      } catch (error) {
+        logger.warn(`Irrigation analysis failed for farm ${farmId}:`, error.message);
+      }
     }
-    await new Promise(resolve => setTimeout(resolve, 300));
-  }
+  );
 
   logger.info(`Irrigation analysis complete: ${analyzed} farms analyzed`);
 };
@@ -370,7 +432,9 @@ const runIrrigationAnalysis = async () => {
 const performDataCleanup = async () => {
   const ninetyDaysAgoMs = Date.now() - 90 * 24 * 60 * 60 * 1000;
   const thirtyDaysAgoMs = Date.now() - 30 * 24 * 60 * 60 * 1000;
-  const fourteenDaysAgoMs = Date.now() - 14 * 24 * 60 * 60 * 1000;
+  const fourteenDaysAgoDate = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .split('T')[0];
 
   // Delete sensor data older than 90 days (keep aggregates)
   const deletedSensorData = await db.sensorData.deleteOlderThan(ninetyDaysAgoMs);
@@ -379,7 +443,20 @@ const performDataCleanup = async () => {
   const deletedAuditLogs = await db.auditLogs.deleteOlderThan(thirtyDaysAgoMs);
 
   // Clean up old weather data
-  const deletedWeatherData = await db.weatherData.deleteOlderThan(fourteenDaysAgoMs);
+  const deletedWeatherData = await db.weatherData.deleteOlderThan(fourteenDaysAgoDate);
+
+  await logSchedulerAuditEvent({
+    action: 'DATA_CLEANUP',
+    entity_type: 'system',
+    new_values: {
+      sensor_retention_days: 90,
+      audit_retention_days: 30,
+      weather_retention_days: 14,
+      deleted_sensor_records: deletedSensorData?.count ?? deletedSensorData ?? 0,
+      deleted_audit_records: deletedAuditLogs?.count ?? deletedAuditLogs ?? 0,
+      deleted_weather_records: deletedWeatherData?.count ?? deletedWeatherData ?? 0,
+    },
+  });
 
   logger.info(`Data cleanup complete: ${deletedSensorData || 0} sensor records, ${deletedAuditLogs || 0} audit logs, ${deletedWeatherData || 0} weather records deleted`);
 };
@@ -395,63 +472,69 @@ const generateDailySummaries = async () => {
 
   if (!users || users.length === 0) return;
 
-  for (const user of users) {
-    try {
-      // Get user's farm summary
-      const farms = await db.farms.getByUser(user._id, { limit: 1 });
+  let sent = 0;
 
-      if (!farms || farms.length === 0) continue;
-
-      const farmId = farms[0]._id;
-
-      // Get pending recommendations count
-      const pendingCount = await db.recommendations.getPendingCount({ farmId });
-
-      // Get latest sensor readings
-      const latestReading = await db.sensorData.getLatestByFarm(farmId, true);
-
-      // Build summary message
-      const lang = user.preferred_language || 'rw';
-      let message;
-
-      if (lang === 'rw') {
-        message = `🌽 SMARTMAIZE Uyu munsi\n`;
-        message += `${farms[0].name}\n`;
-        if (latestReading) {
-          message += `Ubuhehere: ${latestReading.soil_moisture?.toFixed(0)}%\n`;
-          message += `Ubushyuhe: ${latestReading.air_temperature?.toFixed(0)}°C\n`;
+  await runWithConcurrency(
+    users,
+    config.notifications.summaryConcurrency,
+    async (user) => {
+      try {
+        if (!user.phone_number) {
+          return;
         }
-        if (pendingCount > 0) {
-          message += `Inama ${pendingCount} zitegereje`;
-        }
-      } else {
-        message = `🌽 SMARTMAIZE Daily Summary\n`;
-        message += `${farms[0].name}\n`;
-        if (latestReading) {
-          message += `Moisture: ${latestReading.soil_moisture?.toFixed(0)}%\n`;
-          message += `Temp: ${latestReading.air_temperature?.toFixed(0)}°C\n`;
-        }
-        if (pendingCount > 0) {
-          message += `${pendingCount} pending recommendations`;
-        }
-      }
 
-      if (user.phone_number) {
+        const farmResult = await db.farms.getByUser(user._id, { limit: 1, isActive: true });
+        const farms = farmResult?.data || farmResult || [];
+
+        if (!farms || farms.length === 0) {
+          return;
+        }
+
+        const farm = farms[0];
+        const farmId = farm._id || farm.id;
+
+        const [pendingCount, latestReading] = await Promise.all([
+          db.recommendations.getPendingCount({ farmId }),
+          sensorService.getLatestReadings(farmId),
+        ]);
+
+        const lang = user.preferred_language || 'rw';
+        let message;
+
+        if (lang === 'rw') {
+          message = `🌽 SMARTMAIZE Uyu munsi\n`;
+          message += `${farm.name}\n`;
+          if (latestReading) {
+            message += `Ubuhehere: ${latestReading.soil_moisture?.toFixed(0)}%\n`;
+            message += `Ubushyuhe: ${latestReading.air_temperature?.toFixed(0)}°C\n`;
+          }
+          if (pendingCount > 0) {
+            message += `Inama ${pendingCount} zitegereje`;
+          }
+        } else {
+          message = `🌽 SMARTMAIZE Daily Summary\n`;
+          message += `${farm.name}\n`;
+          if (latestReading) {
+            message += `Moisture: ${latestReading.soil_moisture?.toFixed(0)}%\n`;
+            message += `Temp: ${latestReading.air_temperature?.toFixed(0)}°C\n`;
+          }
+          if (pendingCount > 0) {
+            message += `${pendingCount} pending recommendations`;
+          }
+        }
+
         await notificationService.sendSMS(user.phone_number, message, {
           userId: user._id,
           priority: 'low'
         });
+        sent += 1;
+      } catch (userError) {
+        logger.warn(`Failed to generate summary for user ${user._id}:`, userError.message);
       }
-
-    } catch (userError) {
-      logger.warn(`Failed to generate summary for user ${user._id}:`, userError.message);
     }
+  );
 
-    // Rate limiting
-    await new Promise(resolve => setTimeout(resolve, 100));
-  }
-
-  logger.info(`Daily summaries sent to ${users.length} users`);
+  logger.info(`Daily summaries sent to ${sent} users`);
 };
 
 /**

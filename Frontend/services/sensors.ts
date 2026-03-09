@@ -392,11 +392,15 @@ export const sensorService = {
   ): Promise<ApiResponse<Array<{
     date: string;
     avgSoilMoisture: number;
+    avgSoilTemperature?: number;
     avgTemperature: number;
     avgHumidity: number;
     minSoilMoisture: number;
     maxSoilMoisture: number;
-    totalRainfall: number;
+    avgNitrogen?: number;
+    avgPhosphorus?: number;
+    avgPotassium?: number;
+    totalRainfall?: number;
     readingsCount: number;
   }>>> => {
     const response = await apiClient.get<ApiResponse<any>>(

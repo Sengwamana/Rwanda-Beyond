@@ -3,69 +3,45 @@
 // =====================================================
 
 import apiClient from './api';
-import { ApiResponse } from '../types';
+import { ApiResponse, FarmDashboardData, SensorData } from '../types';
 
 // Analytics Types
-export interface FarmDashboardAnalytics {
-  farm: {
-    id: string;
-    name: string;
-    district: string;
-    sizeHectares: number;
-    currentGrowthStage: string;
-  };
-  sensors: {
-    total: number;
-    active: number;
-    offline: number;
-    latestReadings: {
-      soilMoisture: number | null;
-      temperature: number | null;
-      humidity: number | null;
-      npk: { n: number; p: number; k: number } | null;
-    };
-  };
-  recommendations: {
-    pending: number;
-    accepted: number;
-    rejected: number;
-    total: number;
-  };
-  alerts: {
-    active: number;
-    critical: number;
-    warnings: number;
-  };
-  irrigation: {
-    lastIrrigation: string | null;
-    nextScheduled: string | null;
-    totalThisWeek: number;
-  };
-  pestDetections: {
-    total: number;
-    confirmed: number;
-    lastDetection: string | null;
-  };
-}
+export type FarmDashboardAnalytics = FarmDashboardData & {
+  latestReadings?: SensorData | null;
+};
 
 export interface SensorTrendsData {
   farmId: string;
   period: {
-    start: string;
-    end: string;
+    days?: number;
+    start?: string;
+    end?: string;
+    startDate?: string;
   };
-  trends: {
-    soilMoisture: Array<{ timestamp: string; value: number; avg: number }>;
-    temperature: Array<{ timestamp: string; value: number; avg: number }>;
-    humidity: Array<{ timestamp: string; value: number; avg: number }>;
-  };
-  summary: {
-    avgSoilMoisture: number;
-    avgTemperature: number;
-    avgHumidity: number;
-    minSoilMoisture: number;
-    maxSoilMoisture: number;
-  };
+  trends: Array<{
+    date?: string;
+    reading_date?: string;
+    avgSoilMoisture?: number;
+    avg_soil_moisture?: number;
+    minSoilMoisture?: number;
+    min_soil_moisture?: number;
+    maxSoilMoisture?: number;
+    max_soil_moisture?: number;
+    avgSoilTemperature?: number;
+    avg_soil_temperature?: number;
+    avgTemperature?: number;
+    avg_temperature?: number;
+    avgHumidity?: number;
+    avg_humidity?: number;
+    avgNitrogen?: number;
+    avg_nitrogen?: number;
+    avgPhosphorus?: number;
+    avg_phosphorus?: number;
+    avgPotassium?: number;
+    avg_potassium?: number;
+    readingsCount?: number;
+    reading_count?: number;
+  }>;
 }
 
 export interface RecommendationHistory {
@@ -181,6 +157,49 @@ export interface DashboardAnalyticsSummary {
   pestDetections?: { total: number };
 }
 
+const normalizeSensorReading = (reading: any): SensorData => ({
+  id: String(reading?.id || reading?._id || ''),
+  sensorId: String(reading?.sensorId || reading?.sensor_id || ''),
+  farmId: String(reading?.farmId || reading?.farm_id || ''),
+  readingTimestamp:
+    reading?.readingTimestamp
+    || (typeof reading?.reading_timestamp === 'number'
+      ? new Date(reading.reading_timestamp).toISOString()
+      : reading?.reading_timestamp
+      || new Date().toISOString()),
+  soilMoisture: reading?.soilMoisture ?? reading?.soil_moisture,
+  soilTemperature: reading?.soilTemperature ?? reading?.soil_temperature,
+  airTemperature: reading?.airTemperature ?? reading?.air_temperature,
+  humidity: reading?.humidity,
+  nitrogen: reading?.nitrogen,
+  phosphorus: reading?.phosphorus,
+  potassium: reading?.potassium,
+  phLevel: reading?.phLevel ?? reading?.ph_level,
+  lightIntensity: reading?.lightIntensity ?? reading?.light_intensity,
+  rainfallMm: reading?.rainfallMm ?? reading?.rainfall_mm,
+  isValid: reading?.isValid ?? reading?.is_valid ?? true,
+  validationFlags: reading?.validationFlags || reading?.validation_flags || undefined,
+  createdAt:
+    reading?.createdAt
+    || (typeof reading?.created_at === 'number' ? new Date(reading.created_at).toISOString() : reading?.created_at)
+    || new Date().toISOString(),
+});
+
+const normalizeTrendRow = (row: any) => ({
+  ...row,
+  date: row?.date || row?.reading_date,
+  avgSoilMoisture: row?.avgSoilMoisture ?? row?.avg_soil_moisture,
+  minSoilMoisture: row?.minSoilMoisture ?? row?.min_soil_moisture,
+  maxSoilMoisture: row?.maxSoilMoisture ?? row?.max_soil_moisture,
+  avgSoilTemperature: row?.avgSoilTemperature ?? row?.avg_soil_temperature,
+  avgTemperature: row?.avgTemperature ?? row?.avg_temperature,
+  avgHumidity: row?.avgHumidity ?? row?.avg_humidity,
+  avgNitrogen: row?.avgNitrogen ?? row?.avg_nitrogen,
+  avgPhosphorus: row?.avgPhosphorus ?? row?.avg_phosphorus,
+  avgPotassium: row?.avgPotassium ?? row?.avg_potassium,
+  readingsCount: row?.readingsCount ?? row?.reading_count,
+});
+
 // Analytics service functions
 export const analyticsService = {
   /**
@@ -190,7 +209,21 @@ export const analyticsService = {
     const response = await apiClient.get<ApiResponse<FarmDashboardAnalytics>>(
       `/analytics/farm/${farmId}/dashboard`
     );
-    return response.data;
+    const payload: any = response.data.data || {};
+    const latestSensorPayload = payload.latestSensorData || payload.latestReadings;
+
+    return {
+      ...response.data,
+      data: {
+        ...payload,
+        latestReadings: payload.latestReadings ? normalizeSensorReading(payload.latestReadings) : undefined,
+        latestSensorData: Array.isArray(latestSensorPayload)
+          ? latestSensorPayload.map(normalizeSensorReading)
+          : latestSensorPayload
+            ? [normalizeSensorReading(latestSensorPayload)]
+            : [],
+      },
+    };
   },
 
   /**
@@ -208,7 +241,15 @@ export const analyticsService = {
       `/analytics/farm/${farmId}/sensor-trends`,
       { params }
     );
-    return response.data;
+    const payload: any = response.data.data || {};
+
+    return {
+      ...response.data,
+      data: {
+        ...payload,
+        trends: Array.isArray(payload.trends) ? payload.trends.map(normalizeTrendRow) : [],
+      },
+    };
   },
 
   /**

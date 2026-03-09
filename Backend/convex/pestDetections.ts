@@ -1,15 +1,29 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 
+const asFarm = (value: any) => value as {
+  _id: string;
+  name: string;
+  user_id: string;
+  location_name?: string;
+  district_id?: string;
+} | null;
+
+const asUser = (value: any) => value as {
+  _id: string;
+  first_name?: string;
+  last_name?: string;
+} | null;
+
 export const getById = query({
   args: { id: v.id("pest_detections") },
   returns: v.any(),
   handler: async (ctx, { id }) => {
     const det = await ctx.db.get(id);
     if (!det) return null;
-    const farm = await ctx.db.get(det.farm_id);
-    const reporter = await ctx.db.get(det.reported_by);
-    const reviewer = det.reviewed_by ? await ctx.db.get(det.reviewed_by) : null;
+    const farm = asFarm(await ctx.db.get(det.farm_id));
+    const reporter = asUser(await ctx.db.get(det.reported_by));
+    const reviewer = det.reviewed_by ? asUser(await ctx.db.get(det.reviewed_by)) : null;
     return {
       ...det,
       id: det._id,
@@ -27,24 +41,136 @@ export const getByFarm = query({
     limit: v.optional(v.number()),
     pestDetected: v.optional(v.boolean()),
     severity: v.optional(v.string()),
+    since: v.optional(v.number()),
+    until: v.optional(v.number()),
   },
   returns: v.any(),
   handler: async (ctx, args) => {
     const page = args.page ?? 1;
     const limit = args.limit ?? 20;
-
-    let dets = await ctx.db
-      .query("pest_detections")
-      .withIndex("by_farm", (q) => q.eq("farm_id", args.farmId))
-      .order("desc")
-      .collect();
-
-    if (typeof args.pestDetected === "boolean") dets = dets.filter((d) => d.pest_detected === args.pestDetected);
-    if (args.severity) dets = dets.filter((d) => d.severity === args.severity);
-
-    const total = dets.length;
     const offset = (page - 1) * limit;
-    return { data: dets.slice(offset, offset + limit), count: total };
+
+    const detQuery =
+      typeof args.pestDetected === "boolean"
+        ? ctx.db
+            .query("pest_detections")
+            .withIndex("by_farm_detected_created", (q) =>
+              {
+                const base = q.eq("farm_id", args.farmId).eq("pest_detected", args.pestDetected!);
+                if (args.since !== undefined && args.until !== undefined) {
+                  return base.gte("created_at", args.since).lte("created_at", args.until);
+                }
+                if (args.since !== undefined) {
+                  return base.gte("created_at", args.since);
+                }
+                if (args.until !== undefined) {
+                  return base.lte("created_at", args.until);
+                }
+                return base;
+              }
+            )
+            .order("desc")
+        : ctx.db
+            .query("pest_detections")
+            .withIndex("by_farm_created", (q) => {
+              const base = q.eq("farm_id", args.farmId);
+              if (args.since !== undefined && args.until !== undefined) {
+                return base.gte("created_at", args.since).lte("created_at", args.until);
+              }
+              if (args.since !== undefined) {
+                return base.gte("created_at", args.since);
+              }
+              if (args.until !== undefined) {
+                return base.lte("created_at", args.until);
+              }
+              return base;
+            })
+            .order("desc");
+
+    const data = [];
+    let count = 0;
+
+    for await (const det of detQuery) {
+      if (args.severity && det.severity !== args.severity) {
+        continue;
+      }
+
+      if (count >= offset && data.length < limit) {
+        data.push(det);
+      }
+
+      count += 1;
+    }
+
+    return { data, count };
+  },
+});
+
+export const list = query({
+  args: {
+    page: v.optional(v.number()),
+    limit: v.optional(v.number()),
+    pestDetected: v.optional(v.boolean()),
+    severity: v.optional(v.string()),
+    since: v.optional(v.number()),
+    until: v.optional(v.number()),
+  },
+  returns: v.any(),
+  handler: async (ctx, args) => {
+    const page = args.page ?? 1;
+    const limit = args.limit ?? 20;
+    const offset = (page - 1) * limit;
+
+    const detQuery =
+      typeof args.pestDetected === "boolean"
+        ? ctx.db
+            .query("pest_detections")
+            .withIndex("by_detected_created", (q) => {
+              const base = q.eq("pest_detected", args.pestDetected!);
+              if (args.since !== undefined && args.until !== undefined) {
+                return base.gte("created_at", args.since).lte("created_at", args.until);
+              }
+              if (args.since !== undefined) {
+                return base.gte("created_at", args.since);
+              }
+              if (args.until !== undefined) {
+                return base.lte("created_at", args.until);
+              }
+              return base;
+            })
+            .order("desc")
+        : ctx.db
+            .query("pest_detections")
+            .withIndex("by_created", (q) => {
+              if (args.since !== undefined && args.until !== undefined) {
+                return q.gte("created_at", args.since).lte("created_at", args.until);
+              }
+              if (args.since !== undefined) {
+                return q.gte("created_at", args.since);
+              }
+              if (args.until !== undefined) {
+                return q.lte("created_at", args.until);
+              }
+              return q;
+            })
+            .order("desc");
+
+    const data = [];
+    let count = 0;
+
+    for await (const det of detQuery) {
+      if (args.severity && det.severity !== args.severity) {
+        continue;
+      }
+
+      if (count >= offset && data.length < limit) {
+        data.push(det);
+      }
+
+      count += 1;
+    }
+
+    return { data, count };
   },
 });
 
@@ -52,12 +178,13 @@ export const getRecent = query({
   args: { farmId: v.id("farms"), limit: v.optional(v.number()) },
   returns: v.any(),
   handler: async (ctx, args) => {
-    const dets = await ctx.db
+    return await ctx.db
       .query("pest_detections")
-      .withIndex("by_farm", (q) => q.eq("farm_id", args.farmId))
+      .withIndex("by_farm_detected_created", (q) =>
+        q.eq("farm_id", args.farmId).eq("pest_detected", true)
+      )
       .order("desc")
-      .collect();
-    return dets.filter((d) => d.pest_detected).slice(0, args.limit ?? 5);
+      .take(args.limit ?? 5);
   },
 });
 
@@ -66,29 +193,46 @@ export const getUnreviewed = query({
     page: v.optional(v.number()),
     limit: v.optional(v.number()),
     since: v.optional(v.number()),
+    severity: v.optional(v.string()),
   },
   returns: v.any(),
   handler: async (ctx, args) => {
     const page = args.page ?? 1;
     const limit = args.limit ?? 20;
-
-    let dets = await ctx.db
-      .query("pest_detections")
-      .withIndex("by_detected", (q) => q.eq("pest_detected", true))
-      .order("desc")
-      .collect();
-
-    dets = dets.filter((d) => !d.reviewed_by);
-    if (args.since) dets = dets.filter((d) => d.created_at >= args.since!);
-
-    const total = dets.length;
     const offset = (page - 1) * limit;
-    const paginated = dets.slice(offset, offset + limit);
+    const detQuery = ctx.db
+      .query("pest_detections")
+      .withIndex("by_detected_created", (q) => {
+        const base = q.eq("pest_detected", true);
+        if (args.since) {
+          return base.gte("created_at", args.since);
+        }
+        return base;
+      })
+      .order("desc");
+
+    const paginated = [];
+    let count = 0;
+
+    for await (const det of detQuery) {
+      if (det.reviewed_by) {
+        continue;
+      }
+      if (args.severity && det.severity !== args.severity) {
+        continue;
+      }
+
+      if (count >= offset && paginated.length < limit) {
+        paginated.push(det);
+      }
+
+      count += 1;
+    }
 
     const enriched = await Promise.all(
       paginated.map(async (d) => {
-        const farm = await ctx.db.get(d.farm_id);
-        const reporter = await ctx.db.get(d.reported_by);
+        const farm = asFarm(await ctx.db.get(d.farm_id));
+        const reporter = asUser(await ctx.db.get(d.reported_by));
         return {
           ...d,
           id: d._id,
@@ -98,7 +242,7 @@ export const getUnreviewed = query({
       })
     );
 
-    return { data: enriched, count: total };
+    return { data: enriched, count };
   },
 });
 
@@ -140,9 +284,27 @@ export const getStats = query({
   args: { since: v.optional(v.number()), until: v.optional(v.number()) },
   returns: v.any(),
   handler: async (ctx, args) => {
-    let dets = await ctx.db.query("pest_detections").collect();
-    if (args.since) dets = dets.filter((d) => d.created_at >= args.since!);
-    if (args.until) dets = dets.filter((d) => d.created_at <= args.until!);
+    const detQuery = ctx.db
+      .query("pest_detections")
+      .withIndex("by_created", (q) => {
+        if (args.since !== undefined && args.until !== undefined) {
+          return q.gte("created_at", args.since).lte("created_at", args.until);
+        }
+        if (args.since !== undefined) {
+          return q.gte("created_at", args.since);
+        }
+        if (args.until !== undefined) {
+          return q.lte("created_at", args.until);
+        }
+        return q;
+      })
+      .order("desc");
+
+    const dets = [];
+    for await (const det of detQuery) {
+      dets.push(det);
+    }
+
     return dets.map((d) => ({
       pest_detected: d.pest_detected,
       severity: d.severity,
@@ -157,13 +319,19 @@ export const getOldImages = query({
   args: { before: v.number() },
   returns: v.any(),
   handler: async (ctx, { before }) => {
-    const allDets = await ctx.db
+    const oldDetQuery = ctx.db
       .query("pest_detections")
-      .collect();
-    const dets = allDets.filter((d) => d.created_at < before);
-    return dets
-      .filter((d) => !d.pest_detected || d.severity === "none")
-      .map((d) => ({ id: d._id, cloudinary_public_id: d.cloudinary_public_id }));
+      .withIndex("by_created", (q) => q.lt("created_at", before))
+      .order("asc");
+
+    const stale = [];
+    for await (const det of oldDetQuery) {
+      if (!det.pest_detected || det.severity === "none") {
+        stale.push({ id: det._id, cloudinary_public_id: det.cloudinary_public_id });
+      }
+    }
+
+    return stale;
   },
 });
 
@@ -171,15 +339,44 @@ export const getOutbreakMap = query({
   args: { since: v.optional(v.number()), statuses: v.optional(v.array(v.string())) },
   returns: v.any(),
   handler: async (ctx, args) => {
-    let dets = await ctx.db.query("pest_detections").order("desc").collect();
-    if (args.since) dets = dets.filter((d) => d.created_at >= args.since!);
-    if (args.statuses) dets = dets.filter((d) => d.pest_detected);
+    const detections = [];
+    const requestedStatuses = Array.isArray(args.statuses)
+      ? new Set(args.statuses.map((status) => String(status).toLowerCase()))
+      : null;
 
-    return await Promise.all(
-      dets.map(async (d) => {
-        const farm = await ctx.db.get(d.farm_id);
-        return { ...d, id: d._id, farm: farm ?? null };
-      })
+    const detectionQuery = args.since
+      ? ctx.db
+          .query("pest_detections")
+          .withIndex("by_created", (q) => q.gte("created_at", args.since!))
+          .order("desc")
+      : ctx.db
+          .query("pest_detections")
+          .withIndex("by_created")
+          .order("desc");
+
+    for await (const detection of detectionQuery) {
+      if (requestedStatuses) {
+        const statusValue = detection.pest_detected ? "detected" : "clear";
+        if (!requestedStatuses.has(statusValue) && !requestedStatuses.has(String(detection.severity).toLowerCase())) {
+          continue;
+        }
+      }
+
+      detections.push(detection);
+    }
+
+    const farmIds = [...new Set(detections.map((detection) => detection.farm_id).filter(Boolean))];
+    const farms = await Promise.all(farmIds.map((farmId) => ctx.db.get(farmId as any)));
+    const farmById = new Map(
+      farms
+        .filter(Boolean)
+        .map((farm) => [(farm as any)._id, farm])
     );
+
+    return detections.map((detection) => ({
+      ...detection,
+      id: detection._id,
+      farm: farmById.get(detection.farm_id as any) ?? null,
+    }));
   },
 });

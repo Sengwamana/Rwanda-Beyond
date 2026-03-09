@@ -24,6 +24,56 @@ const sms = africasTalking.SMS;
 const messageQueue = [];
 let batchTimeout = null;
 
+const runWithConcurrency = async (items, concurrency, worker) => {
+  if (!Array.isArray(items) || items.length === 0) {
+    return [];
+  }
+
+  const limit = Math.max(1, Math.min(concurrency || 1, items.length));
+  const results = new Array(items.length);
+  let nextIndex = 0;
+
+  const executeWorker = async () => {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await worker(items[currentIndex], currentIndex);
+    }
+  };
+
+  await Promise.all(Array.from({ length: limit }, () => executeWorker()));
+  return results;
+};
+
+const sendSmsThroughProvider = async (phoneNumber, message) => {
+  const formattedNumber = formatPhoneNumber(phoneNumber);
+  const truncatedMessage = message.length > 480
+    ? message.substring(0, 477) + '...'
+    : message;
+
+  const smsOptions = {
+    to: [formattedNumber],
+    message: truncatedMessage
+  };
+
+  if (config.africasTalking.username !== 'sandbox' && config.africasTalking.senderId) {
+    smsOptions.from = config.africasTalking.senderId;
+  }
+
+  const response = await sms.send(smsOptions);
+  const recipient = response.SMSMessageData?.Recipients?.[0] || {};
+
+  return {
+    formattedNumber,
+    truncatedMessage,
+    providerStatus: recipient.status,
+    externalMessageId: recipient.messageId,
+    failedReason: recipient.status !== 'Success' ? recipient.status : null,
+    costUnits: recipient.cost,
+    succeeded: recipient.status === 'Success',
+  };
+};
+
 /**
  * Send SMS message
  * @param {string} phoneNumber - Recipient phone number
@@ -40,46 +90,26 @@ export const sendSMS = async (phoneNumber, message, options = {}) => {
   } = options;
 
   try {
-    // Ensure phone number is in international format
-    const formattedNumber = formatPhoneNumber(phoneNumber);
-
-    // Truncate message if too long (SMS limit is typically 160 chars for single SMS)
-    const truncatedMessage = message.length > 480 
-      ? message.substring(0, 477) + '...'
-      : message;
-
-    const smsOptions = {
-      to: [formattedNumber],
-      message: truncatedMessage
-    };
-
-    // Add sender ID if not in sandbox mode
-    if (config.africasTalking.username !== 'sandbox' && config.africasTalking.senderId) {
-      smsOptions.from = config.africasTalking.senderId;
-    }
-
-    const response = await sms.send(smsOptions);
+    const delivery = await sendSmsThroughProvider(phoneNumber, message);
 
     // Log message to database
     const messageRecord = await logMessage({
       userId,
       recommendationId,
       channel: 'sms',
-      recipient: formattedNumber,
-      content: truncatedMessage,
-      status: response.SMSMessageData?.Recipients?.[0]?.status === 'Success' ? 'sent' : 'failed',
-      externalMessageId: response.SMSMessageData?.Recipients?.[0]?.messageId,
-      failedReason: response.SMSMessageData?.Recipients?.[0]?.status !== 'Success' 
-        ? response.SMSMessageData?.Recipients?.[0]?.status 
-        : null,
-      costUnits: response.SMSMessageData?.Recipients?.[0]?.cost
+      recipient: delivery.formattedNumber,
+      content: delivery.truncatedMessage,
+      status: delivery.succeeded ? 'sent' : 'failed',
+      externalMessageId: delivery.externalMessageId,
+      failedReason: delivery.failedReason,
+      costUnits: delivery.costUnits
     });
 
-    logger.info(`SMS sent to ${formattedNumber}: ${messageRecord._id}`);
+    logger.info(`SMS sent to ${delivery.formattedNumber}: ${messageRecord._id}`);
     return {
-      success: true,
+      success: delivery.succeeded,
       messageId: messageRecord._id,
-      externalId: response.SMSMessageData?.Recipients?.[0]?.messageId
+      externalId: delivery.externalMessageId
     };
 
   } catch (error) {
@@ -98,6 +128,24 @@ export const sendSMS = async (phoneNumber, message, options = {}) => {
 
     throw error;
   }
+};
+
+const deliverPersistedMessage = async (messageRecord, options = {}) => {
+  const delivery = await sendSmsThroughProvider(messageRecord.recipient, messageRecord.content);
+  const retryCount = (messageRecord.retry_count || 0) + (options.incrementRetry === false ? 0 : 1);
+
+  await db.messages.update(messageRecord._id, {
+    status: delivery.succeeded ? 'sent' : 'failed',
+    recipient: delivery.formattedNumber,
+    content: delivery.truncatedMessage,
+    sent_at: delivery.succeeded ? Date.now() : messageRecord.sent_at,
+    external_message_id: delivery.externalMessageId,
+    failed_reason: delivery.failedReason,
+    cost_units: delivery.costUnits,
+    retry_count: retryCount,
+  });
+
+  return delivery;
 };
 
 /**
@@ -294,18 +342,23 @@ const processBatchedMessages = async () => {
     }
   }
 
-  // Send messages
-  for (const msg of messagesToSend) {
-    try {
-      await sendSMS(msg.phoneNumber, msg.message, {
-        userId: msg.userId,
-        recommendationId: msg.recommendationId,
-        priority: msg.priority
-      });
-    } catch (error) {
-      logger.error('Batch message send failed:', error);
+  batchTimeout = null;
+
+  await runWithConcurrency(
+    messagesToSend,
+    config.notifications.deliveryConcurrency,
+    async (msg) => {
+      try {
+        await sendSMS(msg.phoneNumber, msg.message, {
+          userId: msg.userId,
+          recommendationId: msg.recommendationId,
+          priority: msg.priority
+        });
+      } catch (error) {
+        logger.error('Batch message send failed:', error);
+      }
     }
-  }
+  );
 
   // Reschedule if there are more messages
   if (messageQueue.length > 0) {
@@ -331,24 +384,25 @@ export const sendBulkSMS = async (recipients, options = {}) => {
     errors: []
   };
 
-  for (const recipient of recipients) {
-    try {
-      await sendSMS(recipient.phoneNumber, recipient.message, {
-        ...options,
-        userId: recipient.userId
-      });
-      results.successful++;
-    } catch (error) {
-      results.failed++;
-      results.errors.push({
-        phoneNumber: recipient.phoneNumber,
-        error: error.message
-      });
+  await runWithConcurrency(
+    recipients,
+    config.notifications.deliveryConcurrency,
+    async (recipient) => {
+      try {
+        await sendSMS(recipient.phoneNumber, recipient.message, {
+          ...options,
+          userId: recipient.userId
+        });
+        results.successful++;
+      } catch (error) {
+        results.failed++;
+        results.errors.push({
+          phoneNumber: recipient.phoneNumber,
+          error: error.message
+        });
+      }
     }
-
-    // Small delay to avoid rate limiting
-    await new Promise(resolve => setTimeout(resolve, 100));
-  }
+  );
 
   logger.info(`Bulk SMS complete: ${results.successful} sent, ${results.failed} failed`);
   return results;
@@ -614,31 +668,22 @@ export const retryFailedMessages = async (maxRetries = 3) => {
 
   let retried = 0;
 
-  for (const msg of failedMessages) {
-    try {
-      await sendSMS(msg.recipient, msg.content, {
-        userId: msg.user_id,
-        recommendationId: msg.recommendation_id
-      });
-
-      // Update original message status
-      await db.messages.update(msg._id, {
-        status: 'sent',
-        sent_at: Date.now(),
-        retry_count: (msg.retry_count || 0) + 1
-      });
-
-      retried++;
-    } catch (retryError) {
-      // Update retry count
-      await db.messages.update(msg._id, {
-        retry_count: (msg.retry_count || 0) + 1
-      });
+  await runWithConcurrency(
+    failedMessages,
+    config.notifications.retryConcurrency,
+    async (msg) => {
+      try {
+        const delivery = await deliverPersistedMessage(msg);
+        if (delivery.succeeded) {
+          retried++;
+        }
+      } catch (retryError) {
+        await db.messages.update(msg._id, {
+          retry_count: (msg.retry_count || 0) + 1
+        });
+      }
     }
-
-    // Delay between retries
-    await new Promise(resolve => setTimeout(resolve, 500));
-  }
+  );
 
   return { retried };
 };
@@ -651,7 +696,13 @@ export const retryFailedMessages = async (maxRetries = 3) => {
 export const getMessageStats = async (options = {}) => {
   const { userId, startDate, endDate } = options;
 
-  const stats = await db.messages.getStats({ userId, startDate, endDate });
+  const stats = await db.messages.getStats({
+    ...(userId ? { userId } : {}),
+    ...(startDate ? { since: new Date(startDate).getTime() } : {}),
+    ...(endDate ? { until: new Date(endDate).getTime() } : {}),
+    ...(options.channel ? { channel: options.channel } : {}),
+    ...(options.limit !== undefined ? { limit: options.limit } : {}),
+  });
 
   return stats;
 };
@@ -670,21 +721,48 @@ export const processQueuedMessages = async () => {
   };
 
   try {
+    const persistedQueuedMessages = await db.messages.getQueued({ limit: 100 });
+
+    if (persistedQueuedMessages?.length > 0) {
+      await runWithConcurrency(
+        persistedQueuedMessages,
+        config.notifications.deliveryConcurrency,
+        async (msg) => {
+          try {
+            const delivery = await deliverPersistedMessage(msg, { incrementRetry: false });
+            if (delivery.succeeded) {
+              results.sent++;
+            } else {
+              results.failed++;
+            }
+          } catch (error) {
+            logger.error('Failed to deliver persisted queued message:', { error: error.message, messageId: msg._id });
+            results.failed++;
+          }
+          results.processed++;
+        }
+      );
+    }
+
     // Process any messages in the local queue
     if (messageQueue.length > 0) {
       const messages = [...messageQueue];
       messageQueue.length = 0; // Clear queue
 
-      for (const msg of messages) {
-        try {
-          await sendSMS(msg.phoneNumber, msg.message, msg.options);
-          results.sent++;
-        } catch (error) {
-          logger.error('Failed to send queued message:', { error: error.message });
-          results.failed++;
+      await runWithConcurrency(
+        messages,
+        config.notifications.deliveryConcurrency,
+        async (msg) => {
+          try {
+            await sendSMS(msg.phoneNumber, msg.message, msg.options);
+            results.sent++;
+          } catch (error) {
+            logger.error('Failed to send queued message:', { error: error.message });
+            results.failed++;
+          }
+          results.processed++;
         }
-        results.processed++;
-      }
+      );
     }
 
     // Retry failed messages from the last hour

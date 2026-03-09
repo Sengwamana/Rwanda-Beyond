@@ -13,11 +13,81 @@ import { validatePagination, validateUUID, handleValidationErrors } from '../mid
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { successResponse, createdResponse, paginatedResponse } from '../utils/response.js';
 import { db } from '../database/convex.js';
+import logger from '../utils/logger.js';
 import * as imageService from '../services/imageService.js';
 import * as aiService from '../services/aiService.js';
 import * as recommendationService from '../services/recommendationService.js';
 
 const router = Router();
+
+const logPestAuditEvent = async (entry) => {
+  try {
+    await db.auditLogs.create({
+      ...entry,
+      created_at: Date.now(),
+    });
+  } catch (error) {
+    logger.warn('Failed to write pest audit log:', error?.message || error);
+  }
+};
+
+const parseLocationPayload = (location) => {
+  if (!location) {
+    return null;
+  }
+
+  if (typeof location === 'object') {
+    return location;
+  }
+
+  if (typeof location === 'string') {
+    try {
+      return JSON.parse(location);
+    } catch {
+      throw new Error('Location must be valid JSON');
+    }
+  }
+
+  throw new Error('Location must be a JSON object or JSON string');
+};
+
+const normalizeCapturedAt = (capturedAt) => {
+  if (!capturedAt) {
+    return null;
+  }
+
+  const parsedTimestamp = Date.parse(capturedAt);
+  if (!Number.isFinite(parsedTimestamp)) {
+    throw new Error('capturedAt must be a valid timestamp');
+  }
+
+  return new Date(parsedTimestamp).toISOString();
+};
+
+const normalizePestDetectedFilter = (value) => {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const normalized = value.toLowerCase();
+  if (['detected', 'positive', 'true'].includes(normalized)) {
+    return true;
+  }
+  if (['clear', 'negative', 'false', 'none'].includes(normalized)) {
+    return false;
+  }
+
+  return undefined;
+};
+
+const parseOptionalTimestamp = (value) => {
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
 
 // Configure multer for memory storage
 const upload = multer({
@@ -79,7 +149,18 @@ router.post('/upload/:farmId',
       });
     }
 
-    const { location, notes, severity } = req.body;
+    for (const file of req.files) {
+      const qualityCheck = imageService.validatePestImageFile(file);
+      if (!qualityCheck.valid) {
+        return res.status(400).json({
+          success: false,
+          message: qualityCheck.message,
+          code: 'LOW_QUALITY_IMAGE'
+        });
+      }
+    }
+
+    const { location, notes, severity, capturedAt, captured_at } = req.body;
     const farmId = req.params.farmId;
     const farm = await db.farms.getById(farmId);
 
@@ -91,24 +172,75 @@ router.post('/upload/:farmId',
       });
     }
 
-    // Upload images to Cloudinary
-    const uploadPromises = req.files.map(file =>
-      imageService.uploadImage(file.buffer, {
-        farmId,
-        folder: 'pest_detections'
-      })
-    );
+    let parsedLocation = null;
+    try {
+      parsedLocation = parseLocationPayload(location);
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+        code: 'VALIDATION_ERROR'
+      });
+    }
 
-    const uploadResults = await Promise.all(uploadPromises);
-    const imageUrls = uploadResults.map(r => r.url);
-    const primaryUpload = uploadResults[0];
-    const parsedLocation = location ? JSON.parse(location) : null;
+    const primaryFile = req.files[0];
+    const primaryUpload = await imageService.uploadImage(primaryFile.buffer, {
+      farmId,
+      folder: 'pest_detections'
+    });
+    const primaryQualityCheck = imageService.validateUploadedPestImage(primaryUpload);
+
+    if (!primaryQualityCheck.valid) {
+      await imageService.deleteUploadedImages([primaryUpload]);
+      return res.status(400).json({
+        success: false,
+        message: primaryQualityCheck.message,
+        code: 'LOW_QUALITY_IMAGE'
+      });
+    }
+    let imageCapturedAt = null;
+    try {
+      imageCapturedAt = normalizeCapturedAt(capturedAt || captured_at);
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+        code: 'VALIDATION_ERROR'
+      });
+    }
 
     // Run AI analysis on first image
     const analysisResult = await aiService.analyzePestImage(
-      imageUrls[0],
+      primaryUpload.url,
       { farmId, location: parsedLocation, notes }
     );
+
+    const additionalUploads = req.files.length > 1
+      ? await Promise.all(
+          req.files.slice(1).map((file) =>
+            imageService.uploadImage(file.buffer, {
+              farmId,
+              folder: 'pest_detections'
+            })
+          )
+        )
+      : [];
+
+    const uploadResults = [primaryUpload, ...additionalUploads];
+    const lowQualityUpload = additionalUploads
+      .map((result) => imageService.validateUploadedPestImage(result))
+      .find((check) => !check.valid);
+
+    if (lowQualityUpload) {
+      await imageService.deleteUploadedImages(uploadResults);
+      return res.status(400).json({
+        success: false,
+        message: lowQualityUpload.message,
+        code: 'LOW_QUALITY_IMAGE'
+      });
+    }
+
+    const imageUrls = uploadResults.map(r => r.url);
 
     // Create pest detection record
     const detection = await db.pestDetections.create({
@@ -130,23 +262,46 @@ router.post('/upload/:farmId',
         additional_image_urls: imageUrls.slice(1),
         location: parsedLocation,
         notes,
+        ...(imageCapturedAt ? { captured_at: imageCapturedAt } : {}),
       },
       location_description: notes,
       latitude: parsedLocation?.lat,
       longitude: parsedLocation?.lng,
     });
 
+    await logPestAuditEvent({
+      user_id: req.user.id,
+      action: 'CREATE_PEST_DETECTION',
+      entity_type: 'pest_detections',
+      entity_id: detection._id,
+      new_values: {
+        farm_id: farmId,
+        image_url: imageUrls[0],
+        pest_detected: detection.pest_detected,
+        pest_type: detection.pest_type,
+        severity: detection.severity,
+        confidence_score: detection.confidence_score,
+      },
+    });
+
     // Create pest alert recommendation if detected
-    if (analysisResult.pestDetected && analysisResult.confidenceScore >= 0.6) {
-      await recommendationService.createPestAlertRecommendation(farmId, {
-        pestDetectionId: detection._id,
-        pestType: analysisResult.pestType,
-        severity: analysisResult.severity,
-        confidence: analysisResult.confidenceScore,
-        affectedArea: analysisResult.affectedAreaPercentage,
-        imageUrl: imageUrls[0],
-        recommendations: analysisResult.recommendations,
-      });
+    if (aiService.shouldCreatePestAlertRecommendation(analysisResult)) {
+      Promise.resolve()
+        .then(() =>
+          recommendationService.createPestAlertRecommendation(farmId, {
+            pestDetectionId: detection._id,
+            pestType: analysisResult.pestType,
+            severity: analysisResult.severity,
+            confidence: analysisResult.confidenceScore,
+            affectedArea: analysisResult.affectedAreaPercentage,
+            imageUrl: imageUrls[0],
+            recommendations: analysisResult.recommendations,
+            expertVerified: false,
+          })
+        )
+        .catch((error) => {
+          logger.warn('Failed to create pest alert recommendation:', error?.message || error);
+        });
     }
 
     return createdResponse(res, {
@@ -182,19 +337,50 @@ router.post('/:detectionId/reanalyze',
     // Run AI analysis again
     const analysisResult = await aiService.analyzePestImage(
       detection.image_url,
-      { farmId: detection.farm_id, existingAnalysis: detection.ai_analysis }
+      { farmId: detection.farm_id, existingAnalysis: detection.detection_metadata?.analysis }
     );
 
     // Update detection with new analysis
     const updated = await db.pestDetections.update(req.params.detectionId, {
-      detected_pest: analysisResult.detectedPest,
-      confidence: analysisResult.confidence,
-      ai_analysis: {
-        ...detection.ai_analysis,
+      pest_detected: analysisResult.pestDetected,
+      pest_type: analysisResult.pestType,
+      severity: analysisResult.severity || detection.severity || 'none',
+      confidence_score: analysisResult.confidenceScore,
+      affected_area_percentage: analysisResult.affectedAreaPercentage ?? detection.affected_area_percentage,
+      model_version: analysisResult.modelVersion || detection.model_version,
+      detection_metadata: {
+        ...(detection.detection_metadata || {}),
+        analysis: analysisResult,
         reanalysis: analysisResult,
         reanalyzedAt: new Date().toISOString(),
         reanalyzedBy: req.user._id
       }
+    });
+    if (!updated) {
+      return res.status(404).json({
+        success: false,
+        message: 'Detection not found',
+        code: 'NOT_FOUND'
+      });
+    }
+
+    await logPestAuditEvent({
+      user_id: req.user.id,
+      action: 'REANALYZE_PEST_DETECTION',
+      entity_type: 'pest_detections',
+      entity_id: req.params.detectionId,
+      old_values: {
+        pest_detected: detection.pest_detected,
+        pest_type: detection.pest_type,
+        severity: detection.severity,
+        confidence_score: detection.confidence_score,
+      },
+      new_values: {
+        pest_detected: analysisResult.pestDetected,
+        pest_type: analysisResult.pestType,
+        severity: analysisResult.severity || detection.severity || 'none',
+        confidence_score: analysisResult.confidenceScore,
+      },
     });
 
     return successResponse(res, {
@@ -225,15 +411,15 @@ router.get('/farm/:farmId',
     const opts = {
       page: parseInt(page),
       limit: parseInt(limit),
-      status: status || undefined,
+      pestDetected: normalizePestDetectedFilter(status),
       severity: severity || undefined,
-      startDate: startDate || undefined,
-      endDate: endDate || undefined
+      since: parseOptionalTimestamp(startDate),
+      until: parseOptionalTimestamp(endDate),
     };
 
     const result = await db.pestDetections.getByFarm(req.params.farmId, opts);
     const data = result.data || result;
-    const count = result.total || data.length;
+    const count = result.count ?? result.total ?? data.length;
 
     return paginatedResponse(res, data, parseInt(page), parseInt(limit), count, 'Pest detections retrieved successfully');
   })
@@ -255,25 +441,26 @@ router.get('/',
   validatePagination,
   handleValidationErrors,
   asyncHandler(async (req, res) => {
-    const { page = 1, limit = 20, status, severity, farmId } = req.query;
+    const { page = 1, limit = 20, status, severity, farmId, startDate, endDate } = req.query;
 
     const opts = {
       page: parseInt(page),
       limit: parseInt(limit),
-      status: status || undefined,
+      pestDetected: normalizePestDetectedFilter(status),
       severity: severity || undefined,
-      farmId: farmId || undefined
+      since: parseOptionalTimestamp(startDate),
+      until: parseOptionalTimestamp(endDate),
     };
 
     let result;
     if (farmId) {
       result = await db.pestDetections.getByFarm(farmId, opts);
     } else {
-      result = await db.pestDetections.getStats(opts);
+      result = await db.pestDetections.list(opts);
     }
 
     const data = result?.data || result || [];
-    const count = result?.total || data.length;
+    const count = result?.count ?? result?.total ?? data.length;
 
     return paginatedResponse(res, data, parseInt(page), parseInt(limit), count, 'Pest detections retrieved successfully');
   })
@@ -289,14 +476,15 @@ router.get('/statistics',
   requireMinimumRole(ROLES.EXPERT),
   asyncHandler(async (req, res) => {
     const { district, startDate, endDate } = req.query;
+    const since = parseOptionalTimestamp(startDate);
+    const until = parseOptionalTimestamp(endDate);
+    let detections = await db.pestDetections.getStats({ since, until });
 
-    const opts = {
-      district: district || undefined,
-      startDate: startDate || undefined,
-      endDate: endDate || undefined
-    };
-
-    const detections = await db.pestDetections.getStats(opts);
+    if (district) {
+      const farms = await db.farms.list({ page: 1, limit: 1000, districtId: district });
+      const farmIds = new Set((farms?.data || farms || []).map((farm) => String(farm?._id || farm?.id)));
+      detections = (detections || []).filter((d) => farmIds.has(String(d?.farm_id)));
+    }
 
     const severityCounts = detections?.reduce((acc, d) => {
       acc[d.severity] = (acc[d.severity] || 0) + 1;
@@ -304,8 +492,8 @@ router.get('/statistics',
     }, {}) || {};
 
     const pestCounts = detections?.reduce((acc, d) => {
-      if (d.detected_pest) {
-        acc[d.detected_pest] = (acc[d.detected_pest] || 0) + 1;
+      if (d.pest_type) {
+        acc[d.pest_type] = (acc[d.pest_type] || 0) + 1;
       }
       return acc;
     }, {}) || {};
@@ -337,14 +525,15 @@ router.get('/scans',
         limit: parseInt(limit)
       });
     } else {
-      result = await db.pestDetections.getStats({
-        page: parseInt(page),
-        limit: parseInt(limit)
+      return res.status(400).json({
+        success: false,
+        message: 'farmId is required for scan listing',
+        code: 'VALIDATION_ERROR'
       });
     }
 
     const data = result?.data || result || [];
-    const count = result?.total || data.length;
+    const count = result?.count ?? result?.total ?? data.length;
 
     return paginatedResponse(res, data, parseInt(page), parseInt(limit), count, 'Pest detection scans retrieved successfully');
   })
@@ -399,13 +588,12 @@ router.get('/pending-review',
     const opts = {
       page: parseInt(page),
       limit: parseInt(limit),
-      district: district || undefined,
       severity: severity || undefined
     };
 
     const result = await db.pestDetections.getUnreviewed(opts);
     const data = result.data || result;
-    const count = result.total || data.length;
+    const count = result.count ?? result.total ?? data.length;
 
     return paginatedResponse(res, data, parseInt(page), parseInt(limit), count, 'Pending reviews retrieved successfully');
   })
@@ -421,15 +609,15 @@ router.get('/stats',
   requireMinimumRole(ROLES.EXPERT),
   asyncHandler(async (req, res) => {
     const { district, startDate, endDate } = req.query;
+    const since = parseOptionalTimestamp(startDate);
+    const until = parseOptionalTimestamp(endDate);
+    let detections = await db.pestDetections.getStats({ since, until });
 
-    const opts = {
-      district: district || undefined,
-      startDate: startDate || undefined,
-      endDate: endDate || undefined
-    };
-
-    // Get detection stats
-    const detections = await db.pestDetections.getStats(opts);
+    if (district) {
+      const farms = await db.farms.list({ page: 1, limit: 1000, districtId: district });
+      const farmIds = new Set((farms?.data || farms || []).map((farm) => String(farm?._id || farm?.id)));
+      detections = (detections || []).filter((d) => farmIds.has(String(d?.farm_id)));
+    }
 
     // Calculate severity counts
     const severityCounts = detections?.reduce((acc, d) => {
@@ -439,8 +627,8 @@ router.get('/stats',
 
     // Calculate pest type counts
     const pestCounts = detections?.reduce((acc, d) => {
-      if (d.detected_pest) {
-        acc[d.detected_pest] = (acc[d.detected_pest] || 0) + 1;
+      if (d.pest_type) {
+        acc[d.pest_type] = (acc[d.pest_type] || 0) + 1;
       }
       return acc;
     }, {}) || {};
@@ -468,20 +656,26 @@ router.get('/outbreak-map',
 
     const opts = {
       since: startDate.getTime(),
-      status: ['confirmed', 'pending_review']
+      statuses: ['detected']
     };
 
     const data = await db.pestDetections.getOutbreakMap(opts);
 
     // Group by district for outbreak analysis
     const byDistrict = data?.reduce((acc, d) => {
-      const district = d.farm?.district || d.district || 'Unknown';
+      const district = d.farm?.district?.name || d.farm?.district_id || d.district || 'Unknown';
       if (!acc[district]) {
-        acc[district] = { count: 0, detections: [], severity: { low: 0, medium: 0, high: 0, critical: 0 } };
+        acc[district] = {
+          count: 0,
+          detections: [],
+          severity: { none: 0, low: 0, moderate: 0, high: 0, severe: 0 },
+        };
       }
       acc[district].count++;
       acc[district].detections.push(d);
-      if (d.severity) acc[district].severity[d.severity]++;
+      if (d.severity && Object.prototype.hasOwnProperty.call(acc[district].severity, d.severity)) {
+        acc[district].severity[d.severity]++;
+      }
       return acc;
     }, {}) || {};
 
@@ -551,33 +745,104 @@ router.post('/:detectionId/review',
   asyncHandler(async (req, res) => {
     const { detectionId } = req.params;
     const { 
-      confirmedPest, 
-      confirmedSeverity, 
-      status, 
+      confirmedPest,
+      pestType,
+      confirmedSeverity,
+      severity,
+      isConfirmed,
       expertNotes, 
       treatmentRecommendations 
     } = req.body;
 
+    const existingDetection = await db.pestDetections.getById(detectionId);
+
+    if (!existingDetection) {
+      return res.status(404).json({
+        success: false,
+        message: 'Detection not found',
+        code: 'NOT_FOUND'
+      });
+    }
+
+    const resolvedPestType = confirmedPest || pestType || (isConfirmed ? existingDetection.pest_type : 'none');
+    const resolvedSeverity = confirmedSeverity || severity || (isConfirmed ? existingDetection.severity : 'none');
+    const reviewConfirmed = typeof isConfirmed === 'boolean' ? isConfirmed : Boolean(confirmedPest || pestType);
+
     const detection = await db.pestDetections.update(detectionId, {
-      detected_pest: confirmedPest,
-      severity: confirmedSeverity,
-      status: status || 'confirmed',
+      pest_type: reviewConfirmed ? resolvedPestType : 'none',
+      severity: reviewConfirmed ? resolvedSeverity : 'none',
+      pest_detected: reviewConfirmed,
+      is_confirmed: reviewConfirmed,
       expert_notes: expertNotes,
-      treatment_recommendations: treatmentRecommendations,
       reviewed_by: req.user._id,
-      reviewed_at: new Date().toISOString()
+      reviewed_at: Date.now(),
+      detection_metadata: {
+        ...(existingDetection.detection_metadata || {}),
+        expertReview: {
+          isConfirmed: reviewConfirmed,
+          pestType: reviewConfirmed ? resolvedPestType : 'none',
+          severity: reviewConfirmed ? resolvedSeverity : 'none',
+          expertNotes: expertNotes || '',
+          treatmentRecommendations: treatmentRecommendations || [],
+          reviewedBy: req.user._id,
+          reviewedAt: new Date().toISOString(),
+        },
+      },
+    });
+    if (!detection) {
+      return res.status(404).json({
+        success: false,
+        message: 'Detection not found',
+        code: 'NOT_FOUND'
+      });
+    }
+
+    await logPestAuditEvent({
+      user_id: req.user.id,
+      action: 'REVIEW_PEST_DETECTION',
+      entity_type: 'pest_detections',
+      entity_id: detectionId,
+      old_values: {
+        pest_detected: existingDetection.pest_detected,
+        pest_type: existingDetection.pest_type,
+        severity: existingDetection.severity,
+        is_confirmed: existingDetection.is_confirmed,
+        reviewed_by: existingDetection.reviewed_by,
+      },
+      new_values: {
+        pest_detected: reviewConfirmed,
+        pest_type: reviewConfirmed ? resolvedPestType : 'none',
+        severity: reviewConfirmed ? resolvedSeverity : 'none',
+        is_confirmed: reviewConfirmed,
+        reviewed_by: req.user.id,
+      },
     });
 
-    // Create or update recommendation based on expert review
-    if (confirmedPest && status === 'confirmed') {
-      await recommendationService.createPestAlert(detection.farm_id, {
-        pestName: confirmedPest,
-        severity: confirmedSeverity,
-        detectionId: detection._id,
-        recommendations: treatmentRecommendations,
+    if (
+      aiService.shouldCreatePestAlertRecommendation({
+        pestDetected: reviewConfirmed,
+        confidenceScore: detection.confidence_score,
+        severity: reviewConfirmed ? resolvedSeverity : 'none',
         expertVerified: true,
-        expertId: req.user.id
-      });
+      })
+    ) {
+      Promise.resolve()
+        .then(() =>
+          recommendationService.createPestAlertRecommendation(detection.farm_id, {
+            pestDetectionId: detection._id,
+            pestType: resolvedPestType,
+            severity: resolvedSeverity,
+            confidence: detection.confidence_score,
+            affectedArea: detection.affected_area_percentage,
+            imageUrl: detection.image_url,
+            recommendations: treatmentRecommendations || detection.detection_metadata?.analysis?.recommendations || [],
+            expertVerified: true,
+            expertId: req.user.id,
+          })
+        )
+        .catch((error) => {
+          logger.warn('Failed to create expert-confirmed pest alert recommendation:', error?.message || error);
+        });
     }
 
     return successResponse(res, detection, 'Detection reviewed successfully');
@@ -610,6 +875,21 @@ router.delete('/:detectionId',
     }
 
     await db.pestDetections.remove(req.params.detectionId);
+
+    await logPestAuditEvent({
+      user_id: req.user.id,
+      action: 'DELETE_PEST_DETECTION',
+      entity_type: 'pest_detections',
+      entity_id: req.params.detectionId,
+      old_values: {
+        farm_id: detection.farm_id,
+        image_url: detection.image_url,
+        pest_detected: detection.pest_detected,
+        pest_type: detection.pest_type,
+        severity: detection.severity,
+      },
+    });
+
     return successResponse(res, { id: req.params.detectionId }, 'Pest detection deleted successfully');
   })
 );

@@ -10,9 +10,25 @@
 import { db } from '../database/convex.js';
 import { NotFoundError, ForbiddenError, BadRequestError } from '../utils/errors.js';
 import logger from '../utils/logger.js';
+import * as sensorService from './sensorService.js';
 
 const withDefinedFields = (fields) =>
   Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined));
+
+const pickFields = (source, fields) =>
+  Object.fromEntries(
+    fields
+      .filter((field) => source[field] !== undefined)
+      .map((field) => [field, source[field]])
+  );
+
+const logFarmAuditEvent = async (entry) => {
+  try {
+    await db.auditLogs.create(entry);
+  } catch (error) {
+    logger.warn('Failed to write farm audit log:', error?.message || error);
+  }
+};
 
 /**
  * Get farm by ID
@@ -114,6 +130,14 @@ export const createFarm = async (userId, farmData) => {
 
   const data = await db.farms.create(payload);
 
+  await logFarmAuditEvent({
+    user_id: userId,
+    action: 'CREATE_FARM',
+    entity_type: 'farms',
+    entity_id: data._id,
+    new_values: pickFields(data, Object.keys(payload)),
+  });
+
   logger.info(`Farm created: ${data._id} for user ${userId}`);
   return data;
 };
@@ -176,6 +200,18 @@ export const updateFarm = async (farmId, updateData, userId) => {
   }
 
   const data = await db.farms.update(farmId, updates);
+  if (!data) {
+    throw new NotFoundError('Farm not found');
+  }
+
+  await logFarmAuditEvent({
+    user_id: userId,
+    action: 'UPDATE_FARM',
+    entity_type: 'farms',
+    entity_id: farmId,
+    old_values: pickFields(farm, Object.keys(updates)),
+    new_values: updates,
+  });
 
   logger.info(`Farm updated: ${farmId}`);
   return data;
@@ -188,14 +224,31 @@ export const updateFarm = async (farmId, updateData, userId) => {
  * @returns {Promise<void>}
  */
 export const deleteFarm = async (farmId, userId) => {
-  await db.farms.softDelete(farmId);
+  const farm = await getFarmById(farmId);
+  const deleted = await db.farms.softDelete(farmId);
+  if (!deleted) {
+    throw new NotFoundError('Farm not found');
+  }
 
   // Create audit log
-  await db.auditLogs.create({
+  await logFarmAuditEvent({
     user_id: userId,
     action: 'DELETE_FARM',
     entity_type: 'farms',
-    entity_id: farmId
+    entity_id: farmId,
+    old_values: pickFields(farm, [
+      'name',
+      'district_id',
+      'location_name',
+      'latitude',
+      'longitude',
+      'size_hectares',
+      'soil_type',
+      'crop_variety',
+      'current_growth_stage',
+      'is_active',
+    ]),
+    new_values: { is_active: false },
   });
 
   logger.info(`Farm deleted: ${farmId} by ${userId}`);
@@ -207,24 +260,20 @@ export const deleteFarm = async (farmId, userId) => {
  * @returns {Promise<Object>} Farm summary
  */
 export const getFarmSummary = async (farmId) => {
-  // Get farm details
-  const farm = await getFarmById(farmId);
-
-  // Get latest sensor readings
-  const latestReadings = await db.sensorData.getLatestByFarm(farmId);
-
-  // Get pending recommendations count
-  const pendingRecommendations = await db.recommendations.getPendingCount({ farmId });
-
-  // Get recent pest detections
-  const recentPests = await db.pestDetections.getRecent(farmId, 5);
-
-  // Get upcoming irrigation schedules
-  const upcomingIrrigation = await db.irrigationSchedules.getUpcoming(
-    farmId,
-    new Date().toISOString().split('T')[0],
-    3
-  );
+  const today = new Date().toISOString().split('T')[0];
+  const [
+    farm,
+    latestReadings,
+    pendingRecommendations,
+    recentPests,
+    upcomingIrrigation,
+  ] = await Promise.all([
+    getFarmById(farmId),
+    sensorService.getLatestReadings(farmId),
+    db.recommendations.getPendingCount({ farmId }),
+    db.pestDetections.getRecent(farmId, 5),
+    db.irrigationSchedules.getUpcoming(farmId, today, 3),
+  ]);
 
   return {
     farm,

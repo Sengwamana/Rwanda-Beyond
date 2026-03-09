@@ -10,7 +10,7 @@
 import { clerkClient, verifyToken } from '@clerk/clerk-sdk-node';
 import config from '../config/index.js';
 import { db } from '../database/convex.js';
-import { UnauthorizedError, ForbiddenError } from '../utils/errors.js';
+import { UnauthorizedError, ForbiddenError, NotFoundError } from '../utils/errors.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -58,6 +58,17 @@ const isDatabaseUnavailableError = (error) => {
   const code = error?.cause?.code || error?.code;
   const message = String(error?.message || '').toLowerCase();
   return code === 'ECONNREFUSED' || code === 'ENOTFOUND' || message.includes('fetch failed');
+};
+
+const logUserAuditEvent = async (entry) => {
+  try {
+    await db.auditLogs.create({
+      ...entry,
+      created_at: Date.now(),
+    });
+  } catch (auditError) {
+    logger.warn('Failed to write auth audit log:', auditError.message);
+  }
 };
 
 /**
@@ -156,6 +167,24 @@ const getOrCreateUser = async (clerkId, tokenPayload = {}) => {
 
     try {
       user = await db.users.create(newUser);
+      await logUserAuditEvent({
+        user_id: user._id,
+        action: 'CREATE_USER',
+        entity_type: 'users',
+        entity_id: user._id,
+        new_values: {
+          clerk_id: user.clerk_id,
+          email: user.email,
+          phone_number: user.phone_number,
+          first_name: user.first_name,
+          last_name: user.last_name,
+          role: user.role,
+          preferred_language: user.preferred_language,
+          profile_image_url: user.profile_image_url,
+          metadata: user.metadata,
+          is_active: user.is_active,
+        },
+      });
       logger.info(`New user created: ${user._id} (${user.email})`);
     } catch (createError) {
       // Handle race condition where another request created this user first.
@@ -185,9 +214,18 @@ const getOrCreateUser = async (clerkId, tokenPayload = {}) => {
       }
 
       if (nextRole !== user.role) {
+        const previousRole = user.role;
         user = await db.users.update(user._id, {
           role: nextRole,
           updated_at: Date.now(),
+        });
+        await logUserAuditEvent({
+          user_id: user._id,
+          action: 'UPDATE_USER_ROLE',
+          entity_type: 'users',
+          entity_id: user._id,
+          old_values: { role: previousRole },
+          new_values: { role: nextRole },
         });
       }
     } catch (clerkError) {
@@ -197,8 +235,26 @@ const getOrCreateUser = async (clerkId, tokenPayload = {}) => {
 
   // Update last login (best effort)
   try {
-    await db.users.update(user._id, { last_login_at: Date.now() });
+    const previousLastLogin = user.last_login_at ?? null;
+    const nextLastLogin = Date.now();
+    user = await db.users.update(user._id, { last_login_at: nextLastLogin });
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+
+    await logUserAuditEvent({
+      user_id: user._id,
+      action: 'UPDATE_USER_LAST_LOGIN',
+      entity_type: 'users',
+      entity_id: user._id,
+      old_values: { last_login_at: previousLastLogin },
+      new_values: { last_login_at: nextLastLogin },
+    });
   } catch (lastLoginError) {
+    if (lastLoginError instanceof NotFoundError) {
+      throw lastLoginError;
+    }
+
     logger.warn('Failed to update last login timestamp:', lastLoginError.message);
   }
 

@@ -20,6 +20,7 @@ export interface UserProfile {
   phoneNumber?: string;
   preferredLanguage?: 'en' | 'rw' | 'fr';
   profileImageUrl?: string;
+  metadata?: Record<string, any>;
 }
 
 const PREFERRED_ROLE_KEY = 'preferred-role';
@@ -62,6 +63,7 @@ export function normalizeUser(user: any): User {
             ? verifiedFromMetadata
             : false,
     lastLoginAt: user?.lastLoginAt || user?.last_login_at || undefined,
+    metadata,
     createdAt: user?.createdAt || user?.created_at || new Date().toISOString(),
     updatedAt: user?.updatedAt || user?.updated_at || new Date().toISOString(),
   };

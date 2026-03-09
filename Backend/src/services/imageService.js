@@ -13,7 +13,7 @@ import { CloudinaryStorage } from 'multer-storage-cloudinary';
 import { db } from '../database/convex.js';
 import config from '../config/index.js';
 import logger from '../utils/logger.js';
-import { BadRequestError } from '../utils/errors.js';
+import { BadRequestError, NotFoundError } from '../utils/errors.js';
 
 const bufferToDataUrl = (imageData, mimeType = 'image/jpeg') => {
   if (typeof imageData === 'string' && imageData.startsWith('data:image/')) {
@@ -33,6 +33,31 @@ cloudinary.config({
   api_key: config.cloudinary.apiKey,
   api_secret: config.cloudinary.apiSecret
 });
+
+const PEST_IMAGE_QUALITY_RULES = {
+  minBytes: 40 * 1024,
+  minWidth: 320,
+  minHeight: 320,
+};
+
+const formatQualityIssues = (issues) => {
+  if (issues.length === 0) {
+    return '';
+  }
+
+  return `${issues.join(' ')} Please upload a clear, close-up image of the affected maize leaves or pest damage.`;
+};
+
+const logPestAuditEvent = async (entry) => {
+  try {
+    await db.auditLogs.create({
+      ...entry,
+      created_at: Date.now(),
+    });
+  } catch (error) {
+    logger.warn('Failed to write image-service audit log:', error?.message || error);
+  }
+};
 
 /**
  * Cloudinary storage configuration for multer
@@ -79,6 +104,48 @@ export const upload = multer({
     files: 5 // Maximum 5 files per request
   }
 });
+
+export const validatePestImageFile = (file) => {
+  const issues = [];
+
+  if (!file) {
+    issues.push('Image file is missing.');
+  } else if (typeof file.size === 'number' && file.size < PEST_IMAGE_QUALITY_RULES.minBytes) {
+    issues.push(`Image file is too small. Minimum size is ${Math.round(PEST_IMAGE_QUALITY_RULES.minBytes / 1024)}KB.`);
+  }
+
+  return {
+    valid: issues.length === 0,
+    issues,
+    message: formatQualityIssues(issues),
+  };
+};
+
+export const validateUploadedPestImage = (image) => {
+  const issues = [];
+
+  if (typeof image?.width === 'number' && image.width < PEST_IMAGE_QUALITY_RULES.minWidth) {
+    issues.push(`Image width is too small. Minimum width is ${PEST_IMAGE_QUALITY_RULES.minWidth}px.`);
+  }
+
+  if (typeof image?.height === 'number' && image.height < PEST_IMAGE_QUALITY_RULES.minHeight) {
+    issues.push(`Image height is too small. Minimum height is ${PEST_IMAGE_QUALITY_RULES.minHeight}px.`);
+  }
+
+  return {
+    valid: issues.length === 0,
+    issues,
+    message: formatQualityIssues(issues),
+  };
+};
+
+export const deleteUploadedImages = async (uploads = []) => {
+  await Promise.all(
+    uploads
+      .filter((upload) => upload?.publicId)
+      .map((upload) => deleteImage(upload.publicId).catch(() => null))
+  );
+};
 
 /**
  * Upload image directly to Cloudinary
@@ -208,7 +275,8 @@ export const processPestDetectionImage = async (file, metadata = {}) => {
     userId,
     locationDescription,
     latitude,
-    longitude
+    longitude,
+    capturedAt,
   } = metadata;
 
   // Generate thumbnail
@@ -226,9 +294,25 @@ export const processPestDetectionImage = async (file, metadata = {}) => {
       cloudinary_public_id: file.filename,
       thumbnail_url: thumbnailUrl,
       location_description: locationDescription,
-      coordinates: latitude && longitude ? `POINT(${longitude} ${latitude})` : null,
+      latitude,
+      longitude,
+      detection_metadata: capturedAt ? { captured_at: new Date(capturedAt).toISOString() } : undefined,
       pest_detected: false, // Will be updated after AI analysis
       severity: 'none'
+    });
+
+    await logPestAuditEvent({
+      user_id: userId,
+      action: 'CREATE_PEST_DETECTION',
+      entity_type: 'pest_detections',
+      entity_id: data._id,
+      new_values: {
+        farm_id: farmId,
+        image_url: file.path,
+        latitude,
+        longitude,
+        captured_at: capturedAt ? new Date(capturedAt).toISOString() : undefined,
+      },
     });
 
     logger.info(`Pest detection image processed: ${data._id}`);
@@ -238,7 +322,8 @@ export const processPestDetectionImage = async (file, metadata = {}) => {
       imageUrl: file.path,
       thumbnailUrl,
       aiOptimizedUrl,
-      publicId: file.filename
+      publicId: file.filename,
+      capturedAt: capturedAt ? new Date(capturedAt).toISOString() : undefined,
     };
   } catch (error) {
     // Clean up uploaded image on database error
@@ -291,6 +376,11 @@ export const updateDetectionResults = async (detectionId, results) => {
     detectionMetadata
   } = results;
 
+  const existing = await db.pestDetections.getById(detectionId);
+  if (!existing) {
+    throw new NotFoundError('Pest detection not found');
+  }
+
   const data = await db.pestDetections.update(detectionId, {
     pest_detected: pestDetected,
     pest_type: pestType,
@@ -299,6 +389,30 @@ export const updateDetectionResults = async (detectionId, results) => {
     affected_area_percentage: affectedAreaPercentage,
     model_version: modelVersion,
     detection_metadata: detectionMetadata
+  });
+  if (!data) {
+    throw new NotFoundError('Pest detection not found');
+  }
+
+  await logPestAuditEvent({
+    user_id: existing?.reported_by,
+    action: 'UPDATE_PEST_DETECTION_RESULTS',
+    entity_type: 'pest_detections',
+    entity_id: detectionId,
+    old_values: existing
+      ? {
+          pest_detected: existing.pest_detected,
+          pest_type: existing.pest_type,
+          severity: existing.severity,
+          confidence_score: existing.confidence_score,
+        }
+      : undefined,
+    new_values: {
+      pest_detected: pestDetected,
+      pest_type: pestType,
+      severity,
+      confidence_score: confidenceScore,
+    },
   });
 
   logger.info(`Detection results updated: ${detectionId}, pest_detected: ${pestDetected}`);
@@ -315,11 +429,38 @@ export const updateDetectionResults = async (detectionId, results) => {
 export const addExpertReview = async (detectionId, expertId, review) => {
   const { isConfirmed, notes } = review;
 
+  const existing = await db.pestDetections.getById(detectionId);
+  if (!existing) {
+    throw new NotFoundError('Pest detection not found');
+  }
+
   const data = await db.pestDetections.update(detectionId, {
     reviewed_by: expertId,
     reviewed_at: Date.now(),
     is_confirmed: isConfirmed,
     expert_notes: notes
+  });
+  if (!data) {
+    throw new NotFoundError('Pest detection not found');
+  }
+
+  await logPestAuditEvent({
+    user_id: expertId,
+    action: 'REVIEW_PEST_DETECTION',
+    entity_type: 'pest_detections',
+    entity_id: detectionId,
+    old_values: existing
+      ? {
+          reviewed_by: existing.reviewed_by,
+          is_confirmed: existing.is_confirmed,
+          expert_notes: existing.expert_notes,
+        }
+      : undefined,
+    new_values: {
+      reviewed_by: expertId,
+      is_confirmed: isConfirmed,
+      expert_notes: notes,
+    },
   });
 
   logger.info(`Expert review added to detection ${detectionId} by ${expertId}`);
@@ -383,20 +524,35 @@ export const cleanupOldImages = async (daysOld = 90) => {
 
   logger.info(`Cleaning up ${data.length} old images`);
 
-  for (const record of data) {
-    try {
-      // Delete from Cloudinary
-      if (record.cloudinary_public_id) {
-        await deleteImage(record.cloudinary_public_id);
+  await Promise.all(
+    data.map(async (record) => {
+      try {
+        if (record.cloudinary_public_id) {
+          await deleteImage(record.cloudinary_public_id);
+        }
+
+        const detectionId = record.id || record._id;
+        await db.pestDetections.remove(detectionId);
+        await logPestAuditEvent({
+          action: 'DELETE_PEST_DETECTION',
+          entity_type: 'pest_detections',
+          entity_id: detectionId,
+          old_values: {
+            cloudinary_public_id: record.cloudinary_public_id || null,
+            created_at: record.created_at || null,
+            reviewed_by: record.reviewed_by || null,
+            is_confirmed: record.is_confirmed,
+          },
+          new_values: {
+            deleted_by_cleanup: true,
+            retention_days: daysOld,
+          },
+        });
+      } catch (cleanupError) {
+        logger.error(`Failed to cleanup image ${record.id || record._id}:`, cleanupError);
       }
-
-      // Delete database record
-      await db.pestDetections.remove(record._id);
-
-    } catch (cleanupError) {
-      logger.error(`Failed to cleanup image ${record._id}:`, cleanupError);
-    }
-  }
+    })
+  );
 
   logger.info('Image cleanup completed');
 };
@@ -404,6 +560,9 @@ export const cleanupOldImages = async (daysOld = 90) => {
 export default {
   upload,
   uploadImage,
+  validatePestImageFile,
+  validateUploadedPestImage,
+  deleteUploadedImages,
   getThumbnailUrl,
   getAIOptimizedUrl,
   deleteImage,

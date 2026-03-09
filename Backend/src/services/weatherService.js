@@ -16,6 +16,39 @@ import { ServiceUnavailableError } from '../utils/errors.js';
 // Simple in-memory cache for weather data
 const weatherCache = new Map();
 
+const logWeatherAuditEvent = async (entry) => {
+  try {
+    await db.auditLogs.create({
+      ...entry,
+      created_at: Date.now(),
+    });
+  } catch (error) {
+    logger.warn('Failed to write weather audit log:', error?.message || error);
+  }
+};
+
+const resolveLatLon = (entity, fallback = {}) => {
+  if (!entity || typeof entity !== 'object') {
+    return fallback;
+  }
+
+  if (typeof entity.latitude === 'number' && typeof entity.longitude === 'number') {
+    return { lat: entity.latitude, lon: entity.longitude };
+  }
+
+  if (entity.coordinates && typeof entity.coordinates === 'string') {
+    const match = entity.coordinates.match(/POINT\(([^ ]+) ([^)]+)\)/);
+    if (match) {
+      return {
+        lon: parseFloat(match[1]),
+        lat: parseFloat(match[2]),
+      };
+    }
+  }
+
+  return fallback;
+};
+
 /**
  * Get cache key for coordinates
  * @param {number} lat - Latitude
@@ -210,7 +243,8 @@ const getMostFrequent = (arr) => {
 export const storeWeatherData = async (districtId, lat, lon, forecastData) => {
   const records = forecastData.map(day => ({
     district_id: districtId,
-    coordinates: `POINT(${lon} ${lat})`,
+    latitude: lat,
+    longitude: lon,
     forecast_date: day.date,
     temperature: day.temperatureAvg,
     humidity: day.humidityAvg,
@@ -225,6 +259,19 @@ export const storeWeatherData = async (districtId, lat, lon, forecastData) => {
 
   // Upsert weather data
   await db.weatherData.upsert(records);
+  await logWeatherAuditEvent({
+    action: 'UPSERT_WEATHER_DATA',
+    entity_type: 'weather_data',
+    entity_id: districtId,
+    new_values: {
+      district_id: districtId,
+      latitude: lat,
+      longitude: lon,
+      record_count: records.length,
+      forecast_dates: records.map((record) => record.forecast_date),
+      source: 'openweathermap',
+    },
+  });
 
   logger.info(`Stored ${records.length} weather records for district ${districtId}`);
 };
@@ -266,14 +313,7 @@ export const getWeatherForFarm = async (farmId, forecastDays = 7) => {
   let lat = -1.9403;
   let lon = 29.8739;
 
-  if (farm.coordinates) {
-    // Parse POINT coordinates
-    const match = farm.coordinates.match(/POINT\(([^ ]+) ([^)]+)\)/);
-    if (match) {
-      lon = parseFloat(match[1]);
-      lat = parseFloat(match[2]);
-    }
-  }
+  ({ lat, lon } = resolveLatLon(farm, { lat, lon }));
 
   // Fetch current weather and forecast
   const [current, forecast] = await Promise.all([
@@ -361,14 +401,7 @@ export const updateAllDistrictsWeather = async () => {
   for (const district of districts) {
     try {
       // Get coordinates (from district or default by province)
-      let lat, lon;
-      if (district.coordinates) {
-        const match = district.coordinates.match(/POINT\(([^ ]+) ([^)]+)\)/);
-        if (match) {
-          lon = parseFloat(match[1]);
-          lat = parseFloat(match[2]);
-        }
-      }
+      let { lat, lon } = resolveLatLon(district, {});
 
       if (!lat || !lon) {
         // Use default for Kigali

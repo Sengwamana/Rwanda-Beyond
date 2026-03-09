@@ -57,21 +57,25 @@ export const FERTILIZER_TYPES = {
   'CAN': { n: 27, p: 0, k: 0, name: 'Calcium Ammonium Nitrate', useCase: 'Top dressing, nitrogen boost' }
 };
 
+const toScheduleDateString = (value) => new Date(value).toISOString().split('T')[0];
+
 /**
  * Analyze soil nutrients for a farm
  * @param {string} farmId - Farm UUID
  * @returns {Promise<Object>} Nutrient analysis results
  */
 export const analyzeSoilNutrients = async (farmId) => {
-  // Get farm details including growth stage
-  const farm = await db.farms.getById(farmId);
+  const since = toScheduleDateString(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const [farm, allReadings, recentApplications] = await Promise.all([
+    db.farms.getById(farmId),
+    db.sensorData.getLatestReadings(farmId, 20),
+    db.fertilizationSchedules.getHistory(farmId, since, 30),
+  ]);
 
   if (!farm) {
     throw new NotFoundError('Farm not found');
   }
 
-  // Get latest NPK sensor readings
-  const allReadings = await db.sensorData.getLatestReadings(farmId, 20);
   const latestReadings = (allReadings || [])
     .filter(r => r.is_valid && r.nitrogen != null)
     .slice(0, 5);
@@ -105,10 +109,6 @@ export const analyzeSoilNutrients = async (farmId) => {
 
   // Determine overall soil health score
   const healthScore = calculateSoilHealthScore(analysis);
-
-  // Get fertilization history
-  const since = Date.now() - 30 * 24 * 60 * 60 * 1000;
-  const recentApplications = await db.fertilizationSchedules.getHistory(farmId, since);
 
   return {
     farmId,
@@ -477,7 +477,7 @@ export const getFertilizationHistory = async (farmId, days = 90) => {
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - days);
 
-  const data = await db.fertilizationSchedules.getHistory(farmId, startDate.getTime());
+  const data = await db.fertilizationSchedules.getHistory(farmId, toScheduleDateString(startDate), Math.max(days, 30));
 
   // Calculate totals
   const totals = (data || []).reduce((acc, app) => {
