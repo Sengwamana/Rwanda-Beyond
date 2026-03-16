@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { 
   ArrowRight, ArrowUpRight, Cloud, Sun, Droplets, MapPin, 
   MessageSquare, Mic, List, CheckCircle2, TrendingUp, Bell,
@@ -161,7 +161,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onNavigate, l
                              <div className="flex-1">
                                  <div className="flex justify-between items-start">
                                      <h5 className="text-xs font-bold text-slate-900 mb-1">Beans Field - Block B</h5>
-                                     <span className="text-[10px] font-bold bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded">Dry</span>
+                                     <span className="text-[10px] font-bold bg-green-50 text-green-600 px-1.5 py-0.5 rounded">Dry</span>
                                  </div>
                                  <p className="text-[10px] text-slate-400 mb-2">Expected Harvest: 21 July 2024</p>
                                  <div className="flex justify-between items-center">
@@ -501,3 +501,4 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onNavigate, l
     </div>
   );
 };
+

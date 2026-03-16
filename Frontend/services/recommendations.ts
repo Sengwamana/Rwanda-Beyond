@@ -22,6 +22,9 @@ function normalizeRecommendation(item: any): Recommendation {
     description: item?.description || '',
     descriptionRw: item?.descriptionRw || item?.description_rw || undefined,
     recommendedAction: item?.recommendedAction || item?.recommended_action || undefined,
+    irrigationScheduleId: item?.irrigationScheduleId || item?.irrigation_schedule_id || undefined,
+    fertilizationScheduleId: item?.fertilizationScheduleId || item?.fertilization_schedule_id || undefined,
+    pestDetectionId: item?.pestDetectionId || item?.pest_detection_id || undefined,
     actionDeadline:
       item?.actionDeadline
       || (typeof item?.action_deadline === 'number' ? new Date(item.action_deadline).toISOString() : item?.action_deadline)
@@ -33,6 +36,11 @@ function normalizeRecommendation(item: any): Recommendation {
       item?.respondedAt
       || (typeof item?.responded_at === 'number' ? new Date(item.responded_at).toISOString() : item?.responded_at)
       || undefined,
+    respondedBy:
+      item?.respondedBy
+      || item?.responded_by
+      || undefined,
+    responseChannel: item?.responseChannel || item?.response_channel || undefined,
     responseNotes: item?.responseNotes || item?.response_notes || undefined,
     deferredUntil:
       item?.deferredUntil
@@ -173,17 +181,23 @@ export const recommendationService = {
     byType: Record<string, number>;
     byStatus: Record<string, number>;
     byPriority: Record<string, number>;
+    byChannel: Record<string, number>;
+    responseRate: number;
     acceptanceRate: number;
     avgResponseTime: number;
+    averageResponseTime?: number | null;
   }>> => {
     const response = await apiClient.get<ApiResponse<{
       total: number;
       byType: Record<string, number>;
       byStatus: Record<string, number>;
       byPriority: Record<string, number>;
+      byChannel: Record<string, number>;
+      responseRate: number;
       acceptanceRate: number;
       avgResponseTime: number;
-    }>>('/recommendations/statistics', { params });
+      averageResponseTime?: number | null;
+    }>>('/recommendations/stats', { params });
     return response.data;
   },
 
@@ -266,6 +280,8 @@ export const recommendationService = {
     page?: number;
     limit?: number;
     district?: string;
+    type?: string;
+    priority?: string;
   }): Promise<PaginatedResponse<Recommendation>> => {
     const response = await apiClient.get<PaginatedResponse<Recommendation>>(
       '/recommendations/pending',
@@ -299,6 +315,7 @@ export const recommendationService = {
    */
   bulkGenerate: async (params?: {
     district?: string;
+    type?: string;
     farmIds?: string[];
   }): Promise<ApiResponse<{
     generated: number;

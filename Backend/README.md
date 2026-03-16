@@ -26,6 +26,21 @@ This backend system serves as the core infrastructure for the Smart Maize Farmin
 - **Multi-Channel Communication**: SMS alerts, USSD menus, and web interface support
 - **Expert Support System**: Connect farmers with agricultural experts
 
+## Current Stage
+
+As of March 2026, the project is in an advanced development and hardening stage.
+
+- Core farmer, expert, and admin flows are implemented across the frontend and backend.
+- The local development stack runs with:
+  - Frontend: `http://localhost:5173`
+  - Backend API: `http://localhost:3000/api/v1`
+  - Local Convex deployment: `http://127.0.0.1:3210`
+- Sensor ingestion, pest image storage, farm management, user profile management, historical weather storage, and audit/system log storage are implemented and covered by targeted regression tests.
+- AI advice, pest analysis, irrigation analysis, fertilization analysis, notification delivery, analytics, admin tooling, and the voice assistant are implemented and are currently being optimized and verified.
+- Current work is focused on production-readiness: data-layer hardening, route consistency, performance improvements, documentation sync, and UI refinement.
+
+This is no longer an early prototype. It is a working multi-service development build that still needs final deployment hardening before production rollout.
+
 ## Features
 
 ### 🌱 Farm Management
@@ -157,7 +172,14 @@ Backend/
    npx convex dev
    ```
 
+   This starts a local Convex deployment, pushes `convex/schema.ts`, and writes the local deployment settings used by the backend.
+
 5. **Start development server**
+   ```bash
+   npm run dev
+   ```
+
+   Frontend development runs separately from the `Frontend/` directory:
    ```bash
    npm run dev
    ```
@@ -465,14 +487,14 @@ The system runs automated background tasks using node-cron:
 
 | Task | Schedule | Description |
 |------|----------|-------------|
-| Weather Updates | Every 30 min | Fetch latest weather for all farms |
+| Weather Updates | Hourly | Fetch latest weather for all districts/farms |
 | Daily Recommendations | 6:00 AM | Generate irrigation/fertilization recommendations |
-| Sensor Health Check | Every 15 min | Monitor sensor connectivity |
+| Sensor Health Check | Every 30 min | Monitor sensor connectivity |
 | Notification Processing | Every 5 min | Send queued SMS messages |
-| Recommendation Expiry | Midnight | Expire old pending recommendations |
-| Irrigation Analysis | Every 2 hours | AI-driven irrigation analysis |
-| Data Cleanup | 2:00 AM weekly | Archive old sensor data |
-| Daily Summaries | 6:00 PM | Send daily farm summary SMS |
+| Recommendation Expiry | Every 6 hours | Expire old pending recommendations |
+| Irrigation Analysis | Every 4 hours | AI-driven irrigation analysis |
+| Data Cleanup | Midnight | Remove old sensor, weather, and audit data |
+| Daily Summaries | 7:00 PM EAT | Send daily farm summary SMS |
 
 ### Production Checklist
 - [ ] Set `NODE_ENV=production`

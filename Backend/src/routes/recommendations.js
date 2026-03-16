@@ -331,7 +331,8 @@ router.post('/:recommendationId/respond',
       {
         reason,
         deferUntil,
-        respondedBy: req.user.id
+        respondedBy: req.user.id,
+        channel: 'web',
       }
     );
 

@@ -7,6 +7,9 @@ import {
   WeatherData, 
   WeatherForecast, 
   FarmingConditions,
+  WeatherAlert,
+  WeatherHistoryPayload,
+  IrrigationWindowPayload,
   ApiResponse 
 } from '../types';
 
@@ -66,26 +69,29 @@ export const weatherService = {
    * Get weather alerts for a farm
    */
   getWeatherAlerts: async (farmId: string): Promise<ApiResponse<{
-    alerts: Array<{
-      type: string;
-      severity: string;
-      title: string;
-      description: string;
-      startTime: string;
-      endTime?: string;
-    }>;
+    alerts: WeatherAlert[];
   }>> => {
-    const response = await apiClient.get<ApiResponse<{
-      alerts: Array<{
-        type: string;
-        severity: string;
-        title: string;
-        description: string;
-        startTime: string;
-        endTime?: string;
-      }>;
-    }>>(`/weather/farm/${farmId}/alerts`);
-    return response.data;
+    const response = await apiClient.get<ApiResponse<any>>(`/weather/farm/${farmId}/alerts`);
+    const payload = response.data.data;
+    const rawAlerts = Array.isArray(payload)
+      ? payload
+      : Array.isArray(payload?.alerts)
+        ? payload.alerts
+        : [];
+
+    return {
+      ...response.data,
+      data: {
+        alerts: rawAlerts.map((alert: any) => ({
+          type: alert?.type || 'weather',
+          severity: alert?.severity || 'info',
+          title: alert?.title || 'Weather update',
+          description: alert?.description || '',
+          startTime: alert?.startTime || alert?.start_time,
+          endTime: alert?.endTime || alert?.end_time,
+        })),
+      },
+    };
   },
 
   /**
@@ -97,9 +103,33 @@ export const weatherService = {
       startDate: string;
       endDate: string;
     }
-  ): Promise<ApiResponse<WeatherData[]>> => {
-    const response = await apiClient.get<ApiResponse<WeatherData[]>>(`/weather/farm/${farmId}/history`, { params });
-    return response.data;
+  ): Promise<ApiResponse<WeatherHistoryPayload>> => {
+    const response = await apiClient.get<ApiResponse<any>>(`/weather/farm/${farmId}/history`, { params });
+    const payload = response.data.data || {};
+    const rows = Array.isArray(payload?.data) ? payload.data : [];
+
+    return {
+      ...response.data,
+      data: {
+        farmId: payload?.farmId || payload?.farm_id || farmId,
+        period: payload?.period || {
+          start: params.startDate,
+          end: params.endDate,
+        },
+        data: rows.map((row: any) => ({
+          id: row?._id || row?.id,
+          forecastDate: row?.forecastDate || row?.forecast_date,
+          forecastTime: row?.forecastTime || row?.forecast_time,
+          temperature: row?.temperature,
+          humidity: row?.humidity,
+          precipitationProbability: row?.precipitationProbability ?? row?.precipitation_probability,
+          rainMm: row?.rainMm ?? row?.rain_mm,
+          weatherCondition: row?.weatherCondition || row?.weather_condition,
+          windSpeed: row?.windSpeed ?? row?.wind_speed,
+          source: row?.source,
+        })),
+      },
+    };
   },
 
   // =====================================================
@@ -119,28 +149,40 @@ export const weatherService = {
   /**
    * Get optimal irrigation window for a farm
    */
-  getIrrigationWindow: async (farmId: string): Promise<ApiResponse<{
-    farmId: string;
-    recommended: boolean;
-    optimalWindow: {
-      start: string;
-      end: string;
-      confidence: number;
-    } | null;
-    factors: {
-      currentSoilMoisture: number;
-      forecastRain: boolean;
-      expectedRainfall: number;
-      temperature: number;
-      humidity: number;
-    };
-    reasoning: string;
-    nextCheck: string;
-  }>> => {
+  getIrrigationWindow: async (farmId: string): Promise<ApiResponse<IrrigationWindowPayload>> => {
     const response = await apiClient.get<ApiResponse<any>>(
       `/weather/farm/${farmId}/irrigation-window`
     );
-    return response.data;
+    const payload = response.data.data || {};
+
+    return {
+      ...response.data,
+      data: {
+        farmId: payload?.farmId || payload?.farm_id || farmId,
+        optimalWindows: Array.isArray(payload?.optimalWindows)
+          ? payload.optimalWindows.map((window: any) => ({
+              date: window?.date,
+              conditions: {
+                temperature: window?.conditions?.temperature,
+                humidity: window?.conditions?.humidity,
+                weather: window?.conditions?.weather,
+              },
+              recommendation: window?.recommendation || 'Recommended irrigation slot',
+            }))
+          : [],
+        nextBestWindow: payload?.nextBestWindow
+          ? {
+              date: payload.nextBestWindow?.date,
+              conditions: {
+                temperature: payload.nextBestWindow?.conditions?.temperature,
+                humidity: payload.nextBestWindow?.conditions?.humidity,
+                weather: payload.nextBestWindow?.conditions?.weather,
+              },
+              recommendation: payload.nextBestWindow?.recommendation || 'Recommended irrigation slot',
+            }
+          : null,
+      },
+    };
   },
 };
 

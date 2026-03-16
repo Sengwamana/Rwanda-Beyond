@@ -1,4 +1,4 @@
-// =====================================================
+﻿// =====================================================
 // Farm Card Component - Smart Maize Farming System
 // Display farm information with health status
 // =====================================================
@@ -80,9 +80,9 @@ export const FarmCard: React.FC<FarmCardProps> = ({
       label: 'Fair'
     },
     poor: {
-      color: 'bg-orange-500',
-      bgColor: 'bg-orange-50 dark:bg-orange-900/30',
-      textColor: 'text-orange-700 dark:text-orange-400',
+      color: 'bg-green-500',
+      bgColor: 'bg-green-50 dark:bg-green-900/30',
+      textColor: 'text-green-700 dark:text-green-400',
       label: 'Poor'
     },
     critical: {
@@ -267,7 +267,7 @@ export const FarmCard: React.FC<FarmCardProps> = ({
             )}
             {temperature !== undefined && (
               <div className="flex items-center gap-2">
-                <Thermometer className="text-orange-500" size={16} />
+                <Thermometer className="text-green-500" size={16} />
                 <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
                   {temperature}°C
                 </span>
@@ -368,3 +368,4 @@ export const FarmGrid: React.FC<FarmGridProps> = ({
 };
 
 export default FarmCard;
+

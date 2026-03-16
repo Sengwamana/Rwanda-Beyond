@@ -342,9 +342,14 @@ export const VoiceAssistant: React.FC = () => {
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
+    const userMessage: ChatMessage = {
+      role: 'user',
+      content: trimmedQuestion,
+      timestamp: new Date().toISOString(),
+    };
     conversationHistoryRef.current = [
       ...conversationHistoryRef.current,
-      { role: 'user', content: trimmedQuestion, timestamp: new Date().toISOString() },
+      userMessage,
     ].slice(-HISTORY_LIMIT);
 
     try {
@@ -362,9 +367,14 @@ export const VoiceAssistant: React.FC = () => {
       setReplyPreview(reply);
       setTextPrompt('');
 
+      const assistantMessage: ChatMessage = {
+        role: 'assistant',
+        content: reply,
+        timestamp: new Date().toISOString(),
+      };
       conversationHistoryRef.current = [
         ...conversationHistoryRef.current,
-        { role: 'assistant', content: reply, timestamp: new Date().toISOString() },
+        assistantMessage,
       ].slice(-HISTORY_LIMIT);
 
       await speakReply(reply);

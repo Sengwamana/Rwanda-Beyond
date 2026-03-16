@@ -1,4 +1,4 @@
-// =====================================================
+﻿// =====================================================
 // Weather Card Component - Smart Maize Farming System
 // Display weather data with forecast and conditions
 // =====================================================
@@ -62,7 +62,7 @@ export const WeatherCard: React.FC<WeatherCardProps> = ({
   }> = {
     clear: {
       icon: Sun,
-      gradient: 'from-amber-400 via-orange-400 to-yellow-500',
+      gradient: 'from-green-400 via-green-400 to-yellow-500',
       iconColor: 'text-yellow-300'
     },
     cloudy: {
@@ -240,7 +240,7 @@ export const WeatherCard: React.FC<WeatherCardProps> = ({
         )}
         {weather.visibility && (
           <div className="text-center p-3 bg-slate-50 dark:bg-slate-700/50 rounded-xl">
-            <Eye className="mx-auto mb-2 text-amber-500" size={20} />
+            <Eye className="mx-auto mb-2 text-green-500" size={20} />
             <p className="text-lg font-bold text-slate-900 dark:text-white">{weather.visibility} km</p>
             <p className="text-xs text-slate-500 dark:text-slate-400">Visibility</p>
           </div>
@@ -250,10 +250,10 @@ export const WeatherCard: React.FC<WeatherCardProps> = ({
       {/* Sunrise/Sunset */}
       {(weather.sunrise || weather.sunset) && (
         <div className="px-4 pb-4">
-          <div className="flex justify-center gap-8 p-3 bg-gradient-to-r from-orange-50 to-purple-50 dark:from-orange-900/20 dark:to-purple-900/20 rounded-xl">
+          <div className="flex justify-center gap-8 p-3 bg-gradient-to-r from-green-50 to-purple-50 dark:from-green-900/20 dark:to-purple-900/20 rounded-xl">
             {weather.sunrise && (
               <div className="flex items-center gap-2">
-                <Sunrise className="text-orange-500" size={20} />
+                <Sunrise className="text-green-500" size={20} />
                 <div>
                   <p className="text-xs text-slate-500 dark:text-slate-400">Sunrise</p>
                   <p className="text-sm font-semibold text-slate-900 dark:text-white">{weather.sunrise}</p>
@@ -316,3 +316,4 @@ export const WeatherCard: React.FC<WeatherCardProps> = ({
 };
 
 export default WeatherCard;
+

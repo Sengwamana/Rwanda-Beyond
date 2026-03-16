@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { Sprout, Mail, Lock, ArrowRight, Loader2 } from 'lucide-react';
 import { useClerk, useSignIn } from '@clerk/clerk-react';
 import { useNavigate } from 'react-router-dom';
@@ -205,7 +205,7 @@ export const Login: React.FC<LoginProps> = ({ onNavigate, language = 'en' }) => 
             </div>
           )}
           {showHostedFallback && (
-            <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 px-4 py-3 rounded-xl text-sm space-y-3">
+            <div className="bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 text-green-900 dark:text-green-200 px-4 py-3 rounded-xl text-sm space-y-3">
               <p>If the browser console shows `400` for Clerk, use the hosted flow to see the exact Clerk validation state.</p>
               <button
                 type="button"
@@ -291,3 +291,4 @@ export const Login: React.FC<LoginProps> = ({ onNavigate, language = 'en' }) => 
     </div>
   );
 };
+

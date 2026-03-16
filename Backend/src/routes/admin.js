@@ -26,7 +26,9 @@ const REPORT_TYPES = new Set([
   'farms',
   'sensors',
   'recommendations',
+  'farm-issues',
   'pest-detections',
+  'pest-control',
 ]);
 
 const toArrayPayload = (value) => {
@@ -42,6 +44,15 @@ const toTimestamp = (value, fallback) => {
     if (Number.isFinite(parsed)) return parsed;
   }
   return fallback;
+};
+
+const toOptionalTimestamp = (value) => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
 };
 
 const normalizeActiveStatus = (value) =>
@@ -108,6 +119,183 @@ const countByField = (rows, field) =>
     acc[key] = (acc[key] || 0) + 1;
     return acc;
   }, {});
+
+const summarizeRecommendationRows = (rows) => {
+  const summary = {
+    total: rows.length,
+    byStatus: countByField(rows, 'status'),
+    byPriority: countByField(rows, 'priority'),
+    byType: countByField(rows, 'type'),
+    byChannel: {},
+    responseRate: 0,
+    acceptanceRate: 0,
+    avgResponseTimeHours: null,
+  };
+
+  let respondedCount = 0;
+  let acceptedCount = 0;
+  let totalResponseTimeMs = 0;
+
+  for (const row of rows) {
+    if (row?.response_channel) {
+      summary.byChannel[row.response_channel] = (summary.byChannel[row.response_channel] || 0) + 1;
+    }
+
+    if (row?.status === 'accepted' || row?.status === 'executed') {
+      acceptedCount += 1;
+    }
+
+    const createdAt = toOptionalTimestamp(row?.created_at);
+    const respondedAt = toOptionalTimestamp(row?.responded_at);
+    if (createdAt !== undefined && respondedAt !== undefined && respondedAt >= createdAt) {
+      respondedCount += 1;
+      totalResponseTimeMs += respondedAt - createdAt;
+    }
+  }
+
+  if (summary.total > 0) {
+    summary.responseRate = (respondedCount / summary.total) * 100;
+    summary.acceptanceRate = (acceptedCount / summary.total) * 100;
+  }
+
+  if (respondedCount > 0) {
+    summary.avgResponseTimeHours = Math.round(totalResponseTimeMs / respondedCount / (1000 * 60 * 60));
+  }
+
+  return summary;
+};
+
+const summarizeFarmIssueRows = (rows) => {
+  const summary = {
+    total: rows.length,
+    byStatus: countByField(rows, 'status'),
+    byCategory: countByField(rows, 'category'),
+    bySeverity: countByField(rows, 'severity'),
+    byChannel: countByField(rows, 'source_channel'),
+    avgResolutionTimeHours: null,
+  };
+
+  let resolvedCount = 0;
+  let totalResolutionTimeMs = 0;
+
+  for (const row of rows) {
+    const createdAt = toOptionalTimestamp(row?.created_at);
+    const resolvedAt = toOptionalTimestamp(row?.resolved_at);
+    if (createdAt !== undefined && resolvedAt !== undefined && resolvedAt >= createdAt) {
+      resolvedCount += 1;
+      totalResolutionTimeMs += resolvedAt - createdAt;
+    }
+  }
+
+  if (resolvedCount > 0) {
+    summary.avgResolutionTimeHours = Math.round(totalResolutionTimeMs / resolvedCount / (1000 * 60 * 60));
+  }
+
+  return summary;
+};
+
+const enrichRecommendationRows = (rows) =>
+  rows.map((row) => {
+    const createdAt = toOptionalTimestamp(row?.created_at);
+    const respondedAt = toOptionalTimestamp(row?.responded_at);
+    const responseTimeHours =
+      createdAt !== undefined && respondedAt !== undefined && respondedAt >= createdAt
+        ? Math.round((respondedAt - createdAt) / (1000 * 60 * 60))
+        : null;
+
+    return {
+      ...row,
+      response_recorded: respondedAt !== undefined,
+      response_time_hours: responseTimeHours,
+    };
+  });
+
+const enrichFarmIssueRows = (rows) =>
+  rows.map((row) => {
+    const createdAt = toOptionalTimestamp(row?.created_at);
+    const resolvedAt = toOptionalTimestamp(row?.resolved_at);
+    const resolutionTimeHours =
+      createdAt !== undefined && resolvedAt !== undefined && resolvedAt >= createdAt
+        ? Math.round((resolvedAt - createdAt) / (1000 * 60 * 60))
+        : null;
+
+    return {
+      ...row,
+      resolution_recorded: resolvedAt !== undefined,
+      resolution_time_hours: resolutionTimeHours,
+    };
+  });
+
+const enrichPestControlRows = (rows) =>
+  rows.map((row) => {
+    const createdAt = toOptionalTimestamp(row?.created_at);
+    const executedAt = toOptionalTimestamp(row?.executed_at);
+    const executionLeadTimeHours =
+      createdAt !== undefined && executedAt !== undefined && executedAt >= createdAt
+        ? Math.round((executedAt - createdAt) / (1000 * 60 * 60))
+        : null;
+
+    return {
+      ...row,
+      operational_status: row?.is_executed ? 'executed' : 'scheduled',
+      execution_recorded: executedAt !== undefined,
+      execution_lead_time_hours: executionLeadTimeHours,
+    };
+  });
+
+const summarizePestControlRows = (rows) => {
+  const summary = {
+    total: rows.length,
+    byStatus: countByField(rows, 'operational_status'),
+    byMethod: countByField(rows, 'control_method'),
+    byOutcome: countByField(rows.filter((row) => row?.actual_outcome), 'actual_outcome'),
+    executionRate: 0,
+    avgExecutionLeadTimeHours: null,
+  };
+
+  let executedCount = 0;
+  let totalExecutionLeadTimeMs = 0;
+
+  for (const row of rows) {
+    const createdAt = toOptionalTimestamp(row?.created_at);
+    const executedAt = toOptionalTimestamp(row?.executed_at);
+
+    if (createdAt !== undefined && executedAt !== undefined && executedAt >= createdAt) {
+      executedCount += 1;
+      totalExecutionLeadTimeMs += executedAt - createdAt;
+    }
+  }
+
+  if (summary.total > 0) {
+    summary.executionRate = (executedCount / summary.total) * 100;
+  }
+
+  if (executedCount > 0) {
+    summary.avgExecutionLeadTimeHours = Math.round(totalExecutionLeadTimeMs / executedCount / (1000 * 60 * 60));
+  }
+
+  return summary;
+};
+
+const getPestControlRows = async (farmRows, startMs, endMs) => {
+  const sinceDate = new Date(startMs).toISOString().split('T')[0];
+  const payloads = await Promise.all(
+    farmRows.map((farm) =>
+      db.pestControlSchedules.getByFarm(String(farm?._id || farm?.id || ''), {
+        since: sinceDate,
+        limit: MAX_REPORT_ROWS,
+      })
+    )
+  );
+
+  return enrichPestControlRows(
+    filterRowsByDate(
+      payloads.flatMap((payload) => toArrayPayload(payload)),
+      startMs,
+      endMs
+    )
+  );
+};
 
 const toCsv = (rows) => {
   if (!rows.length) {
@@ -274,6 +462,63 @@ router.put('/users/:userId/role',
     });
 
     return successResponse(res, user, 'User role updated successfully');
+  })
+);
+
+/**
+ * @route PUT /api/v1/admin/users/:userId/profile
+ * @desc Update admin-managed user profile metadata
+ * @access Admin only
+ */
+router.put('/users/:userId/profile',
+  asyncHandler(async (req, res) => {
+    const { userId } = req.params;
+    const { metadata = {}, districtId } = req.body || {};
+
+    const existingUser = await db.users.getById(userId);
+    if (!existingUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+        code: 'NOT_FOUND',
+      });
+    }
+
+    const existingMetadata =
+      existingUser.metadata && typeof existingUser.metadata === 'object'
+        ? existingUser.metadata
+        : {};
+    const nextMetadata = {
+      ...existingMetadata,
+      ...(metadata && typeof metadata === 'object' ? metadata : {}),
+    };
+
+    if (districtId !== undefined) {
+      if (districtId) {
+        nextMetadata.districtId = districtId;
+      } else {
+        delete nextMetadata.districtId;
+      }
+    }
+
+    const user = await db.users.update(userId, { metadata: nextMetadata });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+        code: 'NOT_FOUND',
+      });
+    }
+
+    await logAuditEvent(req.user._id, 'USER_PROFILE_UPDATED', {
+      entityType: 'users',
+      entityId: userId,
+      targetUserId: userId,
+      oldValues: { metadata: existingMetadata },
+      newValues: { metadata: nextMetadata },
+    });
+
+    return successResponse(res, user, 'User profile updated successfully');
   })
 );
 
@@ -605,12 +850,18 @@ router.post('/broadcast',
   asyncHandler(async (req, res) => {
     const { message, messageKinyarwanda, targetRole, targetDistrict, channel = 'sms' } = req.body;
 
-    // Get target users
-    const users = (await db.users.listActive(targetRole || undefined))
-      .filter((user) => user.phone_number);
+    const normalizedTargetRole =
+      targetRole && ['farmer', 'expert', 'admin'].includes(String(targetRole))
+        ? String(targetRole)
+        : 'all';
+
+    const activeUsers = await db.users.listActive(
+      normalizedTargetRole === 'all' ? undefined : normalizedTargetRole
+    );
+    const deliverableUsers = (activeUsers || []).filter((user) => user.phone_number);
 
     // Queue messages (actual sending handled by notification service)
-    const messageDocs = users.map(user => ({
+    const messageDocs = deliverableUsers.map(user => ({
       user_id: user._id,
       recipient: user.phone_number,
       channel,
@@ -618,7 +869,9 @@ router.post('/broadcast',
       status: 'queued',
       metadata: {
         broadcast: true,
+        scope: normalizedTargetRole === 'all' ? 'all_users' : `role:${normalizedTargetRole}`,
         initiatedBy: req.user._id,
+        requestedTargetRole: normalizedTargetRole,
         ...(targetDistrict ? { targetDistrict } : {}),
       }
     }));
@@ -627,14 +880,15 @@ router.post('/broadcast',
     const queuedCount = inserted?.count ?? inserted?.length ?? 0;
 
     await logAuditEvent(req.user._id, 'BROADCAST_SENT', {
-      recipientCount: users.length,
-      targetRole,
+      recipientCount: activeUsers.length,
+      deliverableRecipients: deliverableUsers.length,
+      targetRole: normalizedTargetRole,
       targetDistrict
     });
 
     return successResponse(res, {
       queued: queuedCount,
-      targetedUsers: users.length
+      targetedUsers: activeUsers.length
     }, 'Broadcast queued successfully');
   })
 );
@@ -912,19 +1166,30 @@ router.post('/reports/generate',
     let summary = {};
 
     if (reportType === 'summary') {
-      const [users, farms, sensors, recommendations, pestDetections] = await Promise.all([
+      const [users, farms, sensors, recommendations, farmIssues, pestDetections] = await Promise.all([
         db.users.listAll(),
         db.farms.list({ page: 1, limit: MAX_REPORT_ROWS }),
         db.sensors.listAllStats(),
         db.recommendations.list({ page: 1, limit: MAX_REPORT_ROWS }),
+        db.farmIssues.list({ page: 1, limit: MAX_REPORT_ROWS }),
         db.pestDetections.getStats({ since: startMs, until: endMs }),
       ]);
 
+      const allFarmRows = toArrayPayload(farms);
       const usersRows = filterRowsByDate(toArrayPayload(users), startMs, endMs);
-      const farmsRows = filterRowsByDate(toArrayPayload(farms), startMs, endMs);
+      const farmsRows = filterRowsByDate(allFarmRows, startMs, endMs);
       const sensorsRows = filterRowsByDate(toArrayPayload(sensors), startMs, endMs);
-      const recommendationRows = filterRowsByDate(toArrayPayload(recommendations), startMs, endMs);
+      const recommendationRows = enrichRecommendationRows(
+        filterRowsByDate(toArrayPayload(recommendations), startMs, endMs)
+      );
+      const farmIssueRows = enrichFarmIssueRows(
+        filterRowsByDate(toArrayPayload(farmIssues), startMs, endMs)
+      );
       const pestRows = filterRowsByDate(toArrayPayload(pestDetections), startMs, endMs);
+      const pestControlRows = await getPestControlRows(allFarmRows, startMs, endMs);
+      const recommendationSummary = summarizeRecommendationRows(recommendationRows);
+      const farmIssueSummary = summarizeFarmIssueRows(farmIssueRows);
+      const pestControlSummary = summarizePestControlRows(pestControlRows);
 
       summary = {
         users: {
@@ -942,14 +1207,18 @@ router.post('/reports/generate',
           byStatus: countByField(sensorsRows, 'status'),
         },
         recommendations: {
-          total: recommendationRows.length,
-          byStatus: countByField(recommendationRows, 'status'),
-          byPriority: countByField(recommendationRows, 'priority'),
+          ...recommendationSummary,
+        },
+        farmIssues: {
+          ...farmIssueSummary,
         },
         pestDetections: {
           total: pestRows.length,
           bySeverity: countByField(pestRows, 'severity'),
           withDetectedPest: pestRows.filter((row) => row?.pest_detected).length,
+        },
+        pestControl: {
+          ...pestControlSummary,
         },
       };
 
@@ -958,7 +1227,15 @@ router.post('/reports/generate',
         farms_total: summary.farms.total,
         sensors_total: summary.sensors.total,
         recommendations_total: summary.recommendations.total,
+        recommendations_response_rate: summary.recommendations.responseRate,
+        recommendations_acceptance_rate: summary.recommendations.acceptanceRate,
+        recommendations_avg_response_time_hours: summary.recommendations.avgResponseTimeHours,
+        farm_issues_total: summary.farmIssues.total,
+        farm_issues_avg_resolution_time_hours: summary.farmIssues.avgResolutionTimeHours,
         pest_detections_total: summary.pestDetections.total,
+        pest_control_total: summary.pestControl.total,
+        pest_control_execution_rate: summary.pestControl.executionRate,
+        pest_control_avg_execution_lead_time_hours: summary.pestControl.avgExecutionLeadTimeHours,
       }];
     } else if (reportType === 'users') {
       rows = filterRowsByDate(toArrayPayload(await db.users.listAll()), startMs, endMs);
@@ -967,17 +1244,33 @@ router.post('/reports/generate',
     } else if (reportType === 'sensors') {
       rows = filterRowsByDate(toArrayPayload(await db.sensors.listAllStats()), startMs, endMs);
     } else if (reportType === 'recommendations') {
-      rows = filterRowsByDate(
-        toArrayPayload(await db.recommendations.list({ page: 1, limit: MAX_REPORT_ROWS })),
-        startMs,
-        endMs
+      rows = enrichRecommendationRows(
+        filterRowsByDate(
+          toArrayPayload(await db.recommendations.list({ page: 1, limit: MAX_REPORT_ROWS })),
+          startMs,
+          endMs
+        )
       );
+      summary = summarizeRecommendationRows(rows);
+    } else if (reportType === 'farm-issues') {
+      rows = enrichFarmIssueRows(
+        filterRowsByDate(
+          toArrayPayload(await db.farmIssues.list({ page: 1, limit: MAX_REPORT_ROWS })),
+          startMs,
+          endMs
+        )
+      );
+      summary = summarizeFarmIssueRows(rows);
     } else if (reportType === 'pest-detections') {
       rows = filterRowsByDate(
         toArrayPayload(await db.pestDetections.getStats({ since: startMs, until: endMs })),
         startMs,
         endMs
       );
+    } else if (reportType === 'pest-control') {
+      const farmRows = toArrayPayload(await db.farms.list({ page: 1, limit: MAX_REPORT_ROWS }));
+      rows = await getPestControlRows(farmRows, startMs, endMs);
+      summary = summarizePestControlRows(rows);
     }
 
     await logAuditEvent(req.user.id, 'REPORT_GENERATED', {

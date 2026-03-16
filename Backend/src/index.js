@@ -26,6 +26,7 @@ import { wsManager } from './services/websocketService.js';
 // Import routes
 import userRoutes from './routes/users.js';
 import farmRoutes from './routes/farms.js';
+import farmIssueRoutes from './routes/farm-issues.js';
 import sensorRoutes from './routes/sensors.js';
 import recommendationRoutes from './routes/recommendations.js';
 import pestDetectionRoutes from './routes/pest-detection.js';
@@ -35,6 +36,7 @@ import adminRoutes from './routes/admin.js';
 import ussdRoutes from './routes/ussd.js';
 import aiRoutes from './routes/ai.js';
 import contentRoutes from './routes/content.js';
+import messageRoutes from './routes/messages.js';
 
 // Create Express application
 const app = express();
@@ -158,11 +160,17 @@ app.use(`${API_VERSION}/users`, userRoutes);
 // Farm management
 app.use(`${API_VERSION}/farms`, farmRoutes);
 
+// Farm issue reporting
+app.use(`${API_VERSION}/farm-issues`, farmIssueRoutes);
+
 // Sensor data and IoT
 app.use(`${API_VERSION}/sensors`, sensorRoutes);
 
 // Recommendations
 app.use(`${API_VERSION}/recommendations`, recommendationRoutes);
+
+// User messages / notifications
+app.use(`${API_VERSION}/messages`, messageRoutes);
 
 // Pest detection
 app.use(`${API_VERSION}/pest-detection`, pestDetectionRoutes);
@@ -217,6 +225,11 @@ app.get('/api', (req, res) => {
         'PUT /api/v1/farms/:id': 'Update farm',
         'GET /api/v1/farms/:id/summary': 'Get farm summary with all data'
       },
+      farmIssues: {
+        'POST /api/v1/farm-issues/farm/:farmId': 'Report a farm issue',
+        'GET /api/v1/farm-issues/farm/:farmId': 'List farm issues for a farm',
+        'GET /api/v1/farm-issues/:issueId': 'Get a farm issue',
+      },
       sensors: {
         'GET /api/v1/sensors/farm/:farmId': 'List farm sensors',
         'POST /api/v1/sensors/data/ingest': 'Ingest sensor data (IoT)',
@@ -227,6 +240,11 @@ app.get('/api', (req, res) => {
         'GET /api/v1/recommendations/farm/:farmId': 'List farm recommendations',
         'GET /api/v1/recommendations/farm/:farmId/active': 'Get active recommendations',
         'POST /api/v1/recommendations/:id/respond': 'Respond to recommendation'
+      },
+      messages: {
+        'GET /api/v1/messages/me': 'Get current user notifications/messages',
+        'POST /api/v1/messages/:messageId/read': 'Mark a notification as read',
+        'POST /api/v1/messages/read-all': 'Mark all current user notifications as read'
       },
       pestDetection: {
         'POST /api/v1/pest-detection/upload/:farmId': 'Upload pest image',
@@ -297,9 +315,13 @@ async function startServer() {
       logger.info('Database connection verified');
     }
 
-    // Initialize scheduled tasks
-    if (config.server.env !== 'test') {
+    // Initialize scheduled tasks only when explicitly enabled and the database is reachable.
+    if (config.server.env !== 'test' && config.scheduler.enabled && connected) {
       await initializeScheduledTasks();
+    } else if (config.server.env !== 'test' && !config.scheduler.enabled) {
+      logger.info('Scheduled tasks disabled for this environment');
+    } else if (config.server.env !== 'test' && !connected) {
+      logger.warn('Skipping scheduled task initialization because the database is not connected');
     }
 
     // Initialize WebSocket server

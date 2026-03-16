@@ -774,6 +774,7 @@ router.post('/:detectionId/review',
       pest_detected: reviewConfirmed,
       is_confirmed: reviewConfirmed,
       expert_notes: expertNotes,
+      treatment_recommendations: treatmentRecommendations || [],
       reviewed_by: req.user._id,
       reviewed_at: Date.now(),
       detection_metadata: {
@@ -928,10 +929,16 @@ router.get('/:detectionId/treatments',
 
     const treatments = {
       detectionId: req.params.detectionId,
-      detectedPest: detection.detected_pest,
+      detectedPest: detection.pest_type || detection.detected_pest,
       severity: detection.severity,
-      treatments: detection.treatment_recommendations || [],
-      aiRecommendations: detection.ai_analysis?.recommendations || [],
+      treatments:
+        detection.treatment_recommendations
+        || detection.detection_metadata?.expertReview?.treatmentRecommendations
+        || [],
+      aiRecommendations:
+        detection.ai_analysis?.recommendations
+        || detection.detection_metadata?.analysis?.recommendations
+        || [],
       expertNotes: detection.expert_notes || null
     };
 

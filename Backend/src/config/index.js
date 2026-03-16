@@ -15,6 +15,7 @@ import { dirname, join } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 dotenv.config({ path: join(__dirname, '../../.env') });
+dotenv.config({ path: join(__dirname, '../../.env.local'), override: true });
 
 /**
  * Validates required environment variables and throws error if missing
@@ -54,6 +55,13 @@ const config = {
   // Convex configuration
   convex: {
     url: process.env.CONVEX_URL || '',
+  },
+
+  // Scheduler settings
+  scheduler: {
+    enabled: process.env.ENABLE_SCHEDULED_TASKS !== undefined
+      ? process.env.ENABLE_SCHEDULED_TASKS === 'true'
+      : process.env.NODE_ENV !== 'development',
   },
 
   // Clerk authentication

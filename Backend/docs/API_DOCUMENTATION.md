@@ -7,6 +7,14 @@ The Smart Maize Farming System provides an IoT-based decision support API for sm
 **Base URL:** `http://localhost:3000/api/v1`  
 **Version:** 1.0.0
 
+## Documentation Status
+
+This documentation reflects the current advanced development stage of the project as of March 11, 2026.
+
+- Core farm, sensor, pest detection, weather, recommendation, analytics, admin, and AI routes are implemented.
+- The local development stack uses the frontend on `http://localhost:5173`, the backend on `http://localhost:3000`, and a local Convex deployment on `http://127.0.0.1:3210`.
+- Current work is focused on hardening, consistency fixes, performance tuning, and deployment readiness rather than first-pass feature creation.
+
 ---
 
 ## Authentication
@@ -899,9 +907,10 @@ curl -X POST http://localhost:3000/api/v1/sensors/data/ingest \
 
 For API support or issues:
 - Documentation: `/api`
-- Health Check: `/health`
-- Status: Check Supabase dashboard
+- Backend Health Check: `/health`
+- API Health Check: `/api/health`
+- Local Convex Dashboard (development): `http://127.0.0.1:6790`
 
 ---
 
-*Last Updated: January 2025*
+*Last Updated: March 11, 2026*

@@ -1,5 +1,14 @@
 # Smart Maize Farming System - Deployment Guide
 
+## Current Project Stage
+
+Current stage: advanced development / pre-production hardening.
+
+- Core backend modules are implemented.
+- Frontend, backend, and Convex local services run together in development.
+- Regression coverage exists for storage management, analytics, AI, irrigation, fertilization, notifications, pest detection, and sensor transmission.
+- Current deployment work is focused on environment setup, service coordination, production configuration, and final validation.
+
 ## Quick Start
 
 ### 1. Install Dependencies
@@ -10,7 +19,7 @@ npm install
 
 ### 2. Configure Environment
 The `.env` file is already configured with your credentials. Verify all values are correct:
-- `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` - for database
+- `CONVEX_URL` - Convex deployment URL used by the backend
 - `CLERK_SECRET_KEY` - for authentication  
 - `CLOUDINARY_*` - for image storage
 - `AT_*` - for Africa's Talking SMS/USSD
@@ -18,13 +27,19 @@ The `.env` file is already configured with your credentials. Verify all values a
 
 ### 3. Set Up Database
 
-**IMPORTANT:** Run the database schema in Supabase SQL Editor.
+**IMPORTANT:** The active backend uses Convex, not Supabase, for runtime data.
 
-1. Go to [Supabase Dashboard](https://supabase.com/dashboard)
-2. Select your project
-3. Navigate to **SQL Editor**
-4. Copy the contents of `Backend/src/database/schema.sql`
-5. Paste and click **Run**
+Start a local Convex deployment from the `Backend/` directory:
+
+```bash
+npx convex dev
+```
+
+This will:
+- start a local Convex deployment
+- push the schema from `Backend/convex/schema.ts`
+- generate/update Convex metadata in `Backend/convex/_generated`
+- write local deployment settings to `.env.local`
 
 This creates:
 - `users` - User profiles
@@ -37,12 +52,10 @@ This creates:
 - `system_config` - System configuration
 - `audit_logs` - Audit trail
 - `iot_device_tokens` - Device authentication
-- `notification_queue` - SMS queue
-- `ussd_sessions` - USSD session storage
 - `districts` - Rwanda administrative divisions
 
 ### 4. Seed Demo Data (Optional)
-After running the schema:
+After Convex is running:
 ```bash
 npm run seed
 ```
@@ -59,20 +72,29 @@ This creates:
 
 ### 5. Start the Server
 
-**Development:**
+**Backend development:**
 ```bash
 npm run dev
 ```
 
-**Production:**
+**Frontend development:**
+From `Frontend/`:
+```bash
+npm run dev
+```
+
+**Backend production:**
 ```bash
 npm start
 ```
 
-Server will start at:
-- Health: http://localhost:3000/health
-- API Docs: http://localhost:3000/api
-- API Base: http://localhost:3000/api/v1
+Services will start at:
+- Frontend: http://localhost:5173
+- Backend health: http://localhost:3000/health
+- Backend API health: http://localhost:3000/api/health
+- Backend API base: http://localhost:3000/api/v1
+- Local Convex deployment: http://127.0.0.1:3210
+- Local Convex dashboard: http://127.0.0.1:6790
 
 ### 6. Run Tests
 ```bash
@@ -87,15 +109,14 @@ npm test
 ```env
 NODE_ENV=production
 PORT=3000
-SUPABASE_URL=your_production_supabase_url
-SUPABASE_SERVICE_KEY=your_production_service_key
+CONVEX_URL=https://your-production-deployment.convex.cloud
 CLERK_SECRET_KEY=your_production_clerk_key
 # ... other production values
 ```
 
 ### Recommended Hosting
 - **Node.js App:** Railway, Render, Fly.io, or AWS EC2
-- **Database:** Supabase (already using)
+- **Database:** Convex Cloud
 - **Images:** Cloudinary (already using)
 
 ### Docker Deployment
@@ -156,7 +177,13 @@ The same endpoint also accepts `Authorization: Bearer DEMO_TOKEN_FOR_TESTING` in
 ## Troubleshooting
 
 ### "column system_config.key does not exist"
-**Solution:** Run the schema.sql in Supabase SQL Editor.
+**Solution:** The active backend no longer uses Supabase schema setup for runtime data. Start Convex with `npx convex dev` and ensure `CONVEX_URL` is correct.
+
+### "Database service unavailable" / backend health shows database disconnected
+**Solution:** Ensure the local Convex deployment is running on `127.0.0.1:3210`:
+```bash
+npx convex dev
+```
 
 ### "Failed to verify user" / 401 errors
 **Solution:** Ensure Clerk JWT token is valid and included in Authorization header.
@@ -175,7 +202,7 @@ The same endpoint also accepts `Authorization: Bearer DEMO_TOKEN_FOR_TESTING` in
 |------|-------------|
 | `docs/api-collection.json` | Postman collection |
 | `docs/API_DOCUMENTATION.md` | Full API documentation |
-| `src/database/schema.sql` | Database schema |
+| `convex/schema.ts` | Active Convex schema |
 | `src/database/seed.js` | Demo data seeder |
 | `tests/api.test.js` | Integration tests |
 

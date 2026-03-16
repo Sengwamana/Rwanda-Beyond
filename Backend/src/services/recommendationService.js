@@ -13,6 +13,27 @@ import config from '../config/index.js';
 import logger from '../utils/logger.js';
 import * as notificationService from './notificationService.js';
 
+const pickRecommendationFields = (source, fields) => {
+  if (!source || typeof source !== 'object') {
+    return {};
+  }
+
+  return fields.reduce((acc, field) => {
+    if (source[field] !== undefined) {
+      acc[field] = source[field];
+    }
+    return acc;
+  }, {});
+};
+
+const logRecommendationAuditEvent = async (entry) => {
+  try {
+    await db.auditLogs.create(entry);
+  } catch (error) {
+    logger.warn('Failed to write recommendation audit log:', error?.message || error);
+  }
+};
+
 const runWithConcurrency = async (items, concurrency, worker) => {
   if (!Array.isArray(items) || items.length === 0) {
     return [];
@@ -231,6 +252,29 @@ export const createRecommendation = async (recommendationData) => {
   data.farm = farm ? { id: farm._id, name: farm.name } : null;
   data.user = user || null;
 
+  await logRecommendationAuditEvent({
+    user_id: userId || undefined,
+    action: 'CREATE_RECOMMENDATION',
+    entity_type: 'recommendations',
+    entity_id: data._id,
+    new_values: pickRecommendationFields(data, [
+      'farm_id',
+      'user_id',
+      'type',
+      'priority',
+      'status',
+      'title',
+      'title_rw',
+      'description',
+      'description_rw',
+      'recommended_action',
+      'action_deadline',
+      'confidence_score',
+      'model_version',
+      'expires_at',
+    ]),
+  });
+
   // Notifications should not block recommendation creation latency.
   Promise.resolve()
     .then(() => triggerRecommendationNotification(data))
@@ -247,28 +291,18 @@ export const createRecommendation = async (recommendationData) => {
  */
 const triggerRecommendationNotification = async (recommendation) => {
   try {
-    const { user, priority, type, title, title_rw, description, description_rw, farm } = recommendation;
+    const { priority, type, title, title_rw, description, description_rw, farm } = recommendation;
 
-    if (!user?.phone_number) {
-      logger.warn(`No phone number for user ${recommendation.user_id}, skipping notification`);
-      return;
-    }
-
-    // Determine message based on language preference
-    const language = user.preferred_language || 'rw';
-    const msgTitle = language === 'rw' && title_rw ? title_rw : title;
-    const msgDesc = language === 'rw' && description_rw ? description_rw : description;
-
-    // Create notification
     await notificationService.sendRecommendationNotification(
-      user._id || user.id,
+      recommendation.user_id,
       recommendation._id,
       {
-        phoneNumber: user.phone_number,
         priority,
         type,
-        title: msgTitle,
-        description: msgDesc,
+        title,
+        titleRw: title_rw,
+        description,
+        descriptionRw: description_rw,
         farmName: farm?.name
       }
     );
@@ -292,6 +326,11 @@ export const updateRecommendationStatus = async (recommendationId, status, respo
     throw new BadRequestError('Invalid status');
   }
 
+  const existing = await db.recommendations.getById(recommendationId);
+  if (!existing) {
+    throw new NotFoundError('Recommendation not found');
+  }
+
   const updates = {
     status,
     responded_at: Date.now()
@@ -299,6 +338,14 @@ export const updateRecommendationStatus = async (recommendationId, status, respo
 
   if (responseData.responseNotes) {
     updates.response_notes = responseData.responseNotes;
+  }
+
+  if (responseData.respondedBy) {
+    updates.responded_by = responseData.respondedBy;
+  }
+
+  if (responseData.channel) {
+    updates.response_channel = responseData.channel;
   }
 
   if (status === 'deferred' && responseData.deferredUntil) {
@@ -313,12 +360,47 @@ export const updateRecommendationStatus = async (recommendationId, status, respo
 
   logger.info(`Recommendation ${recommendationId} status updated to ${status}`);
 
-  // If accepted, trigger execution workflow
-  if (status === 'accepted') {
-    await executeRecommendation(data);
+  let finalRecommendation = data;
+
+  // Recommendations backed by real operational schedules should remain visible
+  // until the farmer completes the field action.
+  if (status === 'accepted' && !['irrigation', 'pest_alert'].includes(existing.type)) {
+    finalRecommendation = await executeRecommendation(data);
   }
 
-  return data;
+  const responseAction =
+    responseData.respondedBy || responseData.channel || responseData.responseNotes || responseData.deferredUntil
+      ? 'RESPOND_RECOMMENDATION'
+      : 'UPDATE_RECOMMENDATION_STATUS';
+
+  await logRecommendationAuditEvent({
+    user_id: responseData.respondedBy || existing.user_id || undefined,
+    action: responseAction,
+    entity_type: 'recommendations',
+    entity_id: recommendationId,
+    old_values: pickRecommendationFields(existing, [
+      'status',
+      'response_notes',
+      'deferred_until',
+      'responded_at',
+    ]),
+    new_values: {
+      ...pickRecommendationFields(finalRecommendation, [
+        'status',
+        'responded_by',
+        'response_channel',
+        'response_notes',
+        'deferred_until',
+        'responded_at',
+      ]),
+      requested_status: status,
+      responded_by: responseData.respondedBy || undefined,
+      response_channel: responseData.channel || finalRecommendation.response_channel || undefined,
+      channel: responseData.channel || undefined,
+    },
+  });
+
+  return finalRecommendation;
 };
 
 /**
@@ -341,6 +423,7 @@ export const respondToRecommendation = async (recommendationId, action, response
     responseNotes: responseData.reason || responseData.responseNotes,
     deferredUntil: responseData.deferUntil || responseData.deferredUntil,
     respondedBy: responseData.respondedBy,
+    channel: responseData.channel,
   });
 };
 
@@ -351,6 +434,11 @@ export const respondToRecommendation = async (recommendationId, action, response
  * @returns {Promise<Object>} Updated recommendation
  */
 export const markCompleted = async (recommendationId, completionData = {}) => {
+  const existing = await db.recommendations.getById(recommendationId);
+  if (!existing) {
+    throw new NotFoundError('Recommendation not found');
+  }
+
   const updates = {
     status: 'executed',
     completed_at: Date.now(),
@@ -374,6 +462,30 @@ export const markCompleted = async (recommendationId, completionData = {}) => {
   if (!data) {
     throw new NotFoundError('Recommendation not found');
   }
+
+  await logRecommendationAuditEvent({
+    user_id: completionData.completedBy || existing.user_id || undefined,
+    action: 'COMPLETE_RECOMMENDATION',
+    entity_type: 'recommendations',
+    entity_id: recommendationId,
+    old_values: pickRecommendationFields(existing, [
+      'status',
+      'response_notes',
+      'completed_at',
+      'completed_by',
+      'outcome',
+    ]),
+    new_values: {
+      ...pickRecommendationFields(data, [
+        'status',
+        'response_notes',
+        'completed_at',
+        'completed_by',
+        'outcome',
+      ]),
+      completed_by: completionData.completedBy || data.completed_by || undefined,
+    },
+  });
 
   return data;
 };
@@ -417,7 +529,31 @@ const executeRecommendation = async (recommendation) => {
     }
 
     // Update recommendation to executed
-    await db.recommendations.update(recommendation._id, { status: 'executed' });
+    const executedRecommendation = await db.recommendations.update(recommendation._id, { status: 'executed' });
+
+    if (executedRecommendation) {
+      await logRecommendationAuditEvent({
+        user_id: recommendation.user_id || undefined,
+        action: 'EXECUTE_RECOMMENDATION',
+        entity_type: 'recommendations',
+        entity_id: recommendation._id,
+        old_values: pickRecommendationFields(recommendation, [
+          'status',
+          'irrigation_schedule_id',
+          'fertilization_schedule_id',
+        ]),
+        new_values: {
+          ...pickRecommendationFields(executedRecommendation, [
+            'status',
+            'irrigation_schedule_id',
+            'fertilization_schedule_id',
+          ]),
+          execution_source: 'auto_accept',
+        },
+      });
+    }
+
+    return executedRecommendation || recommendation;
 
   } catch (error) {
     logger.error('Failed to execute recommendation:', error);
@@ -639,6 +775,84 @@ export const createFertilizationRecommendation = async (farmId, analysisData) =>
 };
 
 /**
+ * Create a manual expert/admin recommendation for a farm.
+ * @param {Object} input - Manual recommendation payload
+ * @returns {Promise<Object>} Created recommendation
+ */
+export const createManualRecommendation = async (input = {}) => {
+  const {
+    farmId,
+    type = 'general',
+    priority = 'medium',
+    title,
+    description,
+    actionRequired,
+    validUntil,
+    createdBy,
+    metadata = {},
+  } = input;
+
+  if (!farmId) {
+    throw new BadRequestError('Farm ID is required');
+  }
+
+  if (!title || !description || !actionRequired) {
+    throw new BadRequestError('Title, description, and actionRequired are required');
+  }
+
+  const farm = await db.farms.getById(farmId);
+  if (!farm) {
+    throw new NotFoundError('Farm not found');
+  }
+
+  const [recipientUser, creator] = await Promise.all([
+    farm.user_id ? db.users.getById(farm.user_id) : null,
+    createdBy ? db.users.getById(createdBy) : null,
+  ]);
+
+  const recommendation = await createRecommendation({
+    farmId,
+    userId: farm.user_id,
+    type,
+    priority,
+    title,
+    description,
+    recommendedAction: actionRequired,
+    actionDeadline: validUntil || undefined,
+    supportingData: {
+      ...metadata,
+      source: 'expert_manual',
+      createdBy: createdBy || undefined,
+      creatorRole: creator?.role || undefined,
+      creatorName: [creator?.first_name, creator?.last_name].filter(Boolean).join(' ') || undefined,
+    },
+    expiresAt: validUntil || undefined,
+    resolvedFarm: farm,
+    resolvedUser: recipientUser,
+  });
+
+  await logRecommendationAuditEvent({
+    user_id: createdBy || undefined,
+    action: 'CREATE_MANUAL_RECOMMENDATION',
+    entity_type: 'recommendations',
+    entity_id: recommendation._id,
+    new_values: {
+      farm_id: recommendation.farm_id,
+      user_id: recommendation.user_id,
+      type: recommendation.type,
+      priority: recommendation.priority,
+      status: recommendation.status,
+      title: recommendation.title,
+      description: recommendation.description,
+      recommended_action: recommendation.recommended_action,
+      created_by: createdBy || undefined,
+    },
+  });
+
+  return recommendation;
+};
+
+/**
  * Expire old pending recommendations
  */
 export const expireOldRecommendations = async () => {
@@ -697,7 +911,53 @@ export const getRecommendationStats = async (farmIdOrOptions = null, userIdArg =
   };
 
   const stats = await db.recommendations.getStats(query);
-  return stats;
+  const summary = {
+    total: stats.length,
+    byType: {},
+    byStatus: {},
+    byPriority: {},
+    byChannel: {},
+    responseRate: 0,
+    acceptanceRate: 0,
+    avgResponseTime: null,
+    averageResponseTime: null,
+  };
+
+  let respondedCount = 0;
+  let acceptedCount = 0;
+  let totalResponseTime = 0;
+
+  for (const rec of stats) {
+    summary.byType[rec.type] = (summary.byType[rec.type] || 0) + 1;
+    summary.byStatus[rec.status] = (summary.byStatus[rec.status] || 0) + 1;
+    summary.byPriority[rec.priority] = (summary.byPriority[rec.priority] || 0) + 1;
+
+    if (rec.response_channel) {
+      summary.byChannel[rec.response_channel] = (summary.byChannel[rec.response_channel] || 0) + 1;
+    }
+
+    if (rec.status === 'accepted' || rec.status === 'executed') {
+      acceptedCount += 1;
+    }
+
+    if (rec.responded_at && rec.created_at) {
+      respondedCount += 1;
+      totalResponseTime += rec.responded_at - rec.created_at;
+    }
+  }
+
+  if (summary.total > 0) {
+    summary.responseRate = (respondedCount / summary.total) * 100;
+    summary.acceptanceRate = (acceptedCount / summary.total) * 100;
+  }
+
+  if (respondedCount > 0) {
+    const avgHours = Math.round(totalResponseTime / respondedCount / (1000 * 60 * 60));
+    summary.avgResponseTime = avgHours;
+    summary.averageResponseTime = avgHours;
+  }
+
+  return summary;
 };
 
 /**
@@ -768,6 +1028,7 @@ export default {
   createIrrigationRecommendation,
   createPestAlertRecommendation,
   createFertilizationRecommendation,
+  createManualRecommendation,
   expireOldRecommendations,
   getRecommendationStats,
   bulkGenerateRecommendations,

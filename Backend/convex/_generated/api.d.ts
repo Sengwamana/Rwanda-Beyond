@@ -10,11 +10,13 @@
 
 import type * as auditLogs from "../auditLogs.js";
 import type * as districts from "../districts.js";
+import type * as farmIssues from "../farmIssues.js";
 import type * as farms from "../farms.js";
 import type * as fertilizationSchedules from "../fertilizationSchedules.js";
 import type * as iotDeviceTokens from "../iotDeviceTokens.js";
 import type * as irrigationSchedules from "../irrigationSchedules.js";
 import type * as messages from "../messages.js";
+import type * as pestControlSchedules from "../pestControlSchedules.js";
 import type * as pestDetections from "../pestDetections.js";
 import type * as recommendations from "../recommendations.js";
 import type * as sensorData from "../sensorData.js";
@@ -32,11 +34,13 @@ import type {
 declare const fullApi: ApiFromModules<{
   auditLogs: typeof auditLogs;
   districts: typeof districts;
+  farmIssues: typeof farmIssues;
   farms: typeof farms;
   fertilizationSchedules: typeof fertilizationSchedules;
   iotDeviceTokens: typeof iotDeviceTokens;
   irrigationSchedules: typeof irrigationSchedules;
   messages: typeof messages;
+  pestControlSchedules: typeof pestControlSchedules;
   pestDetections: typeof pestDetections;
   recommendations: typeof recommendations;
   sensorData: typeof sensorData;

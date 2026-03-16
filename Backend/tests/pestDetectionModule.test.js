@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 const mockDb = {
   farms: {
     getById: jest.fn(),
+    getUserId: jest.fn(),
     list: jest.fn(),
   },
   auditLogs: {
@@ -104,6 +105,7 @@ const getRouteHandler = (path, method = 'post') => {
 describe('pest detection performance fixes', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockDb.farms.getUserId.mockResolvedValue('farmer-1');
     mockDb.farms.list.mockResolvedValue({ data: [], count: 0 });
     mockDb.pestDetections.getByFarm.mockResolvedValue({ data: [], count: 0 });
     mockDb.pestDetections.list.mockResolvedValue({ data: [], count: 0 });
@@ -538,6 +540,112 @@ describe('pest detection performance fixes', () => {
 
     resolveRecommendation(null);
     await Promise.resolve();
+  });
+
+  it('persists expert treatment recommendations when reviewing a detection', async () => {
+    const reviewRoute = getRouteHandler('/:detectionId/review');
+
+    mockDb.pestDetections.getById.mockResolvedValue({
+      _id: 'detection-3',
+      farm_id: 'farm-1',
+      pest_type: 'fall_armyworm',
+      severity: 'moderate',
+      confidence_score: 0.88,
+      affected_area_percentage: 12,
+      image_url: 'https://img.example/review.jpg',
+      detection_metadata: {
+        analysis: {
+          recommendations: ['Inspect neighboring rows'],
+        },
+      },
+    });
+    mockDb.pestDetections.update.mockResolvedValue({
+      _id: 'detection-3',
+      treatment_recommendations: ['Spray the affected block at dawn', 'Re-scout after 48 hours'],
+      detection_metadata: {
+        expertReview: {
+          treatmentRecommendations: ['Spray the affected block at dawn', 'Re-scout after 48 hours'],
+        },
+      },
+    });
+    mockAiService.shouldCreatePestAlertRecommendation.mockReturnValue(false);
+
+    const req = {
+      params: { detectionId: 'detection-3' },
+      body: {
+        isConfirmed: true,
+        pestType: 'fall_armyworm',
+        severity: 'high',
+        expertNotes: 'Confirmed with visible leaf windowing.',
+        treatmentRecommendations: ['Spray the affected block at dawn', 'Re-scout after 48 hours'],
+      },
+      user: { _id: 'expert-1', id: 'expert-1' },
+    };
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
+
+    await reviewRoute(req, res, jest.fn());
+
+    expect(mockDb.pestDetections.update).toHaveBeenCalledWith(
+      'detection-3',
+      expect.objectContaining({
+        treatment_recommendations: ['Spray the affected block at dawn', 'Re-scout after 48 hours'],
+        expert_notes: 'Confirmed with visible leaf windowing.',
+        detection_metadata: expect.objectContaining({
+          expertReview: expect.objectContaining({
+            treatmentRecommendations: ['Spray the affected block at dawn', 'Re-scout after 48 hours'],
+          }),
+        }),
+      })
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('returns expert treatment recommendations from metadata fallback in the treatments route', async () => {
+    const treatmentsRoute = getRouteHandler('/:detectionId/treatments', 'get');
+
+    mockDb.pestDetections.getById.mockResolvedValue({
+      _id: 'detection-4',
+      farm_id: 'farm-1',
+      pest_type: 'fall_armyworm',
+      severity: 'high',
+      expert_notes: 'Urgent field action needed.',
+      detection_metadata: {
+        expertReview: {
+          treatmentRecommendations: ['Apply a targeted FAW treatment', 'Review larval pressure in 2 days'],
+        },
+        analysis: {
+          recommendations: ['Scout the outer perimeter'],
+        },
+      },
+    });
+    mockDb.farms.getUserId.mockResolvedValue('farmer-1');
+
+    const req = {
+      params: { detectionId: 'detection-4' },
+      user: { _id: 'farmer-1', id: 'farmer-1', role: 'farmer' },
+    };
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
+
+    await treatmentsRoute(req, res, jest.fn());
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: true,
+        data: expect.objectContaining({
+          detectedPest: 'fall_armyworm',
+          treatments: ['Apply a targeted FAW treatment', 'Review larval pressure in 2 days'],
+          aiRecommendations: ['Scout the outer perimeter'],
+          expertNotes: 'Urgent field action needed.',
+        }),
+      })
+    );
   });
 
   it('returns not found when the pest detection disappears before expert review persistence', async () => {

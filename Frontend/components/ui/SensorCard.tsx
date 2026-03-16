@@ -1,4 +1,4 @@
-// =====================================================
+﻿// =====================================================
 // Sensor Card Component - Smart Maize Farming System
 // Display real-time sensor data with visual indicators
 // =====================================================
@@ -59,9 +59,9 @@ export const SensorCard: React.FC<SensorCardProps> = ({
     },
     temperature: {
       icon: Thermometer,
-      color: 'text-orange-600',
-      bgColor: 'bg-orange-100 dark:bg-orange-900/30',
-      gradient: 'from-orange-500 to-red-500'
+      color: 'text-green-600',
+      bgColor: 'bg-green-100 dark:bg-green-900/30',
+      gradient: 'from-green-500 to-red-500'
     },
     humidity: {
       icon: Wind,
@@ -79,7 +79,7 @@ export const SensorCard: React.FC<SensorCardProps> = ({
       icon: Sun,
       color: 'text-yellow-600',
       bgColor: 'bg-yellow-100 dark:bg-yellow-900/30',
-      gradient: 'from-yellow-500 to-amber-500'
+      gradient: 'from-yellow-500 to-green-500'
     },
     ph: {
       icon: Gauge,
@@ -106,7 +106,7 @@ export const SensorCard: React.FC<SensorCardProps> = ({
   }> = {
     online: { color: 'text-green-500', icon: Wifi, label: 'Online' },
     offline: { color: 'text-slate-400', icon: WifiOff, label: 'Offline' },
-    warning: { color: 'text-amber-500', icon: AlertTriangle, label: 'Warning' },
+    warning: { color: 'text-green-500', icon: AlertTriangle, label: 'Warning' },
     error: { color: 'text-red-500', icon: AlertTriangle, label: 'Error' }
   };
 
@@ -189,7 +189,7 @@ export const SensorCard: React.FC<SensorCardProps> = ({
             inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[10px] font-medium
             ${isOptimal 
               ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' 
-              : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+              : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
             }
           `}>
             {isOptimal ? <CheckCircle2 size={10} /> : <AlertTriangle size={10} />}
@@ -323,7 +323,7 @@ export const SensorSummary: React.FC<SensorSummaryProps> = ({
           <p className="text-[10px] text-slate-400">Offline</p>
         </div>
         <div className="text-center">
-          <p className="text-2xl font-bold text-amber-500">{warnings}</p>
+          <p className="text-2xl font-bold text-green-500">{warnings}</p>
           <p className="text-[10px] text-slate-400">Warnings</p>
         </div>
       </div>
@@ -332,3 +332,4 @@ export const SensorSummary: React.FC<SensorSummaryProps> = ({
 };
 
 export default SensorCard;
+

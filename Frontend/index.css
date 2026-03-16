@@ -40,7 +40,7 @@
     --smartani-green: 152 69% 19%;
     --smartani-green-light: 152 40% 92%;
     --smartani-gold: 45 93% 47%;
-    --smartani-orange: 25 95% 53%;
+    --smartani-orange: 142 71% 45%;
   }
  
   .dark {
@@ -202,6 +202,23 @@
   /* Divider */
   .divider-gradient {
     @apply h-1 w-24 bg-gradient-to-r from-green-500 to-emerald-400 rounded-full;
+  }
+  
+  /* Dashboard design-tokens — shared across all roles */
+  .dash-icon-box {
+    @apply p-2 rounded-lg bg-green-600/10 dark:bg-green-500/15 text-green-700 dark:text-green-400 flex items-center justify-center;
+  }
+  
+  .dash-stat-card {
+    @apply rounded-2xl border border-slate-200/70 dark:border-slate-700/70 bg-gradient-to-br from-white to-slate-50 dark:from-slate-800 dark:to-slate-900 p-4 shadow-sm transition-shadow hover:shadow-md;
+  }
+  
+  .dash-section-title {
+    @apply text-lg font-semibold flex items-center gap-2 tracking-tight;
+  }
+  
+  .dash-panel {
+    @apply rounded-xl border border-slate-200/70 dark:border-slate-700/70 bg-white dark:bg-slate-900 border-l-4 border-l-green-600 dark:border-l-green-500;
   }
 }
 

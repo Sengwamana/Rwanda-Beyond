@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+﻿import React, { useState, useRef, useEffect } from 'react';
 import { 
   UploadCloud, ScanLine, AlertTriangle, Leaf, X, Image as ImageIcon, 
   Bug, ArrowRight, Activity, Info, CheckCircle2, Zap, Droplets, 
@@ -49,7 +49,7 @@ export const PestControl: React.FC<PestControlProps> = ({ language = 'en' }) => 
   const getSeverityConfig = (severity: string) => {
     const level = severity.toLowerCase();
     if (level === 'critical') return { color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-100', icon: AlertCircle, barColor: 'bg-red-500', level: 4 };
-    if (level === 'high') return { color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-100', icon: AlertTriangle, barColor: 'bg-orange-500', level: 3 };
+    if (level === 'high') return { color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-100', icon: AlertTriangle, barColor: 'bg-green-500', level: 3 };
     if (level === 'moderate') return { color: 'text-yellow-600', bg: 'bg-yellow-50', border: 'border-yellow-100', icon: Info, barColor: 'bg-yellow-500', level: 2 };
     return { color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-100', icon: CheckCircle2, barColor: 'bg-emerald-500', level: 1 };
   };
@@ -321,7 +321,7 @@ export const PestControl: React.FC<PestControlProps> = ({ language = 'en' }) => 
                                         <SeverityIcon size={12} />
                                         {activeResult.pest !== 'Healthy' ? t.pestDetected : t.healthy}
                                     </div>
-                                    <p className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-3 py-1 inline-flex mb-3">
+                                    <p className="text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded-full px-3 py-1 inline-flex mb-3">
                                         Preliminary AI screening. Confirm with an expert before treatment decisions.
                                     </p>
                                     <h2 className="text-4xl font-bold text-slate-900 dark:text-white leading-tight mb-2 tracking-tight">{activeResult.pest}</h2>
@@ -516,3 +516,4 @@ export const PestControl: React.FC<PestControlProps> = ({ language = 'en' }) => 
     </div>
   );
 };
+

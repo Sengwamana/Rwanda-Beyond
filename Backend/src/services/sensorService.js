@@ -30,6 +30,38 @@ const logSensorAuditEvent = async (entry) => {
   }
 };
 
+const triggerFarmAnalysisLifecycle = async ({
+  farmId,
+  sensorId,
+  deviceId,
+  insertedCount,
+  latestReadingTimestamp,
+}) => {
+  try {
+    const [
+      { runComprehensiveAnalysis },
+      { sendSensorAnalysisLifecycleNotifications },
+    ] = await Promise.all([
+      import('./aiService.js'),
+      import('./notificationService.js'),
+    ]);
+
+    await sendSensorAnalysisLifecycleNotifications({
+      farmId,
+      sensorId,
+      deviceId,
+      insertedCount,
+      latestReadingTimestamp,
+      runAnalysis: () => runComprehensiveAnalysis(farmId),
+    });
+  } catch (error) {
+    logger.warn(
+      `Failed to trigger AI analysis lifecycle for farm ${farmId}:`,
+      error?.message || error
+    );
+  }
+};
+
 const LATEST_READING_FIELDS = [
   'soil_moisture',
   'soil_temperature',
@@ -705,6 +737,23 @@ export const ingestSensorData = async (deviceId, readings) => {
         last_reading_at: latestReadingTimestamp || Date.now(),
       },
     });
+
+    Promise.resolve()
+      .then(() =>
+        triggerFarmAnalysisLifecycle({
+          farmId,
+          sensorId,
+          deviceId: resolvedDeviceId,
+          insertedCount: persistedInsertCount,
+          latestReadingTimestamp: latestReadingTimestamp || Date.now(),
+        })
+      )
+      .catch((error) => {
+        logger.warn(
+          `Failed to queue AI analysis lifecycle for farm ${farmId}:`,
+          error?.message || error
+        );
+      });
   }
 
   logger.info(`Sensor data ingested: ${results.valid} valid, ${results.invalid} invalid readings from ${resolvedDeviceId}`);

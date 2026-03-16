@@ -194,6 +194,7 @@ export const getUnreviewed = query({
     limit: v.optional(v.number()),
     since: v.optional(v.number()),
     severity: v.optional(v.string()),
+    minConfidence: v.optional(v.number()),
   },
   returns: v.any(),
   handler: async (ctx, args) => {
@@ -219,6 +220,12 @@ export const getUnreviewed = query({
         continue;
       }
       if (args.severity && det.severity !== args.severity) {
+        continue;
+      }
+      if (
+        args.minConfidence !== undefined &&
+        (det.confidence_score ?? 0) < args.minConfidence
+      ) {
         continue;
       }
 
@@ -281,24 +288,45 @@ export const remove = mutation({
 });
 
 export const getStats = query({
-  args: { since: v.optional(v.number()), until: v.optional(v.number()) },
+  args: {
+    farmId: v.optional(v.id("farms")),
+    since: v.optional(v.number()),
+    until: v.optional(v.number()),
+  },
   returns: v.any(),
   handler: async (ctx, args) => {
-    const detQuery = ctx.db
-      .query("pest_detections")
-      .withIndex("by_created", (q) => {
-        if (args.since !== undefined && args.until !== undefined) {
-          return q.gte("created_at", args.since).lte("created_at", args.until);
-        }
-        if (args.since !== undefined) {
-          return q.gte("created_at", args.since);
-        }
-        if (args.until !== undefined) {
-          return q.lte("created_at", args.until);
-        }
-        return q;
-      })
-      .order("desc");
+    const detQuery = args.farmId
+      ? ctx.db
+          .query("pest_detections")
+          .withIndex("by_farm_created", (q) => {
+            const base = q.eq("farm_id", args.farmId!);
+            if (args.since !== undefined && args.until !== undefined) {
+              return base.gte("created_at", args.since).lte("created_at", args.until);
+            }
+            if (args.since !== undefined) {
+              return base.gte("created_at", args.since);
+            }
+            if (args.until !== undefined) {
+              return base.lte("created_at", args.until);
+            }
+            return base;
+          })
+          .order("desc")
+      : ctx.db
+          .query("pest_detections")
+          .withIndex("by_created", (q) => {
+            if (args.since !== undefined && args.until !== undefined) {
+              return q.gte("created_at", args.since).lte("created_at", args.until);
+            }
+            if (args.since !== undefined) {
+              return q.gte("created_at", args.since);
+            }
+            if (args.until !== undefined) {
+              return q.lte("created_at", args.until);
+            }
+            return q;
+          })
+          .order("desc");
 
     const dets = [];
     for await (const det of detQuery) {

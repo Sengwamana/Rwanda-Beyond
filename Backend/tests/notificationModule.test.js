@@ -3,8 +3,16 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 const mockSmsSend = jest.fn();
 
 const mockDb = {
+  users: {
+    getByPhone: jest.fn(),
+    listActive: jest.fn(),
+  },
+  farms: {
+    getById: jest.fn(),
+  },
   messages: {
     create: jest.fn(),
+    createBatch: jest.fn(),
     getQueued: jest.fn(),
     getFailed: jest.fn(),
     update: jest.fn(),
@@ -56,6 +64,8 @@ await jest.unstable_mockModule('../src/utils/logger.js', () => ({
 
 const {
   sendBulkSMS,
+  sendRecommendationNotification,
+  sendSensorAnalysisLifecycleNotifications,
   retryFailedMessages,
   processQueuedMessages,
 } = await import('../src/services/notificationService.js');
@@ -64,8 +74,21 @@ describe('notification and communication performance fixes', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockDb.messages.create.mockImplementation(async (_data) => ({ _id: `message-${Math.random()}` }));
+    mockDb.messages.createBatch.mockResolvedValue({ count: 0, ids: [] });
     mockDb.messages.update.mockResolvedValue({ _id: 'updated-message' });
     mockDb.messages.getQueued.mockResolvedValue([]);
+    mockDb.farms.getById.mockResolvedValue({
+      _id: 'farm-1',
+      name: 'Demo Farm',
+      user_id: 'user-1',
+      district_id: 'district-1',
+    });
+    mockDb.users.listActive.mockResolvedValue([
+      { _id: 'user-1', role: 'farmer', phone_number: '0788000001', preferred_language: 'en' },
+      { _id: 'user-2', role: 'expert', phone_number: '0788000002', preferred_language: 'rw', metadata: { districtId: 'district-1' } },
+      { _id: 'user-3', role: 'expert', phone_number: null, email: 'expert@example.com', preferred_language: 'en', metadata: { districtId: 'district-2' } },
+      { _id: 'user-4', role: 'admin', phone_number: null, email: 'admin@example.com', preferred_language: 'en' },
+    ]);
   });
 
   it('sends bulk SMS with bounded concurrency', async () => {
@@ -170,5 +193,99 @@ describe('notification and communication performance fixes', () => {
     expect(mockDb.messages.update).toHaveBeenCalledTimes(2);
     expect(mockDb.messages.create).not.toHaveBeenCalled();
     expect(maxActive).toBeLessThanOrEqual(2);
+  });
+
+  it('broadcasts recommendation notifications to all active users with phone numbers', async () => {
+    mockSmsSend.mockResolvedValue({
+      SMSMessageData: {
+        Recipients: [{ status: 'Success', messageId: 'external-rec', cost: 'KES 1.00' }],
+      },
+    });
+
+    const result = await sendRecommendationNotification('user-target', 'rec-1', {
+      priority: 'critical',
+      type: 'general',
+      title: 'Check your maize field',
+      titleRw: 'Sura umurima wawe w ibigori',
+      description: 'Inspect crops this afternoon.',
+      descriptionRw: 'Suzuma imyaka yawe uyu mugoroba.',
+      farmName: 'Demo Farm',
+    });
+
+    expect(mockDb.users.listActive).toHaveBeenCalledWith();
+    expect(mockSmsSend).toHaveBeenCalledTimes(2);
+    expect(mockDb.messages.create).toHaveBeenCalledTimes(2);
+    expect(mockDb.recommendations.update).toHaveBeenCalledWith(
+      'rec-1',
+      expect.objectContaining({
+        notification_sent: true,
+        notification_channel: 'sms',
+      })
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        targetedUsers: 4,
+        deliverableUsers: 2,
+        sent: 2,
+        queued: 0,
+      })
+    );
+  });
+
+  it('creates AI sensor analysis notifications for the farm owner, same-district expert, and admins', async () => {
+    mockDb.messages.createBatch
+      .mockResolvedValueOnce({ count: 3, ids: ['msg-start-1', 'msg-start-2', 'msg-start-3'] })
+      .mockResolvedValueOnce({ count: 3, ids: ['msg-done-1', 'msg-done-2', 'msg-done-3'] });
+
+    const result = await sendSensorAnalysisLifecycleNotifications({
+      farmId: 'farm-1',
+      sensorId: 'sensor-1',
+      deviceId: 'device-1',
+      insertedCount: 2,
+      latestReadingTimestamp: Date.parse('2026-03-15T08:30:00.000Z'),
+      runAnalysis: async () => ({
+        irrigation: {
+          needsIrrigation: true,
+          urgency: 'high',
+          currentReadings: {
+            soilMoisture: 27,
+            temperature: 28,
+            humidity: 64,
+          },
+        },
+        nutrients: {
+          needsFertilization: false,
+        },
+      }),
+    });
+
+    expect(mockDb.farms.getById).toHaveBeenCalledWith('farm-1');
+    expect(mockDb.users.listActive).toHaveBeenCalledWith();
+    expect(mockDb.messages.createBatch).toHaveBeenCalledTimes(2);
+
+    const startMessages = mockDb.messages.createBatch.mock.calls[0][0];
+    const summaryMessages = mockDb.messages.createBatch.mock.calls[1][0];
+
+    expect(startMessages).toHaveLength(3);
+    expect(summaryMessages).toHaveLength(3);
+    expect(startMessages.map((message) => message.user_id).sort()).toEqual(['user-1', 'user-2', 'user-4']);
+    expect(summaryMessages.map((message) => message.user_id).sort()).toEqual(['user-1', 'user-2', 'user-4']);
+    expect(summaryMessages[0].metadata).toEqual(
+      expect.objectContaining({
+        type: 'sensor_ai_analysis',
+        stage: 'completed',
+        farm_id: 'farm-1',
+        sensor_id: 'sensor-1',
+      })
+    );
+    expect(summaryMessages.some((message) => message.content.includes('AI analysis for Demo Farm'))).toBe(true);
+    expect(summaryMessages.some((message) => message.content.includes('Irrigation: recommended'))).toBe(true);
+
+    expect(result).toEqual({
+      targetedUsers: 3,
+      started: 3,
+      completed: 3,
+      failed: 0,
+    });
   });
 });

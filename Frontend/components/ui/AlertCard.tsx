@@ -1,4 +1,4 @@
-// =====================================================
+﻿// =====================================================
 // Alert Card Component - Smart Maize Farming System
 // Display alerts, notifications, and status messages
 // =====================================================
@@ -50,12 +50,12 @@ export const AlertCard: React.FC<AlertCardProps> = ({
       Icon: CheckCircle2
     },
     warning: {
-      bgColor: 'bg-amber-50 dark:bg-amber-900/20',
-      borderColor: 'border-amber-200 dark:border-amber-800',
-      iconColor: 'text-amber-600 dark:text-amber-400',
-      iconBgColor: 'bg-amber-100 dark:bg-amber-800/50',
-      titleColor: 'text-amber-800 dark:text-amber-200',
-      textColor: 'text-amber-700 dark:text-amber-300',
+      bgColor: 'bg-green-50 dark:bg-green-900/20',
+      borderColor: 'border-green-200 dark:border-green-800',
+      iconColor: 'text-green-600 dark:text-green-400',
+      iconBgColor: 'bg-green-100 dark:bg-green-800/50',
+      titleColor: 'text-green-800 dark:text-green-200',
+      textColor: 'text-green-700 dark:text-green-300',
       Icon: AlertTriangle
     },
     error: {
@@ -155,7 +155,7 @@ export const AlertCard: React.FC<AlertCardProps> = ({
                   hover:underline
                 `}
               >
-                {action.label} →
+                {action.label} ->
               </button>
             )}
           </div>
@@ -242,7 +242,7 @@ export const Toast: React.FC<ToastProps> = ({
 
   const config = {
     success: { bg: 'bg-green-600', Icon: CheckCircle2 },
-    warning: { bg: 'bg-amber-500', Icon: AlertTriangle },
+    warning: { bg: 'bg-green-500', Icon: AlertTriangle },
     error: { bg: 'bg-red-600', Icon: AlertCircle },
     info: { bg: 'bg-blue-600', Icon: Info }
   };
@@ -269,3 +269,4 @@ export const Toast: React.FC<ToastProps> = ({
 };
 
 export default AlertCard;
+

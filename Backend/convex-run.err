@@ -1,0 +1,21 @@
+✔ Started running a deployment locally at http://127.0.0.1:3210 and saved its:
+    name as CONVEX_DEPLOYMENT
+    Client URL as null
+ to .env.local
+Run `npx convex login` at any time to create an account and link this deployment.
+
+Write your Convex functions in convex\
+Give us feedback at https://convex.dev/community or support@convex.dev
+View the Convex dashboard at http://127.0.0.1:6790/?d=anonymous-Backend
+
+- Preparing Convex functions...
+
+[36mA minor update is available for Convex[39m [2m(1.31.7 → 1.32.0)[22m
+[2mChangelog:[22m [4mhttps://github.com/get-convex/convex-js/blob/main/CHANGELOG.md#changelog[24m
+[32m√[39m 16:03:43 Convex functions ready! (22.17s)
+08/03/2026, 16:15:43 [CONVEX M(auditLogs:create)] Uncaught Error: Failed to insert or update a document in table "audit_logs" because it does not match the schema: Value does not match validator.
+Path: .ip_address
+Value: null
+Validator: v.string()
+    at async handler (../convex/auditLogs.ts:18:9)
+

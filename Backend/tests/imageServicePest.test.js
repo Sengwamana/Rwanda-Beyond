@@ -7,8 +7,11 @@ const mockDb = {
   },
   pestDetections: {
     create: jest.fn(),
+    getByFarm: jest.fn(),
     getById: jest.fn(),
     getOldImages: jest.fn(),
+    getStats: jest.fn(),
+    getUnreviewed: jest.fn(),
     remove: jest.fn(),
     update: jest.fn(),
   },
@@ -145,6 +148,75 @@ describe('imageService pest cleanup performance fixes', () => {
         capturedAt: '2026-03-09T10:15:00.000Z',
       })
     );
+  });
+
+  it('maps pest image history filters to the persisted storage fields and uses count totals', async () => {
+    mockDb.pestDetections.getByFarm.mockResolvedValue({
+      data: [{ _id: 'det-6' }],
+      count: 7,
+    });
+
+    const result = await imageService.getFarmImages('farm-1', {
+      page: 2,
+      limit: 3,
+      pestDetectedOnly: true,
+    });
+
+    expect(mockDb.pestDetections.getByFarm).toHaveBeenCalledWith('farm-1', {
+      page: 2,
+      limit: 3,
+      pestDetected: true,
+    });
+    expect(result).toEqual({
+      images: [{ _id: 'det-6' }],
+      total: 7,
+      page: 2,
+      limit: 3,
+      totalPages: 3,
+    });
+  });
+
+  it('passes supported stats filters to pest detection storage queries', async () => {
+    mockDb.pestDetections.getStats.mockResolvedValue([{ pest_type: 'fall_armyworm' }]);
+
+    const result = await imageService.getDetectionStats({
+      farmId: 'farm-1',
+      startDate: '2026-03-01T00:00:00.000Z',
+      endDate: '2026-03-07T23:59:59.999Z',
+    });
+
+    expect(mockDb.pestDetections.getStats).toHaveBeenCalledWith({
+      farmId: 'farm-1',
+      since: new Date('2026-03-01T00:00:00.000Z').getTime(),
+      until: new Date('2026-03-07T23:59:59.999Z').getTime(),
+    });
+    expect(result).toEqual([{ pest_type: 'fall_armyworm' }]);
+  });
+
+  it('uses stored count totals when listing unreviewed detections', async () => {
+    mockDb.pestDetections.getUnreviewed.mockResolvedValue({
+      data: [{ _id: 'det-7' }],
+      count: 5,
+    });
+
+    const result = await imageService.getUnreviewedDetections({
+      page: 1,
+      limit: 2,
+      minConfidence: 0.8,
+    });
+
+    expect(mockDb.pestDetections.getUnreviewed).toHaveBeenCalledWith({
+      page: 1,
+      limit: 2,
+      minConfidence: 0.8,
+    });
+    expect(result).toEqual({
+      detections: [{ _id: 'det-7' }],
+      total: 5,
+      page: 1,
+      limit: 2,
+      totalPages: 3,
+    });
   });
 
   it('writes an audit log when persisting AI detection result updates', async () => {

@@ -3,7 +3,7 @@
 // =====================================================
 
 import apiClient from './api';
-import { ApiResponse, FarmDashboardData, SensorData } from '../types';
+import { ApiResponse, FarmDashboardData, Recommendation, SensorData } from '../types';
 
 // Analytics Types
 export type FarmDashboardAnalytics = FarmDashboardData & {
@@ -47,25 +47,53 @@ export interface SensorTrendsData {
 export interface RecommendationHistory {
   farmId: string;
   period: {
-    start: string;
-    end: string;
+    days?: number;
+    start?: string;
+    end?: string;
   };
-  recommendations: Array<{
-    id: string;
-    type: string;
-    status: string;
-    priority: string;
-    createdAt: string;
-    respondedAt: string | null;
-    responseTime: number | null;
-  }>;
-  statistics: {
+  history: Recommendation[];
+  stats: {
     total: number;
     byType: Record<string, number>;
     byStatus: Record<string, number>;
-    acceptanceRate: number;
-    avgResponseTimeHours: number;
+    byPriority: Record<string, number>;
+    byChannel: Record<string, number>;
+    responseRate: number;
+    averageResponseTime: number | null;
   };
+}
+
+export interface FarmActivityEvent {
+  id: string;
+  type: 'recommendation' | 'irrigation' | 'fertilization' | 'pest_control' | 'pest_detection' | 'farm_issue';
+  action: 'created' | 'responded' | 'executed' | 'completed' | 'reported' | 'reviewed' | 'updated' | 'scheduled' | 'assigned' | 'postponed';
+  title: string;
+  description: string;
+  timestamp: string;
+  status?: string;
+  metadata?: Record<string, any>;
+}
+
+export type FarmActivityType = FarmActivityEvent['type'];
+export type FarmActivityFilterType = 'all' | FarmActivityType;
+
+export interface FarmActivityFeed {
+  farmId: string;
+  period: {
+    days: number;
+    since: string;
+    until: string;
+  };
+  filters?: {
+    type: FarmActivityFilterType;
+    limit: number;
+  };
+  summary: {
+    total: number;
+    byType: Record<string, number>;
+    byAction: Record<string, number>;
+  };
+  activity: FarmActivityEvent[];
 }
 
 export interface SystemOverview {
@@ -106,22 +134,31 @@ export interface SystemOverview {
 }
 
 export interface RecentActivity {
+  period: {
+    hours: number;
+    since: string;
+  };
+  filters?: {
+    type: string;
+    limit: number;
+  };
+  summary: {
+    newUsers: number;
+    newFarms: number;
+    sensorReadings: number;
+    recommendations: number;
+    pestDetections: number;
+    pestControlActions: number;
+  };
   activities: Array<{
     id: string;
-    type: 'sensor_reading' | 'recommendation' | 'pest_detection' | 'irrigation' | 'user_action';
+    type: 'sensor_reading' | 'recommendation' | 'pest_detection' | 'pest_control' | 'farm' | 'user';
+    title: string;
     description: string;
-    farmId?: string;
-    farmName?: string;
-    userId?: string;
-    userName?: string;
     timestamp: string;
+    status?: string;
     metadata?: Record<string, any>;
   }>;
-  pagination: {
-    page: number;
-    limit: number;
-    total: number;
-  };
 }
 
 export interface DistrictAnalytics {
@@ -200,6 +237,51 @@ const normalizeTrendRow = (row: any) => ({
   readingsCount: row?.readingsCount ?? row?.reading_count,
 });
 
+const normalizeRecommendationHistoryItem = (item: any): Recommendation => ({
+  id: String(item?.id || item?._id || ''),
+  farmId: String(item?.farmId || item?.farm_id || item?.farm?.id || ''),
+  userId: String(item?.userId || item?.user_id || item?.user?.id || ''),
+  type: item?.type || 'general',
+  priority: item?.priority || 'medium',
+  status: item?.status || 'pending',
+  title: item?.title || '',
+  titleRw: item?.titleRw || item?.title_rw || undefined,
+  description: item?.description || '',
+  descriptionRw: item?.descriptionRw || item?.description_rw || undefined,
+  recommendedAction: item?.recommendedAction || item?.recommended_action || undefined,
+  actionDeadline:
+    item?.actionDeadline
+    || (typeof item?.action_deadline === 'number' ? new Date(item.action_deadline).toISOString() : item?.action_deadline)
+    || undefined,
+  supportingData: item?.supportingData || item?.supporting_data || undefined,
+  confidenceScore: item?.confidenceScore ?? item?.confidence_score,
+  modelVersion: item?.modelVersion || item?.model_version || undefined,
+  respondedAt:
+    item?.respondedAt
+    || (typeof item?.responded_at === 'number' ? new Date(item.responded_at).toISOString() : item?.responded_at)
+    || undefined,
+  respondedBy: item?.respondedBy || item?.responded_by || undefined,
+  responseChannel: item?.responseChannel || item?.response_channel || undefined,
+  responseNotes: item?.responseNotes || item?.response_notes || undefined,
+  deferredUntil:
+    item?.deferredUntil
+    || (typeof item?.deferred_until === 'number' ? new Date(item.deferred_until).toISOString() : item?.deferred_until)
+    || undefined,
+  notificationSent: item?.notificationSent ?? item?.notification_sent ?? false,
+  expiresAt:
+    item?.expiresAt
+    || (typeof item?.expires_at === 'number' ? new Date(item.expires_at).toISOString() : item?.expires_at)
+    || undefined,
+  createdAt:
+    item?.createdAt
+    || (typeof item?.created_at === 'number' ? new Date(item.created_at).toISOString() : item?.created_at)
+    || new Date().toISOString(),
+  updatedAt:
+    item?.updatedAt
+    || (typeof item?.updated_at === 'number' ? new Date(item.updated_at).toISOString() : item?.updated_at)
+    || new Date().toISOString(),
+});
+
 // Analytics service functions
 export const analyticsService = {
   /**
@@ -258,15 +340,68 @@ export const analyticsService = {
   getRecommendationHistory: async (
     farmId: string,
     params?: {
-      startDate?: string;
-      endDate?: string;
-      type?: string;
+      days?: number;
     }
   ): Promise<ApiResponse<RecommendationHistory>> => {
     const response = await apiClient.get<ApiResponse<RecommendationHistory>>(
-      `/analytics/farm/${farmId}/recommendations`,
+      `/analytics/farm/${farmId}/recommendation-history`,
       { params }
     );
+    const payload: any = response.data.data || {};
+
+    return {
+      ...response.data,
+      data: {
+        ...payload,
+        history: Array.isArray(payload.history)
+          ? payload.history.map(normalizeRecommendationHistoryItem)
+          : [],
+      },
+    };
+  },
+
+  /**
+   * Get farm activity history for a farm
+   */
+  getFarmActivity: async (
+    farmId: string,
+    params?: {
+      days?: number;
+      limit?: number;
+      type?: FarmActivityFilterType;
+    }
+  ): Promise<ApiResponse<FarmActivityFeed>> => {
+    const response = await apiClient.get<ApiResponse<FarmActivityFeed>>(
+      `/analytics/farm/${farmId}/activity`,
+      { params }
+    );
+    const payload: any = response.data.data || {};
+
+    return {
+      ...response.data,
+      data: {
+        ...payload,
+        activity: Array.isArray(payload.activity) ? payload.activity : [],
+      },
+    };
+  },
+
+  /**
+   * Export farm activity history
+   */
+  exportFarmActivity: async (
+    farmId: string,
+    params?: {
+      days?: number;
+      limit?: number;
+      type?: FarmActivityFilterType;
+      format?: 'csv' | 'json';
+    }
+  ): Promise<Blob> => {
+    const response = await apiClient.get(`/analytics/farm/${farmId}/activity/export`, {
+      params,
+      responseType: 'blob',
+    });
     return response.data;
   },
 
@@ -274,7 +409,7 @@ export const analyticsService = {
    * Get system-wide overview (admin only)
    */
   getSystemOverview: async (): Promise<ApiResponse<SystemOverview>> => {
-    const response = await apiClient.get<ApiResponse<SystemOverview>>('/analytics/overview');
+    const response = await apiClient.get<ApiResponse<SystemOverview>>('/analytics/system/overview');
     return response.data;
   },
 
@@ -282,15 +417,38 @@ export const analyticsService = {
    * Get recent system activity
    */
   getRecentActivity: async (params?: {
-    page?: number;
+    hours?: number;
     limit?: number;
-    type?: string;
-    farmId?: string;
+    type?: 'all' | 'user' | 'farm' | 'recommendation' | 'pest_detection' | 'pest_control' | 'sensor_reading';
   }): Promise<ApiResponse<RecentActivity>> => {
     const response = await apiClient.get<ApiResponse<RecentActivity>>(
-      '/analytics/activity',
+      '/analytics/system/activity',
       { params }
     );
+    const payload: any = response.data.data || {};
+
+    return {
+      ...response.data,
+      data: {
+        ...payload,
+        activities: Array.isArray(payload.activities) ? payload.activities : [],
+      },
+    };
+  },
+
+  /**
+   * Export recent system activity
+   */
+  exportRecentActivity: async (params?: {
+    hours?: number;
+    limit?: number;
+    type?: 'all' | 'user' | 'farm' | 'recommendation' | 'pest_detection' | 'pest_control' | 'sensor_reading';
+    format?: 'csv' | 'json';
+  }): Promise<Blob> => {
+    const response = await apiClient.get('/analytics/system/activity/export', {
+      params,
+      responseType: 'blob',
+    });
     return response.data;
   },
 

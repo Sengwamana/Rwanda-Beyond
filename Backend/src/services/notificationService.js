@@ -74,6 +74,281 @@ const sendSmsThroughProvider = async (phoneNumber, message) => {
   };
 };
 
+const resolveUserDistrictId = (user) => {
+  if (!user || typeof user !== 'object') return null;
+
+  const metadata = user.metadata && typeof user.metadata === 'object' ? user.metadata : {};
+
+  return (
+    user.district_id
+    || user.districtId
+    || metadata.districtId
+    || metadata.district_id
+    || metadata.coverageDistrictId
+    || null
+  );
+};
+
+const getRecipientAddress = (user) =>
+  user?.phone_number
+  || user?.email
+  || `user:${user?._id || user?.id || 'unknown'}`;
+
+const formatSensorMetric = (label, value, suffix = '') => {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return null;
+  }
+
+  return `${label} ${Number(value).toFixed(Number.isInteger(Number(value)) ? 0 : 1)}${suffix}`;
+};
+
+const buildReadingSummary = (analysis) => {
+  const readings = analysis?.irrigation?.currentReadings || {};
+  const parts = [
+    formatSensorMetric('Soil moisture', readings.soilMoisture, '%'),
+    formatSensorMetric('Temperature', readings.temperature, 'C'),
+    formatSensorMetric('Humidity', readings.humidity, '%'),
+  ].filter(Boolean);
+
+  return parts.length > 0 ? parts.join(', ') : null;
+};
+
+const buildIrrigationSummary = (analysis) => {
+  const irrigation = analysis?.irrigation;
+
+  if (!irrigation) {
+    return 'not available';
+  }
+
+  if (irrigation.error) {
+    return 'analysis unavailable';
+  }
+
+  if (irrigation.needsIrrigation === true) {
+    return `recommended${irrigation.urgency ? ` (${irrigation.urgency})` : ''}`;
+  }
+
+  if (irrigation.needsIrrigation === false) {
+    return 'not needed right now';
+  }
+
+  return irrigation.message || 'no clear action';
+};
+
+const buildNutrientSummary = (analysis) => {
+  const nutrients = analysis?.nutrients;
+
+  if (!nutrients) {
+    return 'not available';
+  }
+
+  if (nutrients.error) {
+    return 'analysis unavailable';
+  }
+
+  if (nutrients.needsFertilization === true) {
+    return `fertilization recommended${nutrients.urgency ? ` (${nutrients.urgency})` : ''}`;
+  }
+
+  if (nutrients.needsFertilization === false) {
+    return 'no fertilization needed right now';
+  }
+
+  return nutrients.message || 'no clear action';
+};
+
+const buildSensorAnalysisStartedContent = ({ farmName, deviceId, insertedCount }) => ({
+  en: `New sensor data from ${farmName} was received from ${deviceId} and sent for AI farm analysis. ${insertedCount} reading${insertedCount === 1 ? '' : 's'} stored.`,
+  rw: `Amakuru mashya ya sensor yo ku murima ${farmName} yakiriwe kuri ${deviceId} kandi yoherejwe kuri AI ngo asesengurwe. Ibisomwa ${insertedCount} byabitswe.`,
+});
+
+const buildSensorAnalysisCompletedContent = ({ farmName, analysis }) => {
+  const readingSummary = buildReadingSummary(analysis);
+  const irrigationSummary = buildIrrigationSummary(analysis);
+  const nutrientSummary = buildNutrientSummary(analysis);
+
+  const englishSegments = [
+    `AI analysis for ${farmName}:`,
+    readingSummary ? `${readingSummary}.` : null,
+    `Irrigation: ${irrigationSummary}.`,
+    `Nutrients: ${nutrientSummary}.`,
+    'Check the dashboard for full farm details.',
+  ].filter(Boolean);
+
+  const kinyarwandaSegments = [
+    `AI yamaze gusesengura umurima ${farmName}:`,
+    readingSummary ? `${readingSummary}.` : null,
+    `Kuhira: ${irrigationSummary}.`,
+    `Ifumbire: ${nutrientSummary}.`,
+    'Reba kuri dashboard ibisobanuro byose byumurima.',
+  ].filter(Boolean);
+
+  return {
+    en: englishSegments.join(' '),
+    rw: kinyarwandaSegments.join(' '),
+  };
+};
+
+const buildSensorAnalysisFailedContent = ({ farmName }) => ({
+  en: `Sensor data from ${farmName} was stored, but AI farm analysis could not complete right now. Check the dashboard for the latest readings.`,
+  rw: `Amakuru ya sensor yo ku murima ${farmName} yarabitswe, ariko isesengura rya AI ntiryashoboye kurangira ubu. Reba dashboard urebe ibisomwa biheruka.`,
+});
+
+const createStoredNotificationBatch = async (recipients, { subject, content, metadata }) => {
+  if (!Array.isArray(recipients) || recipients.length === 0) {
+    return { count: 0, ids: [] };
+  }
+
+  const createdAt = Date.now();
+  const messages = recipients.map((user) => {
+    const prefersKinyarwanda = (user?.preferred_language || 'rw') === 'rw';
+
+    return {
+      user_id: user._id || user.id,
+      channel: 'push',
+      recipient: getRecipientAddress(user),
+      subject,
+      content: prefersKinyarwanda ? content.rw : content.en,
+      content_rw: content.rw,
+      status: 'sent',
+      sent_at: createdAt,
+      metadata,
+      created_at: createdAt,
+    };
+  });
+
+  const result = await db.messages.createBatch(messages);
+  return {
+    count: result?.count ?? messages.length,
+    ids: result?.ids ?? [],
+  };
+};
+
+const resolveFarmAnalysisRecipients = async (farmId) => {
+  const farm = await db.farms.getById(farmId);
+  if (!farm) {
+    return { farm: null, recipients: [] };
+  }
+
+  const activeUsers = await db.users.listActive();
+  const farmOwnerId = farm.user_id ? String(farm.user_id) : null;
+  const farmDistrictId = farm.district_id ? String(farm.district_id) : null;
+  const uniqueRecipients = new Map();
+
+  for (const user of activeUsers || []) {
+    const userId = user?._id || user?.id;
+    if (!userId) {
+      continue;
+    }
+
+    const role = user.role || 'farmer';
+    const isFarmOwner = farmOwnerId && String(userId) === farmOwnerId;
+    const isAdmin = role === 'admin';
+    const isDistrictExpert =
+      role === 'expert'
+      && farmDistrictId
+      && String(resolveUserDistrictId(user) || '') === farmDistrictId;
+
+    if (isFarmOwner || isAdmin || isDistrictExpert) {
+      uniqueRecipients.set(String(userId), user);
+    }
+  }
+
+  return {
+    farm,
+    recipients: Array.from(uniqueRecipients.values()),
+  };
+};
+
+export const sendSensorAnalysisLifecycleNotifications = async ({
+  farmId,
+  sensorId,
+  deviceId,
+  insertedCount,
+  latestReadingTimestamp,
+  runAnalysis,
+}) => {
+  const { farm, recipients } = await resolveFarmAnalysisRecipients(farmId);
+  const farmName = farm?.name || 'this farm';
+
+  if (!farm || recipients.length === 0) {
+    logger.warn(`No recipients available for sensor AI analysis notifications on farm ${farmId}`);
+    return {
+      targetedUsers: recipients.length,
+      started: 0,
+      completed: 0,
+      failed: 0,
+    };
+  }
+
+  const metadataBase = {
+    type: 'sensor_ai_analysis',
+    farm_id: farmId,
+    sensor_id: sensorId,
+    device_id: deviceId,
+    inserted_count: insertedCount,
+    latest_reading_at: latestReadingTimestamp,
+  };
+
+  const started = await createStoredNotificationBatch(recipients, {
+    subject: `Sensor data received for ${farmName}`,
+    content: buildSensorAnalysisStartedContent({
+      farmName,
+      deviceId,
+      insertedCount,
+    }),
+    metadata: {
+      ...metadataBase,
+      stage: 'started',
+    },
+  });
+
+  try {
+    const analysis = typeof runAnalysis === 'function'
+      ? await runAnalysis()
+      : null;
+
+    const completed = await createStoredNotificationBatch(recipients, {
+      subject: `AI farm analysis ready for ${farmName}`,
+      content: buildSensorAnalysisCompletedContent({
+        farmName,
+        analysis,
+      }),
+      metadata: {
+        ...metadataBase,
+        stage: 'completed',
+        analysis_timestamp: Date.now(),
+      },
+    });
+
+    return {
+      targetedUsers: recipients.length,
+      started: started.count,
+      completed: completed.count,
+      failed: 0,
+    };
+  } catch (error) {
+    logger.warn('Failed to complete AI farm analysis notification flow:', error?.message || error);
+
+    const failed = await createStoredNotificationBatch(recipients, {
+      subject: `AI farm analysis delayed for ${farmName}`,
+      content: buildSensorAnalysisFailedContent({ farmName }),
+      metadata: {
+        ...metadataBase,
+        stage: 'failed',
+        failed_reason: error?.message || String(error),
+      },
+    });
+
+    return {
+      targetedUsers: recipients.length,
+      started: started.count,
+      completed: 0,
+      failed: failed.count,
+    };
+  }
+};
+
 /**
  * Send SMS message
  * @param {string} phoneNumber - Recipient phone number
@@ -213,43 +488,87 @@ const logMessage = async (messageData) => {
  * @param {string} recommendationId - Recommendation UUID
  * @param {Object} notificationData - Notification details
  */
-export const sendRecommendationNotification = async (userId, recommendationId, notificationData) => {
+export const sendRecommendationNotification = async (_userId, recommendationId, notificationData) => {
   const {
-    phoneNumber,
     priority,
     type,
     title,
+    titleRw,
     description,
+    descriptionRw,
     farmName
   } = notificationData;
+  const activeUsers = await db.users.listActive();
+  const deliverableUsers = (activeUsers || []).filter((user) => user.phone_number);
 
-  // Build message based on type
-  const message = buildNotificationMessage(type, {
-    title,
-    description,
-    farmName,
-    priority
-  });
+  if (deliverableUsers.length === 0) {
+    logger.warn(`No active users with phone numbers available for recommendation ${recommendationId}, skipping notification`);
+    return {
+      targetedUsers: activeUsers?.length || 0,
+      deliverableUsers: 0,
+      sent: 0,
+      queued: 0,
+    };
+  }
 
   // Determine delivery timing based on priority
   const delay = getDeliveryDelay(priority);
 
   if (delay === 0) {
-    // Send immediately for critical alerts
-    await sendSMS(phoneNumber, message, {
-      userId,
-      recommendationId,
-      priority
+    let sent = 0;
+
+    await runWithConcurrency(
+      deliverableUsers,
+      config.notifications.deliveryConcurrency,
+      async (user) => {
+        const language = user.preferred_language || 'rw';
+        const message = buildNotificationMessage(type, {
+          title: language === 'rw' && titleRw ? titleRw : title,
+          description: language === 'rw' && descriptionRw ? descriptionRw : description,
+          farmName,
+          priority,
+        });
+
+        await sendSMS(user.phone_number, message, {
+          userId: user._id || user.id,
+          recommendationId,
+          priority,
+          language,
+        });
+        sent += 1;
+      }
+    );
+
+    await db.recommendations.update(recommendationId, {
+      notification_sent: true,
+      notification_sent_at: Date.now(),
+      notification_channel: 'sms'
     });
+
+    return {
+      targetedUsers: activeUsers.length,
+      deliverableUsers: deliverableUsers.length,
+      sent,
+      queued: 0,
+    };
   } else {
-    // Queue for delayed/batched delivery
-    queueMessage({
-      phoneNumber,
-      message,
-      userId,
-      recommendationId,
-      priority,
-      delay
+    deliverableUsers.forEach((user) => {
+      const language = user.preferred_language || 'rw';
+      const message = buildNotificationMessage(type, {
+        title: language === 'rw' && titleRw ? titleRw : title,
+        description: language === 'rw' && descriptionRw ? descriptionRw : description,
+        farmName,
+        priority,
+      });
+
+      queueMessage({
+        phoneNumber: user.phone_number,
+        message,
+        userId: user._id || user.id,
+        recommendationId,
+        priority,
+        delay
+      });
     });
   }
 
@@ -259,6 +578,13 @@ export const sendRecommendationNotification = async (userId, recommendationId, n
     notification_sent_at: Date.now(),
     notification_channel: 'sms'
   });
+
+  return {
+    targetedUsers: activeUsers.length,
+    deliverableUsers: deliverableUsers.length,
+    sent: 0,
+    queued: deliverableUsers.length,
+  };
 };
 
 /**
@@ -527,6 +853,8 @@ const handleRecommendationsMenu = async (userId, inputs, lang) => {
     }
 
     await updateRecommendationStatus(rec._id, status, {
+      respondedBy: userId,
+      channel: 'ussd',
       deferredUntil: status === 'deferred' 
         ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() 
         : null
@@ -781,6 +1109,7 @@ export default {
   sendSMS,
   sendBulkSMS,
   sendRecommendationNotification,
+  sendSensorAnalysisLifecycleNotifications,
   handleUSSDCallback,
   retryFailedMessages,
   getMessageStats,

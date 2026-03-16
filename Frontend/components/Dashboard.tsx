@@ -1,17 +1,64 @@
-import React, { useState, useEffect } from 'react';
+import React, { Suspense, lazy, useState, useEffect } from 'react';
 import { 
   LayoutGrid, Sprout, Settings as SettingsIcon, LogOut, 
   Bell, Search, Menu, Activity, Server, Sun, Moon, Users, FileClock, Cpu, SlidersHorizontal, RadioTower, FileSpreadsheet, Send, CheckCheck, X, Trash2, PanelLeftClose, PanelLeftOpen,
   BarChart2, Bot, Wifi, BookOpen, MessageSquare, Droplets, Bug
 } from 'lucide-react';
-import { Settings } from './Settings';
-import { ConnectedFarmerDashboard } from './ConnectedFarmerDashboard';
-import { ConnectedExpertDashboard } from './ConnectedExpertDashboard';
-import { ConnectedAdminDashboard } from './ConnectedAdminDashboard';
-import { useSystemHealth } from '../hooks/useApi';
-import { UserRole } from '../types';
+import { useMarkAllMessagesRead, useMarkMessageRead, useMyMessages, useSystemHealth } from '../hooks/useApi';
+import { Message, UserRole } from '../types';
 import { Language, translations } from '../utils/translations';
 import { useAlertStore, useAppStore, useAuthStore, useFarmStore } from '../store';
+
+const Settings = lazy(() => import('./Settings').then((module) => ({ default: module.Settings })));
+const ConnectedFarmerDashboard = lazy(() =>
+  import('./ConnectedFarmerDashboard').then((module) => ({ default: module.ConnectedFarmerDashboard }))
+);
+const ConnectedExpertDashboard = lazy(() =>
+  import('./ConnectedExpertDashboard').then((module) => ({ default: module.ConnectedExpertDashboard }))
+);
+const ConnectedAdminDashboard = lazy(() =>
+  import('./ConnectedAdminDashboard').then((module) => ({ default: module.ConnectedAdminDashboard }))
+);
+
+const DashboardContentSkeleton: React.FC<{ role: UserRole }> = ({ role }) => {
+  const roleTone =
+    role === 'admin'
+      ? 'from-emerald-500/10 to-transparent dark:from-emerald-500/15'
+      : role === 'expert'
+        ? 'from-green-500/10 to-transparent dark:from-green-500/15'
+        : 'from-emerald-500/10 to-transparent dark:from-emerald-500/15';
+
+  return (
+  <div className="space-y-5 animate-pulse">
+    <div className={`rounded-3xl border border-slate-200/70 dark:border-slate-700/70 bg-gradient-to-br ${roleTone} bg-white/80 dark:bg-slate-900/70 p-4 md:p-6`}>
+      <div className="h-3 w-40 rounded-full bg-slate-200 dark:bg-slate-700 mb-3" />
+      <div className="h-8 w-64 rounded-xl bg-slate-200 dark:bg-slate-700 mb-3" />
+      <div className="h-3 w-5/6 max-w-xl rounded-full bg-slate-200 dark:bg-slate-700" />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-5">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <div key={`dash-skeleton-kpi-${index}`} className="rounded-2xl border border-slate-200/70 dark:border-slate-700/70 bg-white/80 dark:bg-slate-900/70 p-3">
+            <div className="h-2.5 w-16 rounded-full bg-slate-200 dark:bg-slate-700 mb-2" />
+            <div className="h-6 w-12 rounded-lg bg-slate-200 dark:bg-slate-700" />
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {Array.from({ length: 3 }).map((_, index) => (
+        <div key={`dash-skeleton-panel-${index}`} className="rounded-2xl border border-slate-200/70 dark:border-slate-700/70 bg-white/80 dark:bg-slate-900/70 p-4 md:p-5">
+          <div className="h-4 w-32 rounded-full bg-slate-200 dark:bg-slate-700 mb-3" />
+          <div className="space-y-2">
+            <div className="h-3 w-full rounded-full bg-slate-200 dark:bg-slate-700" />
+            <div className="h-3 w-11/12 rounded-full bg-slate-200 dark:bg-slate-700" />
+            <div className="h-3 w-9/12 rounded-full bg-slate-200 dark:bg-slate-700" />
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+  );
+};
 
 interface DashboardProps {
   userRole: UserRole;
@@ -36,6 +83,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
   const { user } = useAuthStore();
   const { selectedFarm } = useFarmStore();
   const { data: systemHealth } = useSystemHealth(userRole === 'admin');
+  const notificationsQuery = useMyMessages({ page: 1, limit: 8 });
+  const markMessageReadMutation = useMarkMessageRead();
+  const markAllMessagesReadMutation = useMarkAllMessagesRead();
   
   const t = translations[language].dashboard;
 
@@ -94,6 +144,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
         return [
           { id: 'overview', label: t.systemView, icon: Server },
           { id: 'users', label: 'Users', icon: Users },
+          { id: 'farms', label: 'Farms', icon: Sprout },
           { id: 'audit', label: 'Audit Logs', icon: FileClock },
           { id: 'devices', label: 'Devices', icon: Cpu },
           { id: 'config', label: 'Configuration', icon: SlidersHorizontal },
@@ -160,6 +211,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
   const displayName =
     [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.email || userRole;
   const compactSidebar = sidebarCollapsed && !isMobileNavOpen;
+  const todayLabel = new Date().toLocaleDateString(undefined, {
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+  });
   const pageTitle =
     userRole === 'farmer'
       ? selectedFarm?.name || 'My Farm Dashboard'
@@ -178,6 +234,53 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
       : selectedFarm?.currentGrowthStage
         ? `Growth stage: ${selectedFarm.currentGrowthStage.replace(/_/g, ' ')}`
         : 'Live data connected';
+  const activeNavItem = navItems.find((item) => item.id === activeTab);
+  const ActiveTabIcon = activeNavItem?.icon || LayoutGrid;
+  const roleTheme =
+    userRole === 'admin'
+      ? {
+          surface: 'from-emerald-500/10 via-green-500/5 to-transparent dark:from-emerald-500/20 dark:via-green-500/10',
+          chip: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/20',
+          dot: 'bg-emerald-500',
+        }
+      : userRole === 'expert'
+        ? {
+            surface: 'from-green-500/10 via-green-500/5 to-transparent dark:from-green-500/20 dark:via-green-500/10',
+            chip: 'bg-green-500/15 text-green-700 dark:text-green-300 border-green-500/20',
+            dot: 'bg-green-500',
+          }
+        : {
+            surface: 'from-emerald-500/10 via-green-500/5 to-transparent dark:from-emerald-500/20 dark:via-green-500/10',
+            chip: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/20',
+            dot: 'bg-emerald-500',
+          };
+  const rolePillClass =
+    userRole === 'admin'
+      ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/20'
+      : userRole === 'expert'
+        ? 'bg-green-500/15 text-green-700 dark:text-green-300 border-green-500/20'
+        : 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/20';
+  const navAccentClass =
+    userRole === 'admin'
+      ? 'bg-[#0F5132] text-white border-[#0F5132] shadow-[0_12px_28px_-18px_rgba(15,81,50,0.85)]'
+      : userRole === 'expert'
+        ? 'bg-green-600 text-white border-green-600 shadow-[0_12px_28px_-18px_rgba(22,163,74,0.85)]'
+        : 'bg-[#0F5132] text-white border-[#0F5132] shadow-[0_12px_28px_-18px_rgba(15,81,50,0.85)]';
+  const navAccentTextClass =
+    userRole === 'admin'
+      ? 'group-hover:text-[#0F5132]'
+      : userRole === 'expert'
+        ? 'group-hover:text-green-600'
+        : 'group-hover:text-[#0F5132]';
+  const quickActiveTabClass =
+    userRole === 'admin'
+      ? 'bg-[#0F5132] text-white border-[#0F5132] shadow-md'
+      : userRole === 'expert'
+        ? 'bg-green-600 text-white border-green-600 shadow-md'
+        : 'bg-[#0F5132] text-white border-[#0F5132] shadow-md';
+  const persistedMessages = notificationsQuery.data?.messages || [];
+  const messageUnreadCount = notificationsQuery.data?.unreadCount || 0;
+  const totalUnreadCount = unreadCount + messageUnreadCount;
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -223,13 +326,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
         setShowMobileSearch(false);
       }}
       title={compactSidebar ? label : undefined}
-      className={`w-full flex ${compactSidebar ? 'flex-col justify-center px-2 py-3' : 'items-center gap-3 px-6 py-4'} rounded-3xl transition-all duration-300 font-bold text-sm group ${
+      className={`w-full relative border flex ${compactSidebar ? 'flex-col justify-center px-2 py-3' : 'items-center gap-3 px-6 py-4'} rounded-3xl transition-all duration-300 font-bold text-sm group ${
         activeTab === id
-          ? 'bg-[#0F5132] text-white shadow-lg'
-          : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-[#0F5132] dark:hover:text-[#0F5132]'
+          ? navAccentClass
+          : 'border-slate-200/70 dark:border-slate-700/70 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600'
       }`}
     >
-      <Icon size={20} className={activeTab === id ? 'text-white' : 'text-slate-400 group-hover:text-[#0F5132]'} />
+      {!compactSidebar && activeTab === id && (
+        <span className="absolute left-2 top-1/2 -translate-y-1/2 h-6 w-1.5 rounded-full bg-white/80" />
+      )}
+      <Icon size={20} className={activeTab === id ? 'text-white' : `text-slate-400 ${navAccentTextClass}`} />
       {compactSidebar ? (
         <span className="mt-1 text-[10px] leading-tight text-center font-semibold">
           {label}
@@ -263,7 +369,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
   };
 
   return (
-    <div className="flex min-h-screen bg-[#FAFAF9] dark:bg-slate-900 font-sans text-slate-800 dark:text-slate-100 animate-fade-in selection:bg-[#0F5132] selection:text-white transition-colors duration-300">
+    <div className="relative flex min-h-screen bg-slate-50 dark:bg-slate-950 font-sans text-slate-800 dark:text-slate-100 animate-fade-in selection:bg-[#0F5132] selection:text-white transition-colors duration-300 overflow-hidden">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -top-24 -left-24 h-72 w-72 rounded-full bg-emerald-200/35 blur-3xl dark:bg-emerald-700/20" />
+        <div className="absolute top-48 -right-20 h-72 w-72 rounded-full bg-green-200/35 blur-3xl dark:bg-green-700/20" />
+        <div className="absolute inset-x-0 top-0 h-44 bg-gradient-to-b from-white/70 via-white/20 to-transparent dark:from-slate-900/55 dark:via-slate-900/15" />
+        <div className="absolute inset-0 opacity-[0.16] dark:opacity-[0.08] bg-[radial-gradient(circle_at_1px_1px,_rgba(15,81,50,0.45)_1px,_transparent_0)] [background-size:22px_22px]" />
+      </div>
       
       {/* MOBILE OVERLAY */}
       <div 
@@ -276,8 +388,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
 
       {/* SIDEBAR */}
       <aside className={`
-        fixed md:sticky top-0 left-0 h-screen ${compactSidebar ? 'w-24' : 'w-72'} bg-white dark:bg-slate-800 flex flex-col z-50 
-        transition-transform duration-300 ease-out border-r border-slate-100 dark:border-slate-700
+        fixed md:sticky top-0 left-0 h-screen ${compactSidebar ? 'w-24' : 'w-72'} bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl flex flex-col z-50 
+        transition-transform duration-300 ease-out border-r border-white/40 dark:border-slate-700/70
         ${isMobileNavOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0 md:shadow-none'}
       `}>
         <div className={`p-6 ${compactSidebar ? 'px-4' : 'px-8'}`}>
@@ -336,11 +448,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
       </aside>
 
       {/* MAIN CONTENT AREA */}
-      <main className="flex-1 min-w-0">
+      <main className="relative flex-1 min-w-0">
         
         {/* HEADER */}
-        <header className="sticky top-0 z-30 bg-[#FAFAF9]/80 dark:bg-slate-900/80 backdrop-blur-xl px-6 py-4 flex justify-between items-center border-b border-slate-200/50 dark:border-slate-700/50">
-           <div className="flex items-center gap-4">
+        <header className="sticky top-0 z-30 px-4 md:px-6 lg:px-10 py-4">
+          <div className="rounded-3xl border border-white/70 dark:border-slate-700/60 bg-white/80 dark:bg-slate-900/70 backdrop-blur-xl shadow-[0_10px_40px_-22px_rgba(15,81,50,0.45)] px-4 md:px-5 py-4 flex justify-between items-center gap-4">
+           <div className="flex items-center gap-4 min-w-0">
                <button className="md:hidden p-2 -ml-2 text-slate-500" onClick={() => setIsMobileNavOpen(true)}>
                    <Menu size={24} />
                </button>
@@ -351,13 +464,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
                >
                  {sidebarCollapsed ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />}
                </button>
-               <div>
-                  <h1 className="text-lg md:text-xl font-bold text-slate-900 dark:text-white tracking-tight">{pageTitle}</h1>
-                  <div className="flex items-center gap-2 mt-0.5">
-                      <div className={`w-2 h-2 rounded-full ${userRole === 'admin' ? 'bg-blue-500 animate-pulse' : 'bg-[#0F5132] animate-pulse'}`}></div>
+               <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h1 className="text-lg md:text-xl font-bold text-slate-900 dark:text-white tracking-tight truncate">{pageTitle}</h1>
+                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full border text-[10px] font-bold uppercase tracking-[0.14em] ${rolePillClass}`}>
+                      {getRoleLabel(userRole)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      <div className="w-2 h-2 rounded-full bg-[#0F5132] animate-pulse"></div>
                       <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">
                           {`${pageSubtitle} | ${statusLabel}`}
                       </p>
+                      <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">{todayLabel}</span>
                   </div>
                </div>
            </div>
@@ -406,14 +525,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
                   className="p-3 text-slate-400 hover:text-[#0F5132] transition-colors relative bg-white dark:bg-slate-800 rounded-full shadow-sm border border-slate-100 dark:border-slate-700 hover:shadow-md"
                >
                   <Bell size={20} />
-                  {unreadCount > 0 && (
+                  {totalUnreadCount > 0 && (
                     <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center border border-white dark:border-slate-800">
-                      {unreadCount > 9 ? '9+' : unreadCount}
+                      {totalUnreadCount > 9 ? '9+' : totalUnreadCount}
                     </span>
                   )}
                </button>
            </div>
-        </header>
+           </div>
+          </header>
 
         {showMobileSearch && (
           <div className="md:hidden px-4 pt-3">
@@ -440,23 +560,91 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
           </div>
         )}
 
+        <div className="px-4 md:px-6 lg:px-10 mt-2">
+          <div className={`rounded-3xl border border-white/70 dark:border-slate-700/60 bg-gradient-to-r ${roleTheme.surface} bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl shadow-[0_10px_36px_-24px_rgba(15,81,50,0.55)] px-4 md:px-5 py-4`}>
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className={`h-10 w-10 shrink-0 rounded-2xl border border-white/70 dark:border-slate-700/60 flex items-center justify-center ${roleTheme.chip}`}>
+                    <ActiveTabIcon size={18} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">Current Workspace</p>
+                    <p className="font-extrabold text-slate-900 dark:text-white truncate">{getTabLabel(activeTab)}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-[10px] font-bold uppercase tracking-[0.16em] ${roleTheme.chip}`}>
+                    <span className={`inline-block w-2 h-2 rounded-full ${roleTheme.dot}`}></span>
+                    {userRole}
+                  </span>
+                  {searchQuery && (
+                    <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-300 bg-white/80 dark:bg-slate-900/60">
+                      <Search size={12} />
+                      Filtered
+                    </span>
+                  )}
+                  <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-300 bg-white/80 dark:bg-slate-900/60">
+                    <Bell size={12} />
+                    {totalUnreadCount} unread
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+                {navItems.map((item) => {
+                  const TabIcon = item.icon;
+                  const isActive = item.id === activeTab;
+                  return (
+                    <button
+                      key={`quick-tab-${item.id}`}
+                      onClick={() => {
+                        setActiveTab(item.id);
+                        setIsMobileNavOpen(false);
+                        setShowMobileSearch(false);
+                      }}
+                      className={`shrink-0 inline-flex items-center gap-2 px-3.5 py-2 rounded-2xl border text-xs font-bold transition-all duration-200 ${
+                        isActive
+                          ? quickActiveTabClass
+                          : 'bg-white/80 dark:bg-slate-900/60 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-[#0F5132]/40 hover:text-[#0F5132]'
+                      }`}
+                    >
+                      <TabIcon size={14} />
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+
         {showAlerts && (
           <div className="px-4 md:px-8 lg:px-10 max-w-7xl mx-auto pt-4">
             <div className="rounded-2xl border border-slate-200/70 dark:border-slate-700/70 bg-white dark:bg-slate-800 shadow-sm">
               <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200/70 dark:border-slate-700/70">
                 <div>
-                  <p className="font-semibold text-sm">Alerts</p>
+                  <p className="font-semibold text-sm">Notifications & Alerts</p>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    {unreadCount > 0 ? `${unreadCount} unread` : 'All caught up'}
+                    {totalUnreadCount > 0 ? `${totalUnreadCount} unread` : 'All caught up'}
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
                   <button
+                    onClick={() => markAllMessagesReadMutation.mutate()}
+                    disabled={markAllMessagesReadMutation.isPending || messageUnreadCount === 0}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-[#0F5132] hover:underline disabled:opacity-50 disabled:no-underline"
+                  >
+                    <CheckCheck size={14} />
+                    Mark notifications read
+                  </button>
+                  <button
                     onClick={() => markAllAsRead()}
+                    disabled={unreadCount === 0}
                     className="inline-flex items-center gap-1 text-xs font-semibold text-[#0F5132] hover:underline"
                   >
                     <CheckCheck size={14} />
-                    Mark all read
+                    Mark alerts read
                   </button>
                   <button
                     onClick={() => clearAlerts()}
@@ -467,9 +655,64 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
                   </button>
                 </div>
               </div>
-              <div className="max-h-72 overflow-y-auto">
+              <div className="max-h-[32rem] overflow-y-auto">
+                <div className="px-4 pt-4 pb-2">
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Stored Notifications</p>
+                </div>
+                {notificationsQuery.isLoading ? (
+                  <div className="px-4 pb-4 text-sm text-slate-500 dark:text-slate-400">
+                    Loading notifications...
+                  </div>
+                ) : persistedMessages.length === 0 ? (
+                  <div className="px-4 pb-4 text-sm text-slate-500 dark:text-slate-400">
+                    No notifications yet.
+                  </div>
+                ) : (
+                  persistedMessages.map((message: Message) => (
+                    <div
+                      key={message.id}
+                      className="px-4 py-3 border-b last:border-b-0 border-slate-100 dark:border-slate-700/60"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-semibold">{message.subject || 'Notification'}</p>
+                            <span className="rounded-full bg-slate-100 dark:bg-slate-700 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-300">
+                              {message.channel}
+                            </span>
+                            {message.recommendationId && (
+                              <span className="rounded-full bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+                                Recommendation
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{message.content}</p>
+                          <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
+                            {new Date(message.readAt || message.sentAt || message.createdAt).toLocaleString()}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {!message.readAt && <span className="mt-1 w-2 h-2 rounded-full bg-red-500"></span>}
+                          {!message.readAt && (
+                            <button
+                              onClick={() => markMessageReadMutation.mutate(message.id)}
+                              disabled={markMessageReadMutation.isPending}
+                              className="text-[11px] font-semibold text-[#0F5132] hover:underline"
+                            >
+                              Mark read
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+
+                <div className="px-4 pt-4 pb-2 border-t border-slate-100 dark:border-slate-700/60">
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Realtime Alerts</p>
+                </div>
                 {alerts.length === 0 ? (
-                  <div className="px-4 py-6 text-sm text-slate-500 dark:text-slate-400">
+                  <div className="px-4 pb-4 text-sm text-slate-500 dark:text-slate-400">
                     No alerts yet.
                   </div>
                 ) : (
@@ -513,10 +756,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
         )}
 
         {/* DYNAMIC PAGE CONTENT */}
-        <div className="p-4 md:p-8 lg:p-10 max-w-7xl mx-auto">
-            {renderContent()}
+        <div className="p-4 md:p-8 lg:p-10 max-w-7xl mx-auto relative">
+          <Suspense
+            fallback={
+              <DashboardContentSkeleton role={userRole} />
+            }
+          >
+            <div
+              key={`${userRole}-${activeTab}`}
+              className="animate-fade-in [animation-duration:220ms] [animation-fill-mode:both]"
+            >
+              {renderContent()}
+            </div>
+          </Suspense>
         </div>
       </main>
     </div>
   );
 };
+

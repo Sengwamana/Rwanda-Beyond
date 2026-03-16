@@ -32,6 +32,12 @@ function normalizePestDetection(item: any): PestDetection {
       || (typeof item?.reviewed_at === 'number' ? new Date(item.reviewed_at).toISOString() : item?.reviewed_at)
       || undefined,
     expertNotes: item?.expertNotes || item?.expert_notes || undefined,
+    treatmentRecommendations:
+      item?.treatmentRecommendations
+      || item?.treatment_recommendations
+      || item?.detectionMetadata?.expertReview?.treatmentRecommendations
+      || item?.detection_metadata?.expertReview?.treatmentRecommendations
+      || undefined,
     isConfirmed: item?.isConfirmed ?? item?.is_confirmed,
     createdAt:
       item?.createdAt
@@ -107,6 +113,34 @@ export interface PestReviewData {
   pestType?: string;
   severity?: string;
   expertNotes?: string;
+  treatmentRecommendations?: string[];
+}
+
+export interface PestTreatmentGuidance {
+  detectionId: string;
+  detectedPest?: string;
+  severity: string;
+  treatments: string[];
+  aiRecommendations: string[];
+  expertNotes?: string | null;
+}
+
+export interface PestOutbreakMapData {
+  detections: PestDetection[];
+  byDistrict: Array<{
+    district: string;
+    count: number;
+    severity: Record<string, number>;
+  }>;
+  period: {
+    days: number;
+    startDate?: string;
+  };
+}
+
+export interface PestReanalysisResult {
+  detection: PestDetection;
+  analysis?: Record<string, any>;
 }
 
 // Pest Detection service functions
@@ -169,6 +203,30 @@ export const pestDetectionService = {
   },
 
   /**
+   * Get pest scans through the authenticated scan alias route
+   */
+  getScans: async (
+    farmId: string,
+    params?: Omit<PestDetectionQueryParams, 'farmId'>
+  ): Promise<PaginatedResponse<PestDetection>> => {
+    const response = await apiClient.get<PaginatedResponse<PestDetection>>('/pest-detection/scans', {
+      params: {
+        farmId,
+        ...params,
+      },
+    });
+    return normalizePestResponse(response.data);
+  },
+
+  /**
+   * Get a single pest scan through the scan alias route
+   */
+  getScanById: async (scanId: string): Promise<ApiResponse<PestDetection>> => {
+    const response = await apiClient.get<ApiResponse<PestDetection>>(`/pest-detection/scans/${scanId}`);
+    return { ...response.data, data: normalizePestDetection(response.data.data) };
+  },
+
+  /**
    * Review a pest detection (expert only)
    */
   review: async (id: string, data: PestReviewData): Promise<ApiResponse<PestDetection>> => {
@@ -198,7 +256,7 @@ export const pestDetectionService = {
       byPestType: Record<string, number>;
       confirmedCount: number;
       pendingReviewCount: number;
-    }>>('/pest-detection/statistics', { params });
+    }>>('/pest-detection/stats', { params });
     return response.data;
   },
 
@@ -224,28 +282,8 @@ export const pestDetectionService = {
   /**
    * Get treatment recommendations for a detected pest
    */
-  getTreatmentRecommendations: async (detectionId: string): Promise<ApiResponse<{
-    pestType: string;
-    severity: string;
-    treatments: Array<{
-      method: string;
-      description: string;
-      cost: string;
-      effectiveness: string;
-      organic: boolean;
-    }>;
-  }>> => {
-    const response = await apiClient.get<ApiResponse<{
-      pestType: string;
-      severity: string;
-      treatments: Array<{
-        method: string;
-        description: string;
-        cost: string;
-        effectiveness: string;
-        organic: boolean;
-      }>;
-    }>>(`/pest-detection/${detectionId}/treatments`);
+  getTreatmentRecommendations: async (detectionId: string): Promise<ApiResponse<PestTreatmentGuidance>> => {
+    const response = await apiClient.get<ApiResponse<PestTreatmentGuidance>>(`/pest-detection/${detectionId}/treatments`);
     return response.data;
   },
 
@@ -270,49 +308,50 @@ export const pestDetectionService = {
   /**
    * Re-run AI analysis on existing detection (expert/admin)
    */
-  reanalyze: async (detectionId: string): Promise<ApiResponse<{
-    detection: PestDetection;
-    previousAnalysis: Record<string, any>;
-    newAnalysis: Record<string, any>;
-    changed: boolean;
-  }>> => {
+  reanalyze: async (detectionId: string): Promise<ApiResponse<PestReanalysisResult>> => {
     const response = await apiClient.post<ApiResponse<any>>(
       `/pest-detection/${detectionId}/reanalyze`
     );
-    return response.data;
+    const payload = response.data.data || {};
+    return {
+      ...response.data,
+      data: {
+        detection: normalizePestDetection(payload.detection),
+        analysis: payload.analysis,
+      },
+    };
   },
 
   /**
    * Get pest outbreak map data
    */
   getOutbreakMap: async (params?: {
-    district?: string;
-    startDate?: string;
-    endDate?: string;
-    severity?: string;
-  }): Promise<ApiResponse<{
-    outbreaks: Array<{
-      id: string;
-      farmId: string;
-      farmName: string;
-      location: { lat: number; lng: number };
-      pestType: string;
-      severity: string;
-      detectedAt: string;
-      isConfirmed: boolean;
-    }>;
-    hotspots: Array<{
-      district: string;
-      count: number;
-      severity: 'low' | 'medium' | 'high' | 'critical';
-      center: { lat: number; lng: number };
-    }>;
-  }>> => {
+    days?: number;
+  }): Promise<ApiResponse<PestOutbreakMapData>> => {
     const response = await apiClient.get<ApiResponse<any>>(
       '/pest-detection/outbreak-map',
       { params }
     );
-    return response.data;
+    const payload = response.data.data || {};
+    const byDistrict = Object.entries(payload.byDistrict || {})
+      .map(([district, info]: [string, any]) => ({
+        district,
+        count: Number(info?.count || 0),
+        severity: info?.severity || {},
+      }))
+      .sort((left, right) => right.count - left.count);
+
+    return {
+      ...response.data,
+      data: {
+        detections: Array.isArray(payload.detections) ? payload.detections.map(normalizePestDetection) : [],
+        byDistrict,
+        period: {
+          days: Number(payload.period?.days || params?.days || 30),
+          startDate: payload.period?.startDate,
+        },
+      },
+    };
   },
 
   /**

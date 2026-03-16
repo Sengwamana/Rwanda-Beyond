@@ -117,6 +117,7 @@ export const db = {
 
   // ============ IRRIGATION SCHEDULES ============
   irrigationSchedules: {
+    getById: (id) => client.query(api.irrigationSchedules.getById, { id }),
     getByFarm: (farmId, opts = {}) => client.query(api.irrigationSchedules.getByFarm, { farmId, ...opts }),
     getUpcoming: (farmId, afterDate, limit) => client.query(api.irrigationSchedules.getUpcoming, { farmId, afterDate, limit }),
     create: (data) => client.mutation(api.irrigationSchedules.create, { data }),
@@ -137,6 +138,15 @@ export const db = {
     remove: (id) => client.mutation(api.fertilizationSchedules.remove, { id }),
   },
 
+  // ============ PEST CONTROL SCHEDULES ============
+  pestControlSchedules: {
+    getById: (id) => client.query(api.pestControlSchedules.getById, { id }),
+    getByFarm: (farmId, opts = {}) => client.query(api.pestControlSchedules.getByFarm, { farmId, ...opts }),
+    create: (data) => client.mutation(api.pestControlSchedules.create, { data }),
+    update: (id, updates) => client.mutation(api.pestControlSchedules.update, { id, updates }),
+    remove: (id) => client.mutation(api.pestControlSchedules.remove, { id }),
+  },
+
   // ============ RECOMMENDATIONS ============
   recommendations: {
     getById: (id) => client.query(api.recommendations.getById, { id }),
@@ -152,11 +162,24 @@ export const db = {
     expirePending: (now, maxAgeMs) => client.mutation(api.recommendations.expirePending, { now, maxAgeMs }),
   },
 
+  // ============ FARM ISSUES ============
+  farmIssues: {
+    create: (data) => client.mutation(api.farmIssues.create, { data }),
+    update: (id, updates) => client.mutation(api.farmIssues.update, { id, updates }),
+    getById: (id) => client.query(api.farmIssues.getById, { id }),
+    getByFarm: (farmId, opts = {}) => client.query(api.farmIssues.getByFarm, { farmId, ...opts }),
+    list: (opts = {}) => client.query(api.farmIssues.list, opts),
+  },
+
   // ============ MESSAGES ============
   messages: {
+    getById: (id) => client.query(api.messages.getById, { id }),
     create: (data) => client.mutation(api.messages.create, { data }),
     createBatch: (messages) => client.mutation(api.messages.createBatch, { messages }),
     update: (id, updates) => client.mutation(api.messages.update, { id, updates }),
+    listByUser: (opts = {}) => client.query(api.messages.listByUser, opts),
+    markRead: (id, userId) => client.mutation(api.messages.markRead, { id, userId }),
+    markAllRead: (userId) => client.mutation(api.messages.markAllRead, { userId }),
     getQueued: (opts = {}) => client.query(api.messages.getQueued, opts),
     getFailed: (opts = {}) => client.query(api.messages.getFailed, opts),
     getStats: (opts = {}) => client.query(api.messages.getStats, opts),

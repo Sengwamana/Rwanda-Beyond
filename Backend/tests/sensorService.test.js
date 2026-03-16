@@ -30,6 +30,14 @@ const mockLogger = {
   error: jest.fn(),
 };
 
+const mockAiService = {
+  runComprehensiveAnalysis: jest.fn(),
+};
+
+const mockNotificationService = {
+  sendSensorAnalysisLifecycleNotifications: jest.fn(),
+};
+
 await jest.unstable_mockModule('../src/database/convex.js', () => ({
   db: mockDb,
 }));
@@ -55,6 +63,10 @@ await jest.unstable_mockModule('../src/utils/logger.js', () => ({
   default: mockLogger,
 }));
 
+await jest.unstable_mockModule('../src/services/aiService.js', () => mockAiService);
+
+await jest.unstable_mockModule('../src/services/notificationService.js', () => mockNotificationService);
+
 const {
   ingestSensorData,
   getDailyAggregates,
@@ -67,6 +79,16 @@ const {
 describe('sensorService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockAiService.runComprehensiveAnalysis.mockResolvedValue({
+      irrigation: { needsIrrigation: false },
+      nutrients: { needsFertilization: false },
+    });
+    mockNotificationService.sendSensorAnalysisLifecycleNotifications.mockResolvedValue({
+      targetedUsers: 1,
+      started: 1,
+      completed: 1,
+      failed: 0,
+    });
   });
 
   it('uses the backend count field for sensor data pagination totals', async () => {
@@ -446,6 +468,44 @@ describe('sensorService', () => {
         created_at: expect.any(Number),
       })
     );
+  });
+
+  it('triggers AI lifecycle notifications after storing fresh sensor readings', async () => {
+    mockDb.sensors.getByDeviceId.mockResolvedValue({
+      _id: 'sensor-1',
+      farm_id: 'farm-1',
+    });
+    mockDb.sensorData.getLatestBySensor.mockResolvedValue(null);
+    mockDb.sensorData.insertBatch.mockResolvedValue(['reading-1']);
+    mockDb.sensors.update.mockResolvedValue({ _id: 'sensor-1' });
+
+    await ingestSensorData('device-ai', [
+      {
+        soilMoisture: 48,
+        humidity: 72,
+        timestamp: '2026-03-09T10:05:00.000Z',
+      },
+    ]);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mockNotificationService.sendSensorAnalysisLifecycleNotifications).toHaveBeenCalledWith(
+      expect.objectContaining({
+        farmId: 'farm-1',
+        sensorId: 'sensor-1',
+        deviceId: 'device-ai',
+        insertedCount: 1,
+        latestReadingTimestamp: Date.parse('2026-03-09T10:05:00.000Z'),
+        runAnalysis: expect.any(Function),
+      })
+    );
+
+    const lifecycleArgs =
+      mockNotificationService.sendSensorAnalysisLifecycleNotifications.mock.calls[0][0];
+
+    await lifecycleArgs.runAnalysis();
+
+    expect(mockAiService.runComprehensiveAnalysis).toHaveBeenCalledWith('farm-1');
   });
 
   it('does not update sensor storage metadata when the batch write persists no readings', async () => {

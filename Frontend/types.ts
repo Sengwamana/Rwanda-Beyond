@@ -14,6 +14,7 @@ export interface User {
   firstName?: string;
   lastName?: string;
   role: UserRole;
+  districtId?: string;
   preferredLanguage: Language;
   profileImageUrl?: string;
   isActive: boolean;
@@ -107,6 +108,18 @@ export interface SensorData {
   createdAt: string;
 }
 
+export interface SensorLatestReadingsPayload {
+  farmId: string;
+  readings: {
+    soilMoisture: SensorData | null;
+    temperature: SensorData | null;
+    humidity: SensorData | null;
+    npk: SensorData | null;
+    rainfall: SensorData | null;
+  };
+  lastUpdated?: string;
+}
+
 // Weather Types
 export interface WeatherData {
   temperature: number;
@@ -140,6 +153,53 @@ export interface FarmingConditions {
   reasons: string[];
 }
 
+export interface WeatherAlert {
+  type: string;
+  severity: string;
+  title: string;
+  description: string;
+  startTime?: string;
+  endTime?: string;
+}
+
+export interface HistoricalWeatherRecord {
+  id?: string;
+  forecastDate: string;
+  forecastTime?: string;
+  temperature?: number;
+  humidity?: number;
+  precipitationProbability?: number;
+  rainMm?: number;
+  weatherCondition?: string;
+  windSpeed?: number;
+  source?: string;
+}
+
+export interface WeatherHistoryPayload {
+  farmId: string;
+  period: {
+    start: string;
+    end: string;
+  };
+  data: HistoricalWeatherRecord[];
+}
+
+export interface IrrigationWindowOption {
+  date: string;
+  conditions: {
+    temperature?: number;
+    humidity?: number;
+    weather?: string;
+  };
+  recommendation: string;
+}
+
+export interface IrrigationWindowPayload {
+  farmId: string;
+  optimalWindows: IrrigationWindowOption[];
+  nextBestWindow: IrrigationWindowOption | null;
+}
+
 // Recommendation Types
 export type RecommendationType = 'irrigation' | 'fertilization' | 'pest_alert' | 'weather_alert' | 'general';
 export type RecommendationStatus = 'pending' | 'accepted' | 'rejected' | 'deferred' | 'executed' | 'expired';
@@ -157,11 +217,16 @@ export interface Recommendation {
   description: string;
   descriptionRw?: string;
   recommendedAction?: string;
+  irrigationScheduleId?: string;
+  fertilizationScheduleId?: string;
+  pestDetectionId?: string;
   actionDeadline?: string;
   supportingData?: Record<string, any>;
   confidenceScore?: number;
   modelVersion?: string;
   respondedAt?: string;
+  respondedBy?: string;
+  responseChannel?: string;
   responseNotes?: string;
   deferredUntil?: string;
   notificationSent: boolean;
@@ -170,6 +235,34 @@ export interface Recommendation {
   updatedAt: string;
   // Joined data
   farm?: Farm;
+}
+
+export type FarmIssueCategory = 'general' | 'irrigation' | 'fertilization' | 'pest' | 'sensor' | 'weather';
+export type FarmIssueSeverity = 'low' | 'medium' | 'high' | 'urgent';
+export type FarmIssueStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
+export type FarmIssueChannel = 'web' | 'sms' | 'ussd' | 'voice' | 'system';
+
+export interface FarmIssue {
+  id: string;
+  farmId: string;
+  reportedBy: string;
+  assignedTo?: string;
+  title: string;
+  description: string;
+  category: FarmIssueCategory;
+  severity: FarmIssueSeverity;
+  status: FarmIssueStatus;
+  sourceChannel: FarmIssueChannel;
+  locationDescription?: string;
+  expertNotes?: string;
+  resolutionNotes?: string;
+  metadata?: Record<string, any>;
+  resolvedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  farm?: Farm;
+  reporter?: User;
+  assignee?: User;
 }
 
 // Pest Detection Types
@@ -197,6 +290,7 @@ export interface PestDetection {
   reviewedBy?: string;
   reviewedAt?: string;
   expertNotes?: string;
+  treatmentRecommendations?: string[];
   isConfirmed?: boolean;
   createdAt: string;
   updatedAt: string;
@@ -206,6 +300,25 @@ export interface PestDetection {
   reviewer?: User;
 }
 
+export interface PestControlSchedule {
+  id: string;
+  farmId: string;
+  detectionId: string;
+  recommendationId?: string;
+  scheduledDate: string;
+  scheduledTime?: string;
+  controlMethod: string;
+  treatmentSteps?: string[];
+  isExecuted: boolean;
+  executedAt?: string;
+  actualOutcome?: string;
+  actualNotes?: string;
+  triggerSource?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // Irrigation Types
 export interface IrrigationSchedule {
   id: string;
@@ -213,6 +326,9 @@ export interface IrrigationSchedule {
   recommendationId?: string;
   scheduledDate: string;
   scheduledTime?: string;
+  previousScheduledDate?: string;
+  previousScheduledTime?: string;
+  postponedAt?: string;
   durationMinutes: number;
   waterVolumeLiters?: number;
   isExecuted: boolean;

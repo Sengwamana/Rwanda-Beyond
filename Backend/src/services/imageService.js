@@ -344,11 +344,11 @@ export const getFarmImages = async (farmId, options = {}) => {
   const result = await db.pestDetections.getByFarm(farmId, {
     page,
     limit,
-    pestDetectedOnly
+    pestDetected: pestDetectedOnly ? true : undefined
   });
 
   const data = result?.data || result || [];
-  const total = result?.total ?? data.length;
+  const total = result?.count ?? result?.total ?? data.length;
 
   return {
     images: data,
@@ -478,7 +478,7 @@ export const getUnreviewedDetections = async (options = {}) => {
   const result = await db.pestDetections.getUnreviewed({ page, limit, minConfidence });
 
   const data = result?.data || result || [];
-  const total = result?.total ?? data.length;
+  const total = result?.count ?? result?.total ?? data.length;
 
   return {
     detections: data,
@@ -498,9 +498,9 @@ export const getDetectionStats = async (options = {}) => {
   const { farmId, startDate, endDate } = options;
 
   const stats = await db.pestDetections.getStats({
-    farmId,
-    startDate: startDate ? new Date(startDate).getTime() : undefined,
-    endDate: endDate ? new Date(endDate).getTime() : undefined
+    ...(farmId ? { farmId } : {}),
+    ...(startDate ? { since: new Date(startDate).getTime() } : {}),
+    ...(endDate ? { until: new Date(endDate).getTime() } : {})
   });
 
   return stats;

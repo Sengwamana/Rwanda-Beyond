@@ -269,6 +269,7 @@ export const getStats = query({
       priority: r.priority,
       created_at: r.created_at,
       responded_at: r.responded_at,
+      response_channel: r.response_channel,
     }));
   },
 });

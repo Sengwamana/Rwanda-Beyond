@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { Beaker, Sprout, RefreshCw, CheckCircle2, CheckSquare, Sparkles, Loader2 } from 'lucide-react';
 import { Language, translations } from '../utils/translations';
 import { getAgriculturalAdvice } from '../services/ai';
@@ -16,7 +16,7 @@ export const SoilHealth: React.FC<SoilHealthProps> = ({ language = 'en' }) => {
     const [aiInsight, setAiInsight] = useState<string | null>(null);
     const [actionTaken, setActionTaken] = useState(false);
     const [nutrients, setNutrients] = useState([
-        { name: 'Nitrogen (N)', value: 45, max: 100, status: 'Low', color: 'bg-amber-400', text: 'text-amber-600' },
+        { name: 'Nitrogen (N)', value: 45, max: 100, status: 'Low', color: 'bg-green-400', text: 'text-green-600' },
         { name: 'Phosphorus (P)', value: 82, max: 100, status: 'Optimal', color: 'bg-[#0F5132]', text: 'text-[#0F5132]' },
         { name: 'Potassium (K)', value: 75, max: 100, status: 'Optimal', color: 'bg-[#0F5132]', text: 'text-[#0F5132]' },
     ]);
@@ -36,8 +36,8 @@ export const SoilHealth: React.FC<SoilHealthProps> = ({ language = 'en' }) => {
                     value: newN, 
                     max: 100, 
                     status: newN < 50 ? 'Low' : 'Optimal', 
-                    color: newN < 50 ? 'bg-amber-400' : 'bg-[#0F5132]', 
-                    text: newN < 50 ? 'text-amber-600' : 'text-[#0F5132]' 
+                    color: newN < 50 ? 'bg-green-400' : 'bg-[#0F5132]', 
+                    text: newN < 50 ? 'text-green-600' : 'text-[#0F5132]' 
                 },
                 { 
                     name: 'Phosphorus (P)', 
@@ -163,7 +163,7 @@ export const SoilHealth: React.FC<SoilHealthProps> = ({ language = 'en' }) => {
                 </div>
 
                 <div className="flex flex-col gap-8">
-                    <div className={`p-10 rounded-[2.5rem] shadow-xl relative overflow-hidden flex-1 transition-colors duration-500 ${isHealthy ? 'bg-emerald-600' : 'bg-amber-600'}`}>
+                    <div className={`p-10 rounded-[2.5rem] shadow-xl relative overflow-hidden flex-1 transition-colors duration-500 ${isHealthy ? 'bg-emerald-600' : 'bg-green-600'}`}>
                         <div className="relative z-10 text-white">
                             <h3 className="font-bold text-2xl mb-6 opacity-90">{t.aiRec}</h3>
                             
@@ -210,7 +210,7 @@ export const SoilHealth: React.FC<SoilHealthProps> = ({ language = 'en' }) => {
                                         </ul>
                                         <button 
                                             onClick={() => setActionTaken(!actionTaken)}
-                                            className="w-full py-3 bg-white text-amber-600 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-amber-50 transition-colors"
+                                            className="w-full py-3 bg-white text-green-600 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-green-50 transition-colors"
                                         >
                                             {actionTaken ? (
                                                 <><CheckCircle2 size={18} /> Marked as Done</>
@@ -230,7 +230,7 @@ export const SoilHealth: React.FC<SoilHealthProps> = ({ language = 'en' }) => {
                             <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">{t.phLevel}</p>
                             <div className="flex items-baseline gap-3">
                                 <span className="text-5xl font-bold text-slate-900 dark:text-white tracking-tight">{phLevel}</span>
-                                <span className={`font-bold text-sm px-3 py-1 rounded-full uppercase tracking-wider ${phLevel >= 5.5 && phLevel <= 7.0 ? 'text-[#0F5132] bg-emerald-50 dark:bg-emerald-900/30' : 'text-amber-600 bg-amber-50 dark:bg-amber-900/30'}`}>
+                                <span className={`font-bold text-sm px-3 py-1 rounded-full uppercase tracking-wider ${phLevel >= 5.5 && phLevel <= 7.0 ? 'text-[#0F5132] bg-emerald-50 dark:bg-emerald-900/30' : 'text-green-600 bg-green-50 dark:bg-green-900/30'}`}>
                                     {phLevel >= 5.5 && phLevel <= 7.0 ? 'Optimal' : 'Needs Attn'}
                                 </span>
                             </div>
@@ -244,3 +244,4 @@ export const SoilHealth: React.FC<SoilHealthProps> = ({ language = 'en' }) => {
         </div>
     );
 };
+

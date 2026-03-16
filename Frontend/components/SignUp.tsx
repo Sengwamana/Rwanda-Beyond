@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { Sprout, Mail, Lock, ArrowRight, Loader2 } from 'lucide-react';
 import { useSignUp } from '@clerk/clerk-react';
 import { useNavigate } from 'react-router-dom';
@@ -234,7 +234,7 @@ export const SignUp: React.FC<SignUpProps> = ({ onNavigate, language = 'en' }) =
             )}
 
             {isCaptchaError && (
-              <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 px-4 py-3 rounded-xl text-sm space-y-3">
+              <div className="bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 text-green-800 dark:text-green-200 px-4 py-3 rounded-xl text-sm space-y-3">
                 <p>CAPTCHA is blocked in this browser context.</p>
                 <button
                   type="button"
@@ -344,3 +344,4 @@ export const SignUp: React.FC<SignUpProps> = ({ onNavigate, language = 'en' }) =
     </div>
   );
 };
+

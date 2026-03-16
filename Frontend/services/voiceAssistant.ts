@@ -1,5 +1,5 @@
 import { AxiosResponse } from 'axios';
-import apiClient, { ApiResponse } from './apiClient';
+import { apiClient, ApiResponse } from './apiClient';
 import { sendChatMessage, type ChatMessage } from './ai';
 
 export interface VoiceAssistantRequest {

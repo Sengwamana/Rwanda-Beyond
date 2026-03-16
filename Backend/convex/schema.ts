@@ -30,6 +30,26 @@ const messageStatus = v.union(
 const messageChannel = v.union(
   v.literal("sms"), v.literal("ussd"), v.literal("push"), v.literal("email")
 );
+const responseChannel = v.union(
+  v.literal("web"), v.literal("sms"), v.literal("ussd"), v.literal("voice"), v.literal("system")
+);
+const farmIssueCategory = v.union(
+  v.literal("general"),
+  v.literal("irrigation"),
+  v.literal("fertilization"),
+  v.literal("pest"),
+  v.literal("sensor"),
+  v.literal("weather")
+);
+const farmIssueSeverity = v.union(
+  v.literal("low"), v.literal("medium"), v.literal("high"), v.literal("urgent")
+);
+const farmIssueStatus = v.union(
+  v.literal("open"), v.literal("in_progress"), v.literal("resolved"), v.literal("closed")
+);
+const farmIssueChannel = v.union(
+  v.literal("web"), v.literal("sms"), v.literal("ussd"), v.literal("voice"), v.literal("system")
+);
 
 export default defineSchema({
   users: defineTable({
@@ -199,6 +219,7 @@ export default defineSchema({
     reviewed_by: v.optional(v.id("users")),
     reviewed_at: v.optional(v.number()),
     expert_notes: v.optional(v.string()),
+    treatment_recommendations: v.optional(v.array(v.string())),
     is_confirmed: v.optional(v.boolean()),
     created_at: v.number(),
     updated_at: v.number(),
@@ -218,6 +239,9 @@ export default defineSchema({
     recommendation_id: v.optional(v.id("recommendations")),
     scheduled_date: v.string(),
     scheduled_time: v.optional(v.string()),
+    previous_scheduled_date: v.optional(v.string()),
+    previous_scheduled_time: v.optional(v.string()),
+    postponed_at: v.optional(v.number()),
     duration_minutes: v.number(),
     water_volume_liters: v.optional(v.number()),
     is_executed: v.boolean(),
@@ -265,6 +289,32 @@ export default defineSchema({
     .index("by_farm_date", ["farm_id", "scheduled_date"])
     .index("by_farm_executed_date", ["farm_id", "is_executed", "scheduled_date"]),
 
+  pest_control_schedules: defineTable({
+    farm_id: v.id("farms"),
+    detection_id: v.id("pest_detections"),
+    recommendation_id: v.optional(v.id("recommendations")),
+    scheduled_date: v.string(),
+    scheduled_time: v.optional(v.string()),
+    control_method: v.string(),
+    treatment_steps: v.optional(v.array(v.string())),
+    is_executed: v.boolean(),
+    executed_at: v.optional(v.number()),
+    actual_outcome: v.optional(v.string()),
+    actual_notes: v.optional(v.string()),
+    trigger_source: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    metadata: v.optional(v.any()),
+    created_at: v.number(),
+    updated_at: v.number(),
+  })
+    .index("by_farm", ["farm_id"])
+    .index("by_detection", ["detection_id"])
+    .index("by_date", ["scheduled_date"])
+    .index("by_executed", ["is_executed"])
+    .index("by_farm_date", ["farm_id", "scheduled_date"])
+    .index("by_farm_detection", ["farm_id", "detection_id"])
+    .index("by_farm_executed_date", ["farm_id", "is_executed", "scheduled_date"]),
+
   recommendations: defineTable({
     farm_id: v.id("farms"),
     user_id: v.id("users"),
@@ -281,6 +331,8 @@ export default defineSchema({
     confidence_score: v.optional(v.number()),
     model_version: v.optional(v.string()),
     responded_at: v.optional(v.number()),
+    responded_by: v.optional(v.id("users")),
+    response_channel: v.optional(responseChannel),
     response_notes: v.optional(v.string()),
     deferred_until: v.optional(v.number()),
     notification_sent: v.boolean(),
@@ -301,6 +353,33 @@ export default defineSchema({
     .index("by_created", ["created_at"])
     .index("by_user_status", ["user_id", "status"])
     .index("by_farm_status", ["farm_id", "status"]),
+
+  farm_issues: defineTable({
+    farm_id: v.id("farms"),
+    reported_by: v.id("users"),
+    assigned_to: v.optional(v.id("users")),
+    title: v.string(),
+    description: v.string(),
+    category: farmIssueCategory,
+    severity: farmIssueSeverity,
+    status: farmIssueStatus,
+    source_channel: farmIssueChannel,
+    location_description: v.optional(v.string()),
+    expert_notes: v.optional(v.string()),
+    resolution_notes: v.optional(v.string()),
+    metadata: v.optional(v.any()),
+    resolved_at: v.optional(v.number()),
+    created_at: v.number(),
+    updated_at: v.number(),
+  })
+    .index("by_farm", ["farm_id"])
+    .index("by_reporter", ["reported_by"])
+    .index("by_status", ["status"])
+    .index("by_category", ["category"])
+    .index("by_created", ["created_at"])
+    .index("by_farm_created", ["farm_id", "created_at"])
+    .index("by_status_created", ["status", "created_at"])
+    .index("by_farm_status_created", ["farm_id", "status", "created_at"]),
 
   messages: defineTable({
     user_id: v.id("users"),

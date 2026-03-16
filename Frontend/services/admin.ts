@@ -12,6 +12,7 @@ import {
   ApiResponse, 
   PaginatedResponse 
 } from '../types';
+import { normalizeUser } from './auth';
 
 export interface UserQueryParams {
   page?: number;
@@ -26,6 +27,8 @@ export interface AdminUserUpdate {
   role?: 'farmer' | 'expert' | 'admin';
   isActive?: boolean;
   isVerified?: boolean;
+  districtId?: string | null;
+  metadata?: Record<string, any>;
 }
 
 export interface SystemConfigUpdate {
@@ -48,17 +51,48 @@ export const adminService = {
   // ===== User Management =====
   
   /**
+   * Get all users via the admin route
+   */
+  getAdminUsers: async (params?: UserQueryParams): Promise<PaginatedResponse<User>> => {
+    const requestParams = {
+      ...params,
+      status:
+        params?.status
+        || (params?.isActive === true
+          ? 'active'
+          : params?.isActive === false
+            ? 'inactive'
+            : undefined),
+    };
+    delete (requestParams as any).isActive;
+
+    const response = await apiClient.get<PaginatedResponse<User>>('/admin/users', { params: requestParams });
+    return {
+      ...response.data,
+      data: Array.isArray(response.data?.data) ? response.data.data.map(normalizeUser) : [],
+    };
+  },
+
+  /**
    * Get all users (admin only)
    */
   getUsers: async (params?: UserQueryParams): Promise<PaginatedResponse<User>> => {
     const requestParams = {
       ...params,
-      status:
-        params?.status ??
-        (params?.isActive === undefined ? undefined : params.isActive ? 'active' : 'inactive'),
+      isActive:
+        params?.isActive ??
+        (params?.status === 'active'
+          ? true
+          : params?.status === 'inactive'
+            ? false
+            : undefined),
     };
-    const response = await apiClient.get<PaginatedResponse<User>>('/admin/users', { params: requestParams });
-    return response.data;
+    delete (requestParams as any).status;
+    const response = await apiClient.get<PaginatedResponse<User>>('/users', { params: requestParams });
+    return {
+      ...response.data,
+      data: Array.isArray(response.data?.data) ? response.data.data.map(normalizeUser) : [],
+    };
   },
 
   /**
@@ -66,7 +100,10 @@ export const adminService = {
    */
   getUserById: async (id: string): Promise<ApiResponse<User>> => {
     const response = await apiClient.get<ApiResponse<User>>(`/admin/users/${id}`);
-    return response.data;
+    return {
+      ...response.data,
+      data: normalizeUser(response.data.data),
+    };
   },
 
   /**
@@ -76,33 +113,47 @@ export const adminService = {
     let latestResponse: ApiResponse<User> | null = null;
 
     if (data.role) {
-      const roleResponse = await apiClient.put<ApiResponse<User>>(`/admin/users/${id}/role`, { role: data.role });
+      const roleResponse = await apiClient.put<ApiResponse<User>>(`/users/${id}/role`, { role: data.role });
       latestResponse = roleResponse.data;
     }
 
     if (data.isActive === false) {
-      const deactivateResponse = await apiClient.post<ApiResponse<User>>(`/admin/users/${id}/deactivate`, {});
+      const deactivateResponse = await apiClient.post<ApiResponse<User>>(`/users/${id}/deactivate`, {});
       latestResponse = deactivateResponse.data;
     }
 
     if (data.isActive === true) {
-      const reactivateResponse = await apiClient.post<ApiResponse<User>>(`/admin/users/${id}/reactivate`);
+      const reactivateResponse = await apiClient.post<ApiResponse<User>>(`/users/${id}/reactivate`);
       latestResponse = reactivateResponse.data;
     }
 
-    if (latestResponse) {
-      return latestResponse;
+    if (data.metadata || data.districtId !== undefined) {
+      const profileResponse = await apiClient.put<ApiResponse<User>>(`/admin/users/${id}/profile`, {
+        metadata: data.metadata,
+        districtId: data.districtId,
+      });
+      latestResponse = profileResponse.data;
     }
 
-    const userResponse = await apiClient.get<ApiResponse<User>>(`/admin/users/${id}`);
-    return userResponse.data;
+    if (latestResponse) {
+      return {
+        ...latestResponse,
+        data: normalizeUser(latestResponse.data),
+      };
+    }
+
+    const userResponse = await apiClient.get<ApiResponse<User>>(`/users/${id}`);
+    return {
+      ...userResponse.data,
+      data: normalizeUser(userResponse.data.data),
+    };
   },
 
   /**
    * Delete user (admin only)
    */
   deleteUser: async (id: string): Promise<ApiResponse<{ message: string }>> => {
-    await apiClient.post<ApiResponse<User>>(`/admin/users/${id}/deactivate`, {});
+    await apiClient.post<ApiResponse<User>>(`/users/${id}/deactivate`, {});
     return {
       success: true,
       message: 'User deactivated successfully',
@@ -308,7 +359,7 @@ export const adminService = {
    * Generate system report
    */
   generateReport: async (params: {
-    type: 'summary' | 'farms' | 'users' | 'sensors' | 'recommendations' | 'pest-detections';
+    type: 'summary' | 'farms' | 'users' | 'sensors' | 'recommendations' | 'farm-issues' | 'pest-detections' | 'pest-control';
     format: 'json' | 'csv';
     startDate?: string;
     endDate?: string;
@@ -416,7 +467,7 @@ export const adminService = {
     expiresAt: string;
   }>> => {
     const response = await apiClient.post<ApiResponse<any>>(
-      '/admin/devices/generate',
+      '/admin/devices/token',
       data
     );
     return response.data;

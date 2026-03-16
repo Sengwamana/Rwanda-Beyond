@@ -1,15 +1,32 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Sprout, Bug, Activity, RefreshCw, CheckCircle2, XCircle, Clock3, BarChart2, Bot } from 'lucide-react';
+﻿import React, { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, Sprout, Bug, Activity, RefreshCw, CheckCircle2, XCircle, Clock3, BarChart2, Bot, Cloud } from 'lucide-react';
 import {
   useFarms,
+  useFarmIssues,
   usePestStatistics,
-  useRecommendations,
+  usePestOutbreakMap,
+  useRecommendationHistoryList,
+  usePendingRecommendations,
+  useRecommendation,
   usePendingReviews,
+  usePestDetection,
   useRespondToRecommendation,
   useReviewPestDetection,
+  useReanalyzePestDetection,
   useGenerateRecommendations,
+  useCreateManualRecommendation,
   useAllDistrictsAnalytics,
   useDistrictAnalytics,
+  useDistrictWeather,
+  useWeatherByCoordinates,
+  useRecommendationHistoryAnalytics,
+  useFarmActivityAnalytics,
+  usePestControlSchedules,
+  useSensorHealth,
+  useRecentActivityAnalytics,
+  useExportFarmActivity,
+  useExportRecentActivity,
+  useUpdateFarmIssue,
   useAiAdvice,
 } from '../hooks/useApi';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/Card';
@@ -17,6 +34,7 @@ import { LoadingState, ErrorState, EmptyState, Spinner } from './ui/Spinner';
 import { Button } from './ui/Button';
 import { Badge } from './ui/Badge';
 import { FormattedAiResponse } from './ui/FormattedAiResponse';
+import { useAuthStore } from '../store';
 
 interface ConnectedExpertDashboardProps {
   searchQuery?: string;
@@ -25,8 +43,8 @@ interface ConnectedExpertDashboardProps {
 
 const recommendationPriorityClass: Record<string, string> = {
   critical: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
-  high: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400',
-  medium: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
+  high: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+  medium: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
   low: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
 };
 
@@ -35,12 +53,49 @@ const confirmAction = (message: string): boolean => {
   return window.confirm(message);
 };
 
+const getSensorStatusBadgeVariant = (status?: string): 'default' | 'secondary' | 'destructive' | 'outline' => {
+  const normalized = String(status || '').toLowerCase();
+  if (normalized === 'healthy' || normalized === 'active' || normalized === 'online') return 'secondary';
+  if (normalized === 'warning') return 'default';
+  if (normalized === 'critical' || normalized === 'offline' || normalized === 'faulty') return 'destructive';
+  return 'outline';
+};
+
+type ExpertFarmActivityExportType =
+  | 'all'
+  | 'recommendation'
+  | 'irrigation'
+  | 'fertilization'
+  | 'pest_control'
+  | 'pest_detection'
+  | 'farm_issue';
+
 export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overview' }: ConnectedExpertDashboardProps) {
+  const { user } = useAuthStore();
   const [selectedFarmId, setSelectedFarmId] = useState<string>('');
+  const [editingReviewId, setEditingReviewId] = useState<string | null>(null);
+  const [reviewStrategyDrafts, setReviewStrategyDrafts] = useState<
+    Record<string, { expertNotes: string; treatmentText: string }>
+  >({});
+  const [manualRecommendationType, setManualRecommendationType] = useState<'general' | 'irrigation' | 'fertilization' | 'pest_alert' | 'weather_alert'>('general');
+  const [manualRecommendationPriority, setManualRecommendationPriority] = useState<'low' | 'medium' | 'high' | 'critical'>('medium');
+  const [manualRecommendationTitle, setManualRecommendationTitle] = useState('');
+  const [manualRecommendationDescription, setManualRecommendationDescription] = useState('');
+  const [manualRecommendationAction, setManualRecommendationAction] = useState('');
+  const [manualRecommendationValidUntil, setManualRecommendationValidUntil] = useState(() => {
+    const nextDay = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    return nextDay.toISOString().slice(0, 16);
+  });
   const [recommendationTypeFilter, setRecommendationTypeFilter] = useState<'all' | string>('all');
   const [reviewSeverityFilter, setReviewSeverityFilter] = useState<'all' | string>('all');
+  const [issueStatusFilter, setIssueStatusFilter] = useState<'all' | string>('all');
+  const [activityHours, setActivityHours] = useState<6 | 24 | 168>(24);
+  const [activityType, setActivityType] = useState<'all' | 'user' | 'farm' | 'recommendation' | 'pest_detection' | 'pest_control' | 'sensor_reading'>('all');
   const [recommendationPage, setRecommendationPage] = useState(1);
+  const [selectedRecommendationId, setSelectedRecommendationId] = useState('');
   const [pendingReviewPage, setPendingReviewPage] = useState(1);
+  const [selectedReviewId, setSelectedReviewId] = useState('');
+  const [issuePage, setIssuePage] = useState(1);
 
   const {
     data: farmsResponse,
@@ -57,20 +112,49 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
     data: recommendationsResponse,
     isLoading: recommendationsLoading,
     refetch: refetchRecommendations,
-  } = useRecommendations({ page: recommendationPage, limit: 20, status: 'pending' });
+  } = usePendingRecommendations({ page: recommendationPage, limit: 20 });
+  const {
+    data: selectedRecommendation,
+    isLoading: selectedRecommendationLoading,
+    refetch: refetchSelectedRecommendation,
+  } = useRecommendation(selectedRecommendationId);
   const {
     data: pendingReviewsResponse,
     isLoading: pendingReviewsLoading,
     refetch: refetchPendingReviews,
   } = usePendingReviews({ page: pendingReviewPage, limit: 20 });
+  const {
+    data: selectedReview,
+    isLoading: selectedReviewLoading,
+    refetch: refetchSelectedReview,
+  } = usePestDetection(selectedReviewId);
+  const {
+    data: farmIssuesResponse,
+    isLoading: farmIssuesLoading,
+    refetch: refetchFarmIssues,
+  } = useFarmIssues(
+    selectedFarmId || '',
+    {
+      page: issuePage,
+      limit: 10,
+      status: issueStatusFilter === 'all' ? undefined : issueStatusFilter,
+    },
+    !!selectedFarmId
+  );
 
   const respondToRecommendation = useRespondToRecommendation();
   const reviewPestDetection = useReviewPestDetection();
+  const reanalyzePestDetection = useReanalyzePestDetection();
   const generateRecommendations = useGenerateRecommendations();
+  const createManualRecommendation = useCreateManualRecommendation();
+  const updateFarmIssue = useUpdateFarmIssue();
+  const exportFarmActivity = useExportFarmActivity();
+  const exportRecentActivity = useExportRecentActivity();
 
   const farms = farmsResponse?.data || [];
   const recommendations = recommendationsResponse?.data || [];
   const pendingReviews = pendingReviewsResponse?.data || [];
+  const farmIssues = farmIssuesResponse?.data || [];
 
   const normalizedSearch = searchQuery.trim().toLowerCase();
 
@@ -79,8 +163,40 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
   }, [selectedFarmId, recommendationTypeFilter, normalizedSearch]);
 
   useEffect(() => {
+    if (!selectedRecommendationId && recommendationsResponse?.data?.length) {
+      setSelectedRecommendationId(recommendationsResponse.data[0].id);
+      return;
+    }
+    if (
+      selectedRecommendationId
+      && recommendationsResponse?.data?.length
+      && !recommendationsResponse.data.some((recommendation) => recommendation.id === selectedRecommendationId)
+    ) {
+      setSelectedRecommendationId(recommendationsResponse.data[0].id);
+    }
+  }, [recommendationsResponse?.data, selectedRecommendationId]);
+
+  useEffect(() => {
     setPendingReviewPage(1);
   }, [selectedFarmId, reviewSeverityFilter, normalizedSearch]);
+
+  useEffect(() => {
+    if (!selectedReviewId && pendingReviewsResponse?.data?.length) {
+      setSelectedReviewId(pendingReviewsResponse.data[0].id);
+      return;
+    }
+    if (
+      selectedReviewId
+      && pendingReviewsResponse?.data?.length
+      && !pendingReviewsResponse.data.some((review) => review.id === selectedReviewId)
+    ) {
+      setSelectedReviewId(pendingReviewsResponse.data[0].id);
+    }
+  }, [pendingReviewsResponse?.data, selectedReviewId]);
+
+  useEffect(() => {
+    setIssuePage(1);
+  }, [selectedFarmId, issueStatusFilter, normalizedSearch]);
 
   const filteredFarms = useMemo(() => {
     if (!normalizedSearch) return farms;
@@ -94,6 +210,38 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
   }, [farms, normalizedSearch]);
 
   const selectedFarm = farms.find((farm) => farm.id === selectedFarmId) || null;
+  const {
+    data: responseHistory,
+    isLoading: responseHistoryLoading,
+  } = useRecommendationHistoryAnalytics(selectedFarm?.id || '', { days: 30 });
+  const {
+    data: recommendationHistoryFeed,
+    isLoading: recommendationHistoryFeedLoading,
+  } = useRecommendationHistoryList(
+    {
+      farmId: selectedFarm?.id || undefined,
+      page: 1,
+      limit: 6,
+    },
+    activeTab === 'overview'
+  );
+  const {
+    data: selectedFarmActivity,
+    isLoading: selectedFarmActivityLoading,
+  } = useFarmActivityAnalytics(selectedFarm?.id || '', { days: 30, limit: 20 });
+  const {
+    data: pestControlSchedules = [],
+    isLoading: pestControlSchedulesLoading,
+  } = usePestControlSchedules(selectedFarm?.id || '');
+  const {
+    data: sensorHealth,
+    isLoading: sensorHealthLoading,
+    refetch: refetchSensorHealth,
+  } = useSensorHealth(selectedFarm?.id || undefined, activeTab === 'overview');
+  const {
+    data: recentActivity,
+    isLoading: recentActivityLoading,
+  } = useRecentActivityAnalytics({ hours: activityHours, limit: 6, type: activityType }, activeTab === 'overview');
 
   const filteredRecommendations = useMemo(() => {
     return recommendations.filter((recommendation) => {
@@ -134,6 +282,94 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
     });
   }, [pendingReviews, selectedFarmId, normalizedSearch, reviewSeverityFilter]);
 
+  const filteredFarmIssues = useMemo(() => {
+    return farmIssues.filter((issue) => {
+      if (!normalizedSearch) return true;
+
+      const haystack = [
+        issue.title,
+        issue.description,
+        issue.category,
+        issue.severity,
+        issue.status,
+        issue.farm?.name,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+      return haystack.includes(normalizedSearch);
+    });
+  }, [farmIssues, normalizedSearch]);
+  const pendingPestControlSchedules = useMemo(
+    () => pestControlSchedules.filter((schedule) => !schedule.isExecuted),
+    [pestControlSchedules]
+  );
+  const completedPestControlSchedules = useMemo(
+    () =>
+      pestControlSchedules
+        .filter((schedule) => schedule.isExecuted)
+        .sort((left, right) => new Date(right.executedAt || right.updatedAt).getTime() - new Date(left.executedAt || left.updatedAt).getTime()),
+    [pestControlSchedules]
+  );
+  const pestControlActivity = useMemo(
+    () =>
+      (selectedFarmActivity?.activity || [])
+        .filter((item) => item.type === 'pest_control')
+        .sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime()),
+    [selectedFarmActivity]
+  );
+  const formatActivityLabel = (value: string) =>
+    value
+      .split('_')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
+  const handleExportRecentActivity = async (format: 'csv' | 'json') => {
+    try {
+      const blob = await exportRecentActivity.mutateAsync({
+        hours: activityHours,
+        limit: 100,
+        type: activityType,
+        format,
+      });
+      downloadBlob(blob, `expert-system-activity.${format}`);
+    } catch {
+      // Error notification handled in mutation hook.
+    }
+  };
+  const handleExportFarmActivity = async (
+    format: 'csv' | 'json',
+    type: ExpertFarmActivityExportType = 'all'
+  ) => {
+    if (!selectedFarm) return;
+
+    try {
+      const blob = await exportFarmActivity.mutateAsync({
+        farmId: selectedFarm.id,
+        params: {
+          days: 30,
+          limit: 100,
+          type,
+          format,
+        },
+      });
+      const suffix = type === 'all' ? 'activity' : `${type}-activity`;
+      downloadBlob(blob, `expert-farm-${selectedFarm.id}-${suffix}.${format}`);
+    } catch {
+      // Error notification handled in mutation hook.
+    }
+  };
+
   const recommendationTypes = useMemo(
     () =>
       Array.from(new Set(recommendations.map((recommendation) => recommendation.type).filter(Boolean))).sort(),
@@ -153,13 +389,26 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
   const severePestCount = (pestStats?.bySeverity?.severe || 0) + (pestStats?.bySeverity?.high || 0);
 
   const isAnyActionPending =
-    respondToRecommendation.isPending || reviewPestDetection.isPending || generateRecommendations.isPending;
+    respondToRecommendation.isPending
+    || reviewPestDetection.isPending
+    || reanalyzePestDetection.isPending
+    || generateRecommendations.isPending
+    || createManualRecommendation.isPending
+    || updateFarmIssue.isPending;
 
   const handleRefreshAll = () => {
     refetchFarms();
     refetchPestStats();
     refetchRecommendations();
+    if (selectedRecommendationId) {
+      refetchSelectedRecommendation();
+    }
     refetchPendingReviews();
+    if (selectedReviewId) {
+      refetchSelectedReview();
+    }
+    refetchFarmIssues();
+    refetchSensorHealth();
   };
 
   const renderPagination = (
@@ -198,6 +447,42 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
     generateRecommendations.mutate(selectedFarmId);
   };
 
+  const resetManualRecommendationForm = () => {
+    setManualRecommendationType('general');
+    setManualRecommendationPriority('medium');
+    setManualRecommendationTitle('');
+    setManualRecommendationDescription('');
+    setManualRecommendationAction('');
+    const nextDay = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    setManualRecommendationValidUntil(nextDay.toISOString().slice(0, 16));
+  };
+
+  const handleCreateManualRecommendation = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedFarmId) return;
+    if (!manualRecommendationTitle.trim() || !manualRecommendationDescription.trim() || !manualRecommendationAction.trim()) {
+      return;
+    }
+
+    try {
+      await createManualRecommendation.mutateAsync({
+        farmId: selectedFarmId,
+        type: manualRecommendationType,
+        priority: manualRecommendationPriority,
+        title: manualRecommendationTitle.trim(),
+        description: manualRecommendationDescription.trim(),
+        actionRequired: manualRecommendationAction.trim(),
+        validUntil: manualRecommendationValidUntil
+          ? new Date(manualRecommendationValidUntil).toISOString()
+          : undefined,
+      });
+      setRecommendationPage(1);
+      resetManualRecommendationForm();
+    } catch {
+      // Error notification handled in mutation hook.
+    }
+  };
+
   const handleRecommendationResponse = (recommendationId: string, status: 'accepted' | 'rejected') => {
     respondToRecommendation.mutate({ id: recommendationId, data: { status } });
   };
@@ -214,7 +499,8 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
     detectionId: string,
     verdict: 'confirm' | 'reject',
     defaultPestType?: string,
-    defaultSeverity?: string
+    defaultSeverity?: string,
+    strategy?: { expertNotes?: string; treatmentRecommendations?: string[] }
   ) => {
     reviewPestDetection.mutate({
       id: detectionId,
@@ -223,11 +509,95 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
         pestType: verdict === 'confirm' ? defaultPestType || 'unclassified' : 'none',
         severity: verdict === 'confirm' ? defaultSeverity || 'moderate' : 'none',
         expertNotes:
-          verdict === 'confirm'
+          strategy?.expertNotes
+          || (verdict === 'confirm'
             ? 'Confirmed by expert dashboard review.'
-            : 'Rejected by expert dashboard review.',
+            : 'Rejected by expert dashboard review.'),
+        treatmentRecommendations: strategy?.treatmentRecommendations,
       },
     });
+  };
+
+  const getAiTreatmentSuggestions = (review: any): string[] => {
+    const suggestions = review?.detectionMetadata?.analysis?.recommendations;
+    return Array.isArray(suggestions) ? suggestions.filter(Boolean) : [];
+  };
+
+  const openReviewStrategyEditor = (review: any) => {
+    const existingDraft = reviewStrategyDrafts[review.id];
+    if (!existingDraft) {
+      const suggestedTreatments = review?.treatmentRecommendations?.length
+        ? review.treatmentRecommendations
+        : getAiTreatmentSuggestions(review);
+      setReviewStrategyDrafts((current) => ({
+        ...current,
+        [review.id]: {
+          expertNotes: review.expertNotes || '',
+          treatmentText: suggestedTreatments.join('\n'),
+        },
+      }));
+    }
+    setEditingReviewId(review.id);
+  };
+
+  const updateReviewStrategyDraft = (
+    reviewId: string,
+    key: 'expertNotes' | 'treatmentText',
+    value: string
+  ) => {
+    setReviewStrategyDrafts((current) => ({
+      ...current,
+      [reviewId]: {
+        expertNotes: current[reviewId]?.expertNotes || '',
+        treatmentText: current[reviewId]?.treatmentText || '',
+        [key]: value,
+      },
+    }));
+  };
+
+  const closeReviewStrategyEditor = (reviewId: string) => {
+    setEditingReviewId((current) => (current === reviewId ? null : current));
+  };
+
+  const handlePestStrategyReview = async (review: any, verdict: 'confirm' | 'reject') => {
+    const draft = reviewStrategyDrafts[review.id] || { expertNotes: '', treatmentText: '' };
+    const treatmentRecommendations = draft.treatmentText
+      .split('\n')
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    try {
+      await reviewPestDetection.mutateAsync({
+        id: review.id,
+        data: {
+          isConfirmed: verdict === 'confirm',
+          pestType: verdict === 'confirm' ? review.pestType || 'unclassified' : 'none',
+          severity: verdict === 'confirm' ? review.severity || 'moderate' : 'none',
+          expertNotes:
+            draft.expertNotes.trim()
+            || (verdict === 'confirm'
+              ? 'Confirmed by expert dashboard review.'
+              : 'Rejected by expert dashboard review.'),
+          treatmentRecommendations: verdict === 'confirm' ? treatmentRecommendations : [],
+        },
+      });
+      setEditingReviewId((current) => (current === review.id ? null : current));
+    } catch {
+      // Error notification handled in mutation hook.
+    }
+  };
+
+  const handleReanalyzeDetection = async (detectionId: string) => {
+    try {
+      await reanalyzePestDetection.mutateAsync(detectionId);
+      if (selectedReviewId === detectionId) {
+        refetchSelectedReview();
+      }
+      refetchPendingReviews();
+      refetchPestStats();
+    } catch {
+      // Error notification handled in mutation hook.
+    }
   };
 
   const handleAcceptVisibleRecommendations = async () => {
@@ -308,19 +678,39 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
     }
   };
 
+  const handleIssueStatusUpdate = async (
+    issue: any,
+    nextStatus: 'in_progress' | 'resolved' | 'closed',
+    defaults?: { expertNotes?: string; resolutionNotes?: string }
+  ) => {
+    if (!selectedFarmId) return;
+    const assignedToCurrentExpert = !issue.assignedTo || issue.assignedTo === user?.id;
+    if (!assignedToCurrentExpert) return;
+
+    try {
+      await updateFarmIssue.mutateAsync({
+        id: issue.id,
+        farmId: selectedFarmId,
+        data: {
+          status: nextStatus,
+          ...(user?.id && !issue.assignedTo
+            ? { assignedTo: user.id }
+            : {}),
+          expertNotes: defaults?.expertNotes,
+          resolutionNotes: defaults?.resolutionNotes,
+        },
+      });
+    } catch {
+      // Error notification handled in mutation hook.
+    }
+  };
+
   const exportRowsAsCsv = (headers: string[], rows: Array<Array<string | number>>) => {
     const csv = [headers, ...rows]
       .map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(','))
       .join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `expert-export-${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, `expert-export-${new Date().toISOString().slice(0, 10)}.csv`);
   };
 
   const handleExportRecommendationsCsv = () => {
@@ -366,85 +756,200 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
     );
   }
 
+  const expertQuickStats: Array<{ label: string; value: string | number }> = [
+    { label: 'Assigned Farms', value: farmCount },
+    { label: 'Pending Advice', value: recommendationsLoading ? '--' : pendingRecommendationCount },
+    { label: 'Pending Reviews', value: pestStatsLoading ? '--' : pendingReviewCount },
+    { label: 'High/Severe Cases', value: pestStatsLoading ? '--' : severePestCount },
+  ];
+  const sectionTitleClass = 'text-base md:text-lg font-extrabold tracking-tight';
+  const sectionDescriptionClass = 'text-xs md:text-sm text-muted-foreground/90';
+  const workspaceGridClass = 'grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-5';
+  const workspaceMainClass = 'lg:col-span-8';
+  const workspaceRailClass = 'lg:col-span-4 space-y-4 lg:sticky lg:top-24 self-start';
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-bold">Expert Operations</h2>
-          <p className="text-sm text-muted-foreground">
-            Review recommendations, validate pest detections, and assist farms.
-          </p>
+    <div className="mx-auto w-full max-w-[1600px] space-y-5 md:space-y-6 animate-fade-in">
+      <div className="rounded-3xl border border-green-200/60 dark:border-green-900/40 bg-gradient-to-br from-green-500/12 via-white to-white dark:from-green-500/18 dark:via-slate-900 dark:to-slate-900 p-4 md:p-6 shadow-[0_20px_45px_-32px_rgba(22,163,74,0.6)] animate-fade-in [animation-delay:40ms] [animation-fill-mode:both]">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-green-700/85 dark:text-green-300/85">Expert Review Studio</p>
+            <h2 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white">Expert Operations</h2>
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              Review recommendations, validate pest detections, and assist farms.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline">Window: {activityHours}h</Badge>
+            <Badge variant="outline">Activity: {activityType}</Badge>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={handleRefreshAll}>
-            <RefreshCw size={14} className="mr-2" />
-            Refresh
-          </Button>
-          <Button onClick={handleGenerateForFarm} disabled={!selectedFarmId || generateRecommendations.isPending}>
-            {generateRecommendations.isPending ? <Spinner size="sm" /> : 'Generate for Farm'}
+
+        <div className="mt-4 grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {expertQuickStats.map((stat, index) => (
+            <div
+              key={stat.label}
+              className="rounded-2xl border border-green-100/80 dark:border-green-900/45 bg-white/85 dark:bg-slate-900/75 px-3 py-2.5 shadow-[0_14px_30px_-26px_rgba(22,163,74,0.65)] animate-fade-in [animation-fill-mode:both]"
+              style={{ animationDelay: `${80 + index * 50}ms` }}
+            >
+              <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{stat.label}</p>
+              <p className="mt-1 text-xl font-black text-slate-900 dark:text-white">{stat.value}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-green-100/80 dark:border-green-900/45 bg-white/85 dark:bg-slate-900/75 px-3 md:px-4 py-3 lg:py-3.5 animate-fade-in [animation-delay:95ms] [animation-fill-mode:both]">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-wrap items-center gap-2 md:gap-3">
+            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.14em] bg-green-100 text-green-800 dark:bg-green-900/35 dark:text-green-300">
+              Focus Farm: {selectedFarm?.name || 'All farms'}
+            </span>
+            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.14em] bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+              Recommendation Type: {recommendationTypeFilter}
+            </span>
+            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.14em] bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+              Review Severity: {reviewSeverityFilter}
+            </span>
+            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.14em] bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+              Issue Status: {issueStatusFilter}
+            </span>
+            {normalizedSearch && (
+              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.14em] bg-green-100 text-green-800 dark:bg-green-900/35 dark:text-green-300">
+                Filter: "{searchQuery.trim()}"
+              </span>
+            )}
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 rounded-lg self-start md:self-auto"
+            onClick={() => {
+              setRecommendationTypeFilter('all');
+              setReviewSeverityFilter('all');
+              setIssueStatusFilter('all');
+            }}
+          >
+            Clear Filters
           </Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-5">
-            <div className="flex items-center gap-3">
-              <Sprout className="text-primary" />
+      <div className="flex items-center gap-3 px-1">
+        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">Overview Workspace</p>
+        <div className="h-px flex-1 bg-gradient-to-r from-green-200/70 to-transparent dark:from-green-900/50" />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 lg:gap-4 animate-fade-in [animation-delay:115ms] [animation-fill-mode:both]">
+        <div className={workspaceMainClass}>
+        <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
+        <Card className="h-full min-h-[230px] border-green-100/80 dark:border-green-900/45 bg-gradient-to-br from-green-50/80 to-white dark:from-green-950/20 dark:to-slate-900 shadow-[0_18px_34px_-30px_rgba(22,163,74,0.85)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_42px_-28px_rgba(22,163,74,1)] animate-fade-in [animation-delay:130ms] [animation-fill-mode:both]">
+          <CardContent className="p-4 lg:p-5 h-full flex flex-col">
+            <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">Assigned Farms</p>
-                <p className="text-2xl font-bold">{farmCount}</p>
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-green-700 dark:text-green-300">Review Queue</p>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Pending pest reviews waiting for expert confirmation.</p>
               </div>
+              <Bug size={16} className="text-green-700 dark:text-green-300" />
             </div>
+            <p className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Triage lane - Confirm severity</p>
+            <p className="mt-4 text-2xl font-black text-slate-900 dark:text-white">{pendingReviewCount}</p>
+            <Button variant="outline" className="mt-auto h-9 w-full rounded-xl focus-visible:ring-2 focus-visible:ring-green-500/70 focus-visible:ring-offset-2" onClick={() => setReviewSeverityFilter('all')}>
+              Reset Severity Filter
+            </Button>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="p-5">
-            <div className="flex items-center gap-3">
-              <Activity className="text-primary" />
+        <Card className="h-full min-h-[230px] border-green-100/80 dark:border-green-900/45 bg-gradient-to-br from-sky-50/80 to-white dark:from-sky-950/20 dark:to-slate-900 shadow-[0_18px_34px_-30px_rgba(2,132,199,0.8)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_42px_-28px_rgba(2,132,199,0.95)] animate-fade-in [animation-delay:190ms] [animation-fill-mode:both]">
+          <CardContent className="p-4 lg:p-5 h-full flex flex-col">
+            <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">Pending Advice</p>
-                <p className="text-2xl font-bold">{recommendationsLoading ? '--' : pendingRecommendationCount}</p>
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-sky-700 dark:text-sky-300">Recommendation Sprint</p>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Create targeted advice for the current farm focus.</p>
               </div>
+              <Bot size={16} className="text-sky-700 dark:text-sky-300" />
             </div>
+            <p className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Execution lane - Push advice</p>
+            <p className="mt-4 text-2xl font-black text-slate-900 dark:text-white">{pendingRecommendationCount}</p>
+            <Button
+              className="mt-auto h-9 w-full rounded-xl focus-visible:ring-2 focus-visible:ring-sky-500/70 focus-visible:ring-offset-2"
+              onClick={handleGenerateForFarm}
+              disabled={!selectedFarmId || generateRecommendations.isPending}
+            >
+              Generate For Focus Farm
+            </Button>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="p-5">
-            <div className="flex items-center gap-3">
-              <Bug className="text-primary" />
+        <Card className="h-full min-h-[230px] border-green-100/80 dark:border-green-900/45 bg-gradient-to-br from-emerald-50/80 to-white dark:from-emerald-950/20 dark:to-slate-900 shadow-[0_18px_34px_-30px_rgba(5,150,105,0.8)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_42px_-28px_rgba(5,150,105,0.95)] animate-fade-in [animation-delay:250ms] [animation-fill-mode:both]">
+          <CardContent className="p-4 lg:p-5 h-full flex flex-col">
+            <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">Pending Pest Review</p>
-                <p className="text-2xl font-bold">{pestStatsLoading ? '--' : pendingReviewCount}</p>
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-300">Farmer Response</p>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Watch adoption signals and reopen stale interventions.</p>
               </div>
+              <CheckCircle2 size={16} className="text-emerald-700 dark:text-emerald-300" />
             </div>
+            <p className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Feedback lane - Track adoption</p>
+            <p className="mt-4 text-2xl font-black text-slate-900 dark:text-white">{responseHistory?.stats?.byStatus?.responded ?? 0}</p>
+            <Button variant="outline" className="mt-auto h-9 w-full rounded-xl focus-visible:ring-2 focus-visible:ring-emerald-500/70 focus-visible:ring-offset-2" onClick={handleRefreshAll}>
+              Sync Signals
+            </Button>
           </CardContent>
         </Card>
+        </div>
+        </div>
 
-        <Card>
-          <CardContent className="p-5">
-            <div className="flex items-center gap-3">
-              <AlertTriangle className="text-red-500" />
-              <div>
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">High/Severe Pest Cases</p>
-                <p className="text-2xl font-bold">{pestStatsLoading ? '--' : severePestCount}</p>
-              </div>
+        <Card className="lg:col-span-4 lg:sticky lg:top-24 self-start h-fit border-green-100/80 dark:border-green-900/45 bg-white/90 dark:bg-slate-900/80 shadow-[0_18px_34px_-30px_rgba(15,23,42,0.5)]">
+          <CardHeader className="pb-2">
+            <CardTitle className={sectionTitleClass}>Quick Actions</CardTitle>
+            <CardDescription className={sectionDescriptionClass}>Run frequent expert operations with one click</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2.5 lg:space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-2.5">
+              <Button variant="outline" className="h-9 lg:h-10 w-full justify-start rounded-xl" onClick={handleRefreshAll}>
+                <RefreshCw size={14} className="mr-2" />
+                Refresh All Data
+              </Button>
+              <Button
+                className="h-9 lg:h-10 w-full justify-start rounded-xl"
+                onClick={handleGenerateForFarm}
+                disabled={!selectedFarmId || generateRecommendations.isPending}
+              >
+                {generateRecommendations.isPending ? <Spinner size="sm" /> : 'Generate Recommendations'}
+              </Button>
+              <Button
+                variant="outline"
+                className="h-9 lg:h-10 w-full justify-start rounded-xl sm:col-span-2 lg:col-span-1"
+                onClick={() => {
+                  setRecommendationTypeFilter('all');
+                  setReviewSeverityFilter('all');
+                  setIssueStatusFilter('all');
+                }}
+              >
+                Reset Active Filters
+              </Button>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Farm Queue</CardTitle>
-          <CardDescription>Select a farm to focus recommendation and pest review tasks</CardDescription>
+      <div className="flex items-center gap-3 px-1">
+        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">Operational Context</p>
+        <div className="h-px flex-1 bg-gradient-to-r from-green-200/70 to-transparent dark:from-green-900/50" />
+      </div>
+
+      <div className={`${workspaceGridClass} animate-fade-in [animation-delay:140ms] [animation-fill-mode:both]`}>
+      <div className={workspaceRailClass}>
+      <Card className="border-green-100/80 dark:border-green-900/45">
+        <CardHeader className="pb-3">
+          <CardTitle className={sectionTitleClass}>Farm Queue</CardTitle>
+          <CardDescription className={sectionDescriptionClass}>Select a farm to focus recommendation and pest review tasks</CardDescription>
         </CardHeader>
         <CardContent>
           {filteredFarms.length ? (
             <div className="space-y-3">
-              <div className="flex gap-2 overflow-x-auto pb-1">
+              <div className="flex gap-2 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible">
                 <Button
                   variant={selectedFarmId ? 'outline' : 'default'}
                   size="sm"
@@ -464,9 +969,13 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
                 ))}
               </div>
 
-              <div className="space-y-2">
-                {filteredFarms.slice(0, 8).map((farm) => (
-                  <div key={farm.id} className="flex items-center justify-between rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">
+                Showing {Math.min(filteredFarms.length, 10)} of {filteredFarms.length} farms.
+              </p>
+
+              <div className="space-y-2 lg:max-h-[430px] lg:overflow-y-auto lg:pr-1">
+                {filteredFarms.slice(0, 10).map((farm) => (
+                  <div key={farm.id} className="flex items-center justify-between rounded-lg border p-3 lg:p-3.5">
                     <div>
                       <p className="font-semibold">{farm.name}</p>
                       <p className="text-xs text-muted-foreground">
@@ -500,15 +1009,801 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
           )}
         </CardContent>
       </Card>
+      </div>
 
+      <div className={workspaceMainClass}>
       <Card>
         <CardHeader>
+          <CardTitle className={sectionTitleClass}>Farmer Response Signals</CardTitle>
+          <CardDescription className={sectionDescriptionClass}>
+            {selectedFarm
+              ? `Review how ${selectedFarm.name} has responded to recommendations over the last 30 days`
+              : 'Select a farm to review farmer response patterns and channels'}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {!selectedFarm ? (
+            <EmptyState
+              title="Select a farm"
+              message="Choose a farm from the queue above to inspect response rate, channels, and recent actions."
+            />
+          ) : responseHistoryLoading ? (
+            <LoadingState text="Loading farmer response insights..." size="sm" />
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Recommendations</p>
+                  <p className="text-2xl font-bold">{responseHistory?.stats?.total ?? 0}</p>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Response Rate</p>
+                  <p className="text-2xl font-bold">
+                    {typeof responseHistory?.stats?.responseRate === 'number'
+                      ? `${Math.round(responseHistory.stats.responseRate)}%`
+                      : '0%'}
+                  </p>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Avg Response Time</p>
+                  <p className="text-2xl font-bold">
+                    {typeof responseHistory?.stats?.averageResponseTime === 'number'
+                      ? `${responseHistory.stats.averageResponseTime}h`
+                      : 'N/A'}
+                  </p>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Executed</p>
+                  <p className="text-2xl font-bold">{responseHistory?.stats?.byStatus?.executed ?? 0}</p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Response channels</p>
+                {Object.entries(responseHistory?.stats?.byChannel || {}).length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(responseHistory?.stats?.byChannel || {}).map(([channel, count]) => (
+                      <Badge key={channel} variant="outline">
+                        {channel}: {count}
+                      </Badge>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No farmer responses recorded for this farm in the current window.
+                  </p>
+                )}
+              </div>
+
+              {Array.isArray(responseHistory?.history) && responseHistory.history.some((item) => item.respondedAt) && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Recent responses</p>
+                  <div className="space-y-2">
+                    {responseHistory.history
+                      .filter((item) => item.respondedAt)
+                      .sort((left, right) => new Date(right.respondedAt || 0).getTime() - new Date(left.respondedAt || 0).getTime())
+                      .slice(0, 3)
+                      .map((item) => (
+                        <div key={item.id} className="rounded-lg border p-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="font-medium text-sm">{item.title || 'Recommendation'}</p>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                {item.responseChannel || 'unknown channel'} - {item.status}
+                              </p>
+                            </div>
+                            <Badge variant="outline">
+                              {item.respondedAt ? new Date(item.respondedAt).toLocaleDateString() : 'Recorded'}
+                            </Badge>
+                          </div>
+                          {item.responseNotes && (
+                            <p className="text-sm text-muted-foreground mt-2">{item.responseNotes}</p>
+                          )}
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+      </div>
+
+      <div className="lg:col-span-7">
+      <Card>
+        <CardHeader>
+          <CardTitle className={sectionTitleClass}>Sensor Health Watch</CardTitle>
+          <CardDescription className={sectionDescriptionClass}>
+            {selectedFarm
+              ? `Monitor the live health state of sensors deployed on ${selectedFarm.name}`
+              : 'Monitor live sensor status across the farms currently visible to you'}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {sensorHealthLoading ? (
+            <LoadingState text="Loading sensor health..." size="sm" />
+          ) : !sensorHealth ? (
+            <ErrorState
+              title="Failed to load sensor health"
+              message="Please retry."
+              onRetry={refetchSensorHealth}
+            />
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Total</p>
+                  <p className="text-2xl font-bold">{sensorHealth?.total ?? 0}</p>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Healthy</p>
+                  <p className="text-2xl font-bold">{sensorHealth?.healthy ?? 0}</p>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Warning</p>
+                  <p className="text-2xl font-bold">{sensorHealth?.warning ?? 0}</p>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Critical</p>
+                  <p className="text-2xl font-bold">{sensorHealth?.critical ?? 0}</p>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Offline</p>
+                  <p className="text-2xl font-bold">{sensorHealth?.offline ?? 0}</p>
+                </div>
+              </div>
+
+              {Array.isArray(sensorHealth?.sensors) && sensorHealth.sensors.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Recent sensor status</p>
+                  <div className="space-y-2">
+                    {sensorHealth.sensors.slice(0, 6).map((sensor) => (
+                      <div key={sensor.id} className="rounded-lg border p-3">
+                        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                          <div>
+                            <p className="font-medium text-sm">{sensor.name || sensor.id}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Last reading:{' '}
+                              {sensor.lastReading ? new Date(sensor.lastReading).toLocaleString() : 'No readings yet'}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                            <Badge variant={getSensorStatusBadgeVariant(sensor.status)}>
+                              {sensor.status || 'unknown'}
+                            </Badge>
+                            <span>Battery: {sensor.batteryLevel ?? 'N/A'}%</span>
+                            <span>Signal: {sensor.signalStrength ?? 'N/A'}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <EmptyState
+                  title="No sensor health details"
+                  message={
+                    selectedFarm
+                      ? 'This farm does not have sensor health details yet.'
+                      : 'No sensor health records are available yet.'
+                  }
+                />
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+      </div>
+
+      <div className="lg:col-span-5">
+      <Card>
+        <CardHeader>
+          <CardTitle>Recommendation History Feed</CardTitle>
+          <CardDescription>
+            {selectedFarm
+              ? `Recent recommendation history for ${selectedFarm.name} from the backend history route`
+              : 'Recent recommendation history from the backend history route across accessible farms'}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {recommendationHistoryFeedLoading ? (
+            <LoadingState text="Loading recommendation history..." size="sm" />
+          ) : recommendationHistoryFeed?.data?.length ? (
+            <div className="space-y-2">
+              {recommendationHistoryFeed.data.slice(0, 5).map((item) => (
+                <div key={item.id} className="rounded-lg border p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-sm">{item.title || 'Recommendation'}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {(item.farm?.name || item.farmId || 'Unknown farm')} - {item.type} - {item.status}
+                      </p>
+                      {item.recommendedAction && (
+                        <p className="text-sm text-muted-foreground mt-2">{item.recommendedAction}</p>
+                      )}
+                    </div>
+                    <Badge variant="outline">{new Date(item.createdAt).toLocaleDateString()}</Badge>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              title="No recommendation history"
+              message="No recommendation records were returned from the backend history route for the current scope."
+            />
+          )}
+        </CardContent>
+      </Card>
+      </div>
+
+      <div className="lg:col-span-12">
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <CardTitle>Pest Control Follow-Through</CardTitle>
+              <CardDescription>
+                {selectedFarm
+                  ? `Track whether ${selectedFarm.name} has scheduled and completed the recommended pest-control work`
+                  : 'Select a farm to monitor scheduled and executed pest-control actions'}
+              </CardDescription>
+            </div>
+            {selectedFarm && (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={exportFarmActivity.isPending}
+                  onClick={() => handleExportFarmActivity('csv', 'pest_control')}
+                >
+                  Pest Control CSV
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={exportFarmActivity.isPending}
+                  onClick={() => handleExportFarmActivity('csv')}
+                >
+                  Farm CSV
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={exportFarmActivity.isPending}
+                  onClick={() => handleExportFarmActivity('json')}
+                >
+                  Farm JSON
+                </Button>
+              </div>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {!selectedFarm ? (
+            <EmptyState
+              title="Select a farm"
+              message="Choose a farm from the queue above to review pest-control execution and follow-through."
+            />
+          ) : pestControlSchedulesLoading || selectedFarmActivityLoading ? (
+            <LoadingState text="Loading pest control operations..." size="sm" />
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Scheduled Actions</p>
+                  <p className="text-2xl font-bold">{pestControlSchedules.length}</p>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Pending Execution</p>
+                  <p className="text-2xl font-bold">{pendingPestControlSchedules.length}</p>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Completed Actions</p>
+                  <p className="text-2xl font-bold">{completedPestControlSchedules.length}</p>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Logged Activity</p>
+                  <p className="text-2xl font-bold">{pestControlActivity.length}</p>
+                </div>
+              </div>
+
+              {pendingPestControlSchedules.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Pending field work</p>
+                  {pendingPestControlSchedules.slice(0, 3).map((schedule) => (
+                    <div key={schedule.id} className="rounded-lg border p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium text-sm">{schedule.controlMethod}</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Scheduled for {new Date(schedule.scheduledDate).toLocaleDateString()}
+                            {schedule.scheduledTime ? ` at ${schedule.scheduledTime}` : ''}
+                          </p>
+                          {schedule.notes && (
+                            <p className="text-sm text-muted-foreground mt-2">{schedule.notes}</p>
+                          )}
+                        </div>
+                        <Badge variant="secondary">Pending</Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                  No pending pest-control actions are currently scheduled for this farm.
+                </div>
+              )}
+
+              {pestControlActivity.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Recent pest-control activity</p>
+                  {pestControlActivity.slice(0, 4).map((item) => (
+                    <div key={item.id} className="rounded-lg border p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-medium text-sm">{item.title}</p>
+                            <Badge variant="outline">{formatActivityLabel(item.action)}</Badge>
+                          </div>
+                          <p className="mt-1 text-sm text-muted-foreground">{item.description}</p>
+                        </div>
+                        <div className="text-right">
+                          {item.status && <Badge variant="outline">{item.status}</Badge>}
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {new Date(item.timestamp).toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+      </div>
+      </div>
+
+      <div className="flex items-center gap-3 px-1">
+        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">Execution Workbench</p>
+        <div className="h-px flex-1 bg-gradient-to-r from-green-200/70 to-transparent dark:from-green-900/50" />
+      </div>
+
+      <div className={workspaceGridClass}>
+      <div className="lg:col-span-12 grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="rounded-xl border bg-muted/25 p-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Visible Recommendations</p>
+          <p className="mt-1 text-xl font-black">{filteredRecommendations.length}</p>
+        </div>
+        <div className="rounded-xl border bg-muted/25 p-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Visible Pest Reviews</p>
+          <p className="mt-1 text-xl font-black">{filteredPendingReviews.length}</p>
+        </div>
+        <div className="rounded-xl border bg-muted/25 p-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Visible Farm Issues</p>
+          <p className="mt-1 text-xl font-black">{filteredFarmIssues.length}</p>
+        </div>
+      </div>
+
+      <Card className="lg:col-span-8">
+        <CardHeader>
+          <CardTitle>Expert Recommendation Builder</CardTitle>
+          <CardDescription>
+            {selectedFarm
+              ? `Send a tailored recommendation directly to ${selectedFarm.name}`
+              : 'Select a farm to create an expert recommendation for that farmer'}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {!selectedFarm ? (
+            <EmptyState
+              title="Select a farm"
+              message="Choose a farm from the queue above, then create a direct expert recommendation for the farmer."
+            />
+          ) : (
+            <form className="space-y-4" onSubmit={handleCreateManualRecommendation}>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <label className="space-y-2">
+                  <span className="text-sm font-medium">Recommendation type</span>
+                  <select
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    value={manualRecommendationType}
+                    onChange={(event) =>
+                      setManualRecommendationType(
+                        event.target.value as 'general' | 'irrigation' | 'fertilization' | 'pest_alert' | 'weather_alert'
+                      )
+                    }
+                  >
+                    <option value="general">General advice</option>
+                    <option value="irrigation">Irrigation</option>
+                    <option value="fertilization">Fertilization</option>
+                    <option value="pest_alert">Pest control</option>
+                    <option value="weather_alert">Weather alert</option>
+                  </select>
+                </label>
+                <label className="space-y-2">
+                  <span className="text-sm font-medium">Priority</span>
+                  <select
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    value={manualRecommendationPriority}
+                    onChange={(event) =>
+                      setManualRecommendationPriority(event.target.value as 'low' | 'medium' | 'high' | 'critical')
+                    }
+                  >
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                    <option value="critical">Critical</option>
+                  </select>
+                </label>
+              </div>
+
+              <label className="space-y-2 block">
+                <span className="text-sm font-medium">Title</span>
+                <input
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={manualRecommendationTitle}
+                  onChange={(event) => setManualRecommendationTitle(event.target.value)}
+                  placeholder="Example: Inspect signs of early nitrogen stress"
+                />
+              </label>
+
+              <label className="space-y-2 block">
+                <span className="text-sm font-medium">Recommendation details</span>
+                <textarea
+                  className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={manualRecommendationDescription}
+                  onChange={(event) => setManualRecommendationDescription(event.target.value)}
+                  placeholder="Explain what the farmer should watch for and why this recommendation matters."
+                />
+              </label>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <label className="space-y-2 block">
+                  <span className="text-sm font-medium">Action required</span>
+                  <textarea
+                    className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={manualRecommendationAction}
+                    onChange={(event) => setManualRecommendationAction(event.target.value)}
+                    placeholder="Example: Check 10 plants in each row and send photos of any yellow striping."
+                  />
+                </label>
+                <label className="space-y-2 block">
+                  <span className="text-sm font-medium">Valid until</span>
+                  <input
+                    type="datetime-local"
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    value={manualRecommendationValidUntil}
+                    onChange={(event) => setManualRecommendationValidUntil(event.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    This becomes the response deadline for the farmer.
+                  </p>
+                </label>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed p-3">
+                <p className="text-sm text-muted-foreground">
+                  The recommendation will be attached to {selectedFarm.name} and delivered through the normal farmer recommendation flow.
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={resetManualRecommendationForm}
+                    disabled={createManualRecommendation.isPending}
+                  >
+                    Reset
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={
+                      createManualRecommendation.isPending
+                      || !manualRecommendationTitle.trim()
+                      || !manualRecommendationDescription.trim()
+                      || !manualRecommendationAction.trim()
+                    }
+                  >
+                    {createManualRecommendation.isPending ? <Spinner size="sm" /> : 'Send Recommendation'}
+                  </Button>
+                </div>
+              </div>
+            </form>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="lg:col-span-4 lg:sticky lg:top-24 self-start border-green-100/80 dark:border-green-900/45">
+        <CardHeader>
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <CardTitle>Recent System Activity</CardTitle>
+              <CardDescription>What changed across farms in the selected activity window.</CardDescription>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:flex sm:flex-wrap">
+              <select
+                className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                value={activityHours}
+                onChange={(event) => setActivityHours(Number(event.target.value) as 6 | 24 | 168)}
+              >
+                <option value={6}>Last 6 hours</option>
+                <option value={24}>Last 24 hours</option>
+                <option value={168}>Last 7 days</option>
+              </select>
+              <select
+                className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                value={activityType}
+                onChange={(event) =>
+                  setActivityType(
+                    event.target.value as 'all' | 'user' | 'farm' | 'recommendation' | 'pest_detection' | 'pest_control' | 'sensor_reading'
+                  )
+                }
+              >
+                <option value="all">All types</option>
+                <option value="user">Users</option>
+                <option value="farm">Farms</option>
+                <option value="recommendation">Recommendations</option>
+                <option value="pest_detection">Pest Detections</option>
+                <option value="pest_control">Pest Control</option>
+                <option value="sensor_reading">Sensor Readings</option>
+              </select>
+              <Button size="sm" variant="outline" className="w-full sm:w-auto" disabled={exportRecentActivity.isPending} onClick={() => handleExportRecentActivity('csv')}>
+                Export CSV
+              </Button>
+              <Button size="sm" variant="outline" className="w-full sm:w-auto" disabled={exportRecentActivity.isPending} onClick={() => handleExportRecentActivity('json')}>
+                Export JSON
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="lg:max-h-[760px] lg:overflow-y-auto lg:pr-1">
+          {recentActivityLoading ? (
+            <LoadingState text="Loading recent activity..." size="sm" />
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-3 2xl:grid-cols-6">
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Users</p>
+                  <p className="text-2xl font-bold">{recentActivity?.summary?.newUsers ?? 0}</p>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Farms</p>
+                  <p className="text-2xl font-bold">{recentActivity?.summary?.newFarms ?? 0}</p>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Readings</p>
+                  <p className="text-2xl font-bold">{recentActivity?.summary?.sensorReadings ?? 0}</p>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Recommendations</p>
+                  <p className="text-2xl font-bold">{recentActivity?.summary?.recommendations ?? 0}</p>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Pest Events</p>
+                  <p className="text-2xl font-bold">{recentActivity?.summary?.pestDetections ?? 0}</p>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Pest Control</p>
+                  <p className="text-2xl font-bold">{recentActivity?.summary?.pestControlActions ?? 0}</p>
+                </div>
+              </div>
+
+              {Array.isArray(recentActivity?.activities) && recentActivity.activities.length > 0 ? (
+                <div className="space-y-2">
+                  {recentActivity.activities.map((item) => (
+                    <div key={item.id} className="rounded-lg border p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-medium text-sm">{item.title}</p>
+                            <Badge variant="outline">{formatActivityLabel(item.type)}</Badge>
+                          </div>
+                          <p className="mt-1 text-sm text-muted-foreground">{item.description}</p>
+                        </div>
+                        <div className="text-right">
+                          {item.status && <Badge variant="outline">{item.status}</Badge>}
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {new Date(item.timestamp).toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <EmptyState
+                  title="No recent activity"
+                  message="New user, farm, recommendation, and pest events will appear here."
+                />
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="lg:col-span-8">
+        <CardHeader>
           <div className="flex items-center justify-between gap-3">
-            <CardTitle>Pending Recommendations</CardTitle>
+            <CardTitle>Reported Farm Issues</CardTitle>
             <div className="flex items-center gap-2">
               <Button
                 size="sm"
                 variant="outline"
+                onClick={() => refetchFarmIssues()}
+                disabled={!selectedFarm}
+              >
+                Refresh Issues
+              </Button>
+            </div>
+          </div>
+          <CardDescription>
+            {selectedFarm
+              ? `Triage farmer-reported issues for ${selectedFarm.name}`
+              : 'Select a farm to review the reported issue queue'}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {!selectedFarm ? (
+            <EmptyState
+              title="Select a farm"
+              message="Choose a farm to review reported issues, mark them in progress, and close resolved cases."
+            />
+          ) : (
+            <>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="text-sm text-muted-foreground">
+                  {farmIssuesResponse?.pagination?.total || filteredFarmIssues.length} tracked issue(s)
+                </div>
+                <select
+                  className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                  value={issueStatusFilter}
+                  onChange={(event) => setIssueStatusFilter(event.target.value)}
+                >
+                  <option value="all">All statuses</option>
+                  <option value="open">Open</option>
+                  <option value="in_progress">In progress</option>
+                  <option value="resolved">Resolved</option>
+                  <option value="closed">Closed</option>
+                </select>
+              </div>
+
+              {farmIssuesLoading ? (
+                <LoadingState text="Loading farm issues..." size="sm" />
+              ) : filteredFarmIssues.length === 0 ? (
+                <EmptyState
+                  title={normalizedSearch ? 'No matching issues' : 'No reported issues'}
+                  message={
+                    normalizedSearch
+                      ? `No issues match "${searchQuery}".`
+                      : 'No issue reports are currently waiting on this farm.'
+                  }
+                />
+              ) : (
+                <div className="space-y-3">
+                  {filteredFarmIssues.map((issue) => (
+                    <div key={issue.id} className="rounded-lg border p-4">
+                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-semibold">{issue.title}</p>
+                            <Badge variant="outline">{issue.status}</Badge>
+                            <Badge className={recommendationPriorityClass[
+                              issue.severity === 'urgent'
+                                ? 'critical'
+                                : issue.severity === 'high'
+                                  ? 'high'
+                                  : issue.severity === 'medium'
+                                    ? 'medium'
+                                    : 'low'
+                            ]}>
+                              {issue.severity}
+                            </Badge>
+                            <Badge variant="outline">{issue.category}</Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground">{issue.description}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Reported {new Date(issue.createdAt).toLocaleString()}
+                            {issue.locationDescription ? ` - ${issue.locationDescription}` : ''}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Assignee: {issue.assignee?.firstName || issue.assignee?.email || (issue.assignedTo === user?.id ? 'You' : issue.assignedTo) || 'Unassigned'}
+                          </p>
+                          {issue.expertNotes && (
+                            <p className="text-xs text-muted-foreground">Expert note: {issue.expertNotes}</p>
+                          )}
+                          {issue.resolutionNotes && (
+                            <p className="text-xs text-muted-foreground">Resolution: {issue.resolutionNotes}</p>
+                          )}
+                          {!!issue.assignedTo && issue.assignedTo !== user?.id && (
+                            <p className="text-xs text-green-600 dark:text-green-400">
+                              This issue is currently assigned to another reviewer.
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          {issue.status === 'open' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={isAnyActionPending || (!!issue.assignedTo && issue.assignedTo !== user?.id)}
+                              onClick={() =>
+                                handleIssueStatusUpdate(issue, 'in_progress', {
+                                  expertNotes: 'Issue acknowledged and moved into expert review.',
+                                })
+                              }
+                            >
+                              <Clock3 size={14} className="mr-1" />
+                              Start Review
+                            </Button>
+                          )}
+                          {issue.status !== 'resolved' && issue.status !== 'closed' && (
+                            <Button
+                              size="sm"
+                              disabled={isAnyActionPending || (!!issue.assignedTo && issue.assignedTo !== user?.id)}
+                              onClick={() =>
+                                handleIssueStatusUpdate(issue, 'resolved', {
+                                  expertNotes: 'Reviewed and resolved by expert dashboard.',
+                                  resolutionNotes: 'Marked resolved after expert review.',
+                                })
+                              }
+                            >
+                              <CheckCircle2 size={14} className="mr-1" />
+                              Resolve
+                            </Button>
+                          )}
+                          {issue.status !== 'closed' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={isAnyActionPending || (!!issue.assignedTo && issue.assignedTo !== user?.id)}
+                              onClick={() =>
+                                handleIssueStatusUpdate(issue, 'closed', {
+                                  expertNotes: 'Issue closed from expert dashboard.',
+                                  resolutionNotes: issue.resolutionNotes || 'Closed after review.',
+                                })
+                              }
+                            >
+                              <XCircle size={14} className="mr-1" />
+                              Close
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {renderPagination(
+                    farmIssuesResponse?.pagination?.page || issuePage,
+                    farmIssuesResponse?.pagination?.totalPages,
+                    setIssuePage
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <div className="lg:col-span-12">
+        <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-green-700/80 dark:text-green-300/80">Review Lanes</p>
+        <p className="text-sm text-muted-foreground">Process recommendation decisions and pest adjudications with a dedicated split workspace.</p>
+      </div>
+
+      <Card className="lg:col-span-8 h-full border-green-100/80 dark:border-green-900/45">
+        <CardHeader>
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-2">
+              <CardTitle>Pending Recommendations</CardTitle>
+              <Badge variant="outline">{filteredRecommendations.length}</Badge>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 w-full md:w-auto">
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full"
                 onClick={handleExportRecommendationsCsv}
                 disabled={filteredRecommendations.length === 0}
               >
@@ -517,6 +1812,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
               <Button
                 size="sm"
                 variant="outline"
+                className="w-full"
                 onClick={handleRejectVisibleRecommendations}
                 disabled={isAnyActionPending || filteredRecommendations.length === 0}
               >
@@ -525,6 +1821,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
               <Button
                 size="sm"
                 variant="outline"
+                className="w-full"
                 onClick={handleAcceptVisibleRecommendations}
                 disabled={isAnyActionPending || filteredRecommendations.length === 0}
               >
@@ -552,6 +1849,62 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
             </select>
           </div>
 
+          {selectedRecommendationId && (
+            <div className="mb-4 rounded-lg border border-dashed p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium">Selected Recommendation Detail</p>
+                  <p className="text-xs text-muted-foreground">Loaded from the single recommendation backend route</p>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => refetchSelectedRecommendation()} disabled={!selectedRecommendationId}>
+                  Refresh Detail
+                </Button>
+              </div>
+
+              <div className="mt-4">
+                {selectedRecommendationLoading ? (
+                  <LoadingState text="Loading recommendation detail..." size="sm" />
+                ) : selectedRecommendation ? (
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-semibold">{selectedRecommendation.title}</p>
+                      <Badge className={recommendationPriorityClass[selectedRecommendation.priority] || ''}>
+                        {selectedRecommendation.priority}
+                      </Badge>
+                      <Badge variant="outline">{selectedRecommendation.type}</Badge>
+                      <Badge variant="outline">{selectedRecommendation.status}</Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">{selectedRecommendation.description}</p>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <div className="rounded-lg bg-muted/30 p-3">
+                        <p className="text-xs text-muted-foreground uppercase">Farm</p>
+                        <p className="font-medium">{selectedRecommendation.farm?.name || selectedRecommendation.farmId || 'N/A'}</p>
+                      </div>
+                      <div className="rounded-lg bg-muted/30 p-3">
+                        <p className="text-xs text-muted-foreground uppercase">Action Deadline</p>
+                        <p className="font-medium">
+                          {selectedRecommendation.actionDeadline
+                            ? new Date(selectedRecommendation.actionDeadline).toLocaleString()
+                            : 'No deadline'}
+                        </p>
+                      </div>
+                      <div className="rounded-lg bg-muted/30 p-3">
+                        <p className="text-xs text-muted-foreground uppercase">Recommended Action</p>
+                        <p className="font-medium">{selectedRecommendation.recommendedAction || 'N/A'}</p>
+                      </div>
+                      <div className="rounded-lg bg-muted/30 p-3">
+                        <p className="text-xs text-muted-foreground uppercase">Created</p>
+                        <p className="font-medium">{new Date(selectedRecommendation.createdAt).toLocaleString()}</p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <EmptyState title="No recommendation selected" message="Choose a recommendation below to inspect its full detail." />
+                )}
+              </div>
+            </div>
+          )}
+
           {recommendationsLoading ? (
             <LoadingState text="Loading recommendations..." size="sm" />
           ) : filteredRecommendations.length === 0 ? (
@@ -564,7 +1917,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
               }
             />
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-3 lg:max-h-[700px] lg:overflow-y-auto lg:pr-2">
               {filteredRecommendations.map((recommendation) => (
                 <div key={recommendation.id} className="rounded-lg border p-4">
                   <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
@@ -584,6 +1937,13 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
                       Farm: {recommendation.farm?.name || recommendation.farmId}
                     </p>
                     <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setSelectedRecommendationId(recommendation.id)}
+                      >
+                        {selectedRecommendationId === recommendation.id ? 'Viewing Detail' : 'View Detail'}
+                      </Button>
                       <Button
                         size="sm"
                         variant="outline"
@@ -622,14 +1982,18 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className={`${workspaceRailClass} h-fit border-green-100/80 dark:border-green-900/45`}>
         <CardHeader>
-          <div className="flex items-center justify-between gap-3">
-            <CardTitle>Pending Pest Reviews</CardTitle>
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-2">
+              <CardTitle>Pending Pest Reviews</CardTitle>
+              <Badge variant="outline">{filteredPendingReviews.length}</Badge>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-1 gap-2 w-full md:w-auto lg:w-full">
               <Button
                 size="sm"
                 variant="outline"
+                className="w-full"
                 onClick={handleExportReviewsCsv}
                 disabled={filteredPendingReviews.length === 0}
               >
@@ -638,6 +2002,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
               <Button
                 size="sm"
                 variant="outline"
+                className="w-full"
                 onClick={handleMarkVisiblePestClean}
                 disabled={isAnyActionPending || filteredPendingReviews.length === 0}
               >
@@ -646,6 +2011,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
               <Button
                 size="sm"
                 variant="outline"
+                className="w-full"
                 onClick={handleConfirmVisiblePestReviews}
                 disabled={isAnyActionPending || filteredPendingReviews.length === 0}
               >
@@ -655,7 +2021,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
           </div>
           <CardDescription>Validate AI detections and complete expert adjudication</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="lg:max-h-[760px] lg:overflow-y-auto lg:pr-1">
           <div className="mb-3 flex items-center justify-end">
             <select
               className="h-9 rounded-md border border-input bg-background px-3 text-sm"
@@ -670,6 +2036,78 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
               ))}
             </select>
           </div>
+
+          {selectedReviewId && (
+            <div className="mb-4 rounded-lg border border-dashed p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium">Selected Detection Detail</p>
+                  <p className="text-xs text-muted-foreground">Loaded from the single pest-detection backend route</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="outline" onClick={() => refetchSelectedReview()} disabled={!selectedReviewId}>
+                    Refresh Detail
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleReanalyzeDetection(selectedReviewId)}
+                    disabled={!selectedReviewId || isAnyActionPending}
+                  >
+                    {reanalyzePestDetection.isPending ? <Spinner size="sm" /> : 'Re-run AI'}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="mt-4">
+                {selectedReviewLoading ? (
+                  <LoadingState text="Loading detection detail..." size="sm" />
+                ) : selectedReview ? (
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-semibold">{selectedReview.pestType || 'Unclassified detection'}</p>
+                      {selectedReview.severity && <Badge variant="outline">{selectedReview.severity}</Badge>}
+                      <Badge variant="outline">{selectedReview.isConfirmed ? 'confirmed' : 'pending review'}</Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Farm: {selectedReview.farm?.name || selectedReview.farmId || 'N/A'}
+                    </p>
+                    {selectedReview.locationDescription && (
+                      <p className="text-sm text-muted-foreground">{selectedReview.locationDescription}</p>
+                    )}
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <div className="rounded-lg bg-muted/30 p-3">
+                        <p className="text-xs text-muted-foreground uppercase">Created</p>
+                        <p className="font-medium">{new Date(selectedReview.createdAt).toLocaleString()}</p>
+                      </div>
+                      <div className="rounded-lg bg-muted/30 p-3">
+                        <p className="text-xs text-muted-foreground uppercase">Review State</p>
+                        <p className="font-medium">{selectedReview.isConfirmed ? 'Expert confirmed' : 'Awaiting expert confirmation'}</p>
+                      </div>
+                    </div>
+                    {selectedReview.expertNotes && (
+                      <div className="rounded-lg bg-muted/30 p-3">
+                        <p className="text-xs text-muted-foreground uppercase">Expert Notes</p>
+                        <p className="font-medium">{selectedReview.expertNotes}</p>
+                      </div>
+                    )}
+                    {Array.isArray(selectedReview.treatmentRecommendations) && selectedReview.treatmentRecommendations.length > 0 && (
+                      <div className="rounded-lg bg-muted/30 p-3">
+                        <p className="text-xs text-muted-foreground uppercase">Treatment Recommendations</p>
+                        <ul className="mt-2 list-disc space-y-1 pl-4 text-sm">
+                          {selectedReview.treatmentRecommendations.map((item: string, index: number) => (
+                            <li key={`${selectedReview.id}-detail-treatment-${index}`}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <EmptyState title="No detection selected" message="Choose a pending review below to inspect its full details." />
+                )}
+              </div>
+            </div>
+          )}
 
           {pendingReviewsLoading ? (
             <LoadingState text="Loading pending reviews..." size="sm" />
@@ -695,6 +2133,16 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
                       {review.locationDescription && (
                         <p className="text-xs text-muted-foreground mt-0.5">{review.locationDescription}</p>
                       )}
+                      {Array.isArray(review.treatmentRecommendations) && review.treatmentRecommendations.length > 0 && (
+                        <div className="mt-2 text-xs text-muted-foreground">
+                          <p className="font-medium text-foreground">Current treatment plan</p>
+                          <ul className="list-disc pl-4 mt-1 space-y-1">
+                            {review.treatmentRecommendations.slice(0, 3).map((item: string, index: number) => (
+                              <li key={`${review.id}-treatment-${index}`}>{item}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
                       {review.imageUrl && (
                         <a
                           href={review.imageUrl}
@@ -707,6 +2155,29 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
                       )}
                     </div>
                     <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setSelectedReviewId(review.id)}
+                      >
+                        {selectedReviewId === review.id ? 'Viewing Detail' : 'View Detail'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={isAnyActionPending}
+                        onClick={() => openReviewStrategyEditor(review)}
+                      >
+                        Update Strategy
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={isAnyActionPending}
+                        onClick={() => handleReanalyzeDetection(review.id)}
+                      >
+                        {reanalyzePestDetection.isPending ? <Spinner size="sm" /> : 'Re-run AI'}
+                      </Button>
                       <Button
                         size="sm"
                         variant="outline"
@@ -730,6 +2201,69 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
                       </Button>
                     </div>
                   </div>
+                  {editingReviewId === review.id && (
+                    <div className="mt-4 rounded-lg border border-dashed p-4 space-y-3">
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium">Expert notes</p>
+                          <textarea
+                            className="min-h-28 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                            value={reviewStrategyDrafts[review.id]?.expertNotes || ''}
+                            onChange={(event) =>
+                              updateReviewStrategyDraft(review.id, 'expertNotes', event.target.value)
+                            }
+                            placeholder="Summarize what the expert confirmed, what the farmer should watch, and any escalation guidance."
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium">Treatment strategy</p>
+                          <textarea
+                            className="min-h-28 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                            value={reviewStrategyDrafts[review.id]?.treatmentText || ''}
+                            onChange={(event) =>
+                              updateReviewStrategyDraft(review.id, 'treatmentText', event.target.value)
+                            }
+                            placeholder="One action per line. Example: Spray the affected block at dawn."
+                          />
+                          {getAiTreatmentSuggestions(review).length > 0 && (
+                            <div className="rounded-md bg-muted/40 p-3 text-xs text-muted-foreground">
+                              <p className="font-medium text-foreground">AI suggestions</p>
+                              <ul className="mt-1 list-disc pl-4 space-y-1">
+                                {getAiTreatmentSuggestions(review).map((item, index) => (
+                                  <li key={`${review.id}-ai-suggestion-${index}`}>{item}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={isAnyActionPending}
+                          onClick={() => closeReviewStrategyEditor(review.id)}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={isAnyActionPending}
+                          onClick={() => handlePestStrategyReview(review, 'reject')}
+                        >
+                          Mark Clean
+                        </Button>
+                        <Button
+                          size="sm"
+                          disabled={isAnyActionPending}
+                          onClick={() => handlePestStrategyReview(review, 'confirm')}
+                        >
+                          Confirm With Strategy
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
               {renderPagination(
@@ -741,61 +2275,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
           )}
         </CardContent>
       </Card>
-      {/* Pest Review Panel (overview only) */}
-      {activeTab === 'overview' && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Bug size={20} className="text-primary" />
-              Pending Pest Reviews
-            </CardTitle>
-            <CardDescription>Review submitted pest images</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {pendingReviewsLoading ? (
-              <LoadingState text="Loading pending reviews..." size="sm" />
-            ) : filteredPendingReviews.length === 0 ? (
-              <EmptyState title="No pending pest reviews" message="All pest submissions have been reviewed." />
-            ) : (
-              <div className="space-y-4">
-                {filteredPendingReviews.map((review: any) => (
-                  <div key={review.id} className="rounded-lg border p-4">
-                    <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
-                      <div className="space-y-1 flex-1">
-                        <p className="font-semibold">{review.pestType || 'Unknown pest'}</p>
-                        <p className="text-sm text-muted-foreground">
-                          Farm: {(farmsResponse as any)?.data?.find((f: any) => f.id === review.farmId)?.name || review.farmId?.slice(0, 8)}
-                        </p>
-                        {review.severity && <p className="text-xs">Severity: {review.severity}</p>}
-                        {review.imageUrl && (
-                          <a href={review.imageUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-primary underline">
-                            View Image
-                          </a>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Button size="sm" variant="outline" disabled={isAnyActionPending}
-                          onClick={() => handlePestReview(review.id, 'reject', review.pestType, review.severity)}>
-                          <XCircle size={14} className="mr-1" /> Mark Clean
-                        </Button>
-                        <Button size="sm" disabled={isAnyActionPending}
-                          onClick={() => handlePestReview(review.id, 'confirm', review.pestType, review.severity)}>
-                          <CheckCircle2 size={14} className="mr-1" /> Confirm Pest
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                {renderPagination(
-                  pendingReviewsResponse?.pagination?.page || pendingReviewPage,
-                  pendingReviewsResponse?.pagination?.totalPages,
-                  setPendingReviewPage
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+      </div>
 
       {/* ===== District Analytics Tab ===== */}
       {activeTab === 'district-analytics' && (
@@ -814,6 +2294,9 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
 function DistrictAnalyticsPanel() {
   const { data: districts, isLoading } = useAllDistrictsAnalytics();
   const [selectedDistrict, setSelectedDistrict] = useState('');
+  const [lookupLatInput, setLookupLatInput] = useState('');
+  const [lookupLonInput, setLookupLonInput] = useState('');
+  const [submittedCoords, setSubmittedCoords] = useState<{ lat: number; lon: number } | null>(null);
   const districtList = Array.isArray(districts) ? districts : [];
 
   useEffect(() => {
@@ -823,10 +2306,32 @@ function DistrictAnalyticsPanel() {
   }, [districtList]);
 
   const { data: districtData, isLoading: districtLoading } = useDistrictAnalytics(selectedDistrict);
+  const { data: districtWeather, isLoading: districtWeatherLoading } = useDistrictWeather(selectedDistrict, !!selectedDistrict);
+  const { data: outbreakMap, isLoading: outbreakMapLoading } = usePestOutbreakMap({ days: 30 });
+  const {
+    data: coordinateWeather,
+    isLoading: coordinateWeatherLoading,
+    refetch: refetchCoordinateWeather,
+  } = useWeatherByCoordinates(submittedCoords?.lat, submittedCoords?.lon, !!submittedCoords);
 
   if (isLoading) return <LoadingState text="Loading districts..." />;
 
   const d = districtData as any;
+  const districtWeatherData = districtWeather as any;
+  const coordinateWeatherData = coordinateWeather as any;
+  const selectedDistrictOutbreak = outbreakMap?.byDistrict?.find((item) => item.district === selectedDistrict);
+  const districtSevereSignals = selectedDistrictOutbreak
+    ? Number(selectedDistrictOutbreak.severity?.high || 0) + Number(selectedDistrictOutbreak.severity?.severe || 0)
+    : 0;
+
+  const handleCoordinateLookup = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const lat = Number(lookupLatInput);
+    const lon = Number(lookupLonInput);
+
+    if (Number.isNaN(lat) || Number.isNaN(lon)) return;
+    setSubmittedCoords({ lat, lon });
+  };
 
   return (
     <div className="space-y-6">
@@ -867,6 +2372,193 @@ function DistrictAnalyticsPanel() {
             </div>
           ) : (
             <EmptyState title="No data" message="No district analytics data available." />
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <AlertTriangle size={20} className="text-primary" />
+            Pest Outbreak Watch
+          </CardTitle>
+          <CardDescription>District outbreak signals from the backend outbreak-map route</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {outbreakMapLoading ? (
+            <LoadingState text="Loading outbreak map..." size="sm" />
+          ) : outbreakMap ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                <div className="rounded-lg border p-3 text-center">
+                  <p className="text-xl font-bold">{outbreakMap.detections?.length ?? 0}</p>
+                  <p className="text-xs text-muted-foreground">Detections in Window</p>
+                </div>
+                <div className="rounded-lg border p-3 text-center">
+                  <p className="text-xl font-bold">{outbreakMap.byDistrict?.length ?? 0}</p>
+                  <p className="text-xs text-muted-foreground">Districts Affected</p>
+                </div>
+                <div className="rounded-lg border p-3 text-center">
+                  <p className="text-xl font-bold">{selectedDistrictOutbreak?.count ?? 0}</p>
+                  <p className="text-xs text-muted-foreground">Selected District Cases</p>
+                </div>
+                <div className="rounded-lg border p-3 text-center">
+                  <p className="text-xl font-bold">{districtSevereSignals}</p>
+                  <p className="text-xs text-muted-foreground">High + Severe Signals</p>
+                </div>
+              </div>
+
+              {outbreakMap.byDistrict?.length ? (
+                <div className="space-y-2">
+                  {outbreakMap.byDistrict.slice(0, 5).map((district) => (
+                    <div key={district.district} className="flex items-center justify-between rounded-lg border p-3">
+                      <div>
+                        <p className="font-medium">{district.district}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Severe: {(district.severity?.high || 0) + (district.severity?.severe || 0)} cases
+                        </p>
+                      </div>
+                      <Badge variant="outline">{district.count} detections</Badge>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <EmptyState
+                  title="No outbreak activity"
+                  message="No outbreak-map detections were returned for the current reporting window."
+                />
+              )}
+            </div>
+          ) : (
+            <EmptyState
+              title="Outbreak map unavailable"
+              message="The backend outbreak-map route did not return data for this period."
+            />
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Cloud size={20} className="text-primary" />
+            District Weather Snapshot
+          </CardTitle>
+          <CardDescription>Live district weather from the backend district weather endpoint</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {districtWeatherLoading ? (
+            <LoadingState text="Loading district weather..." size="sm" />
+          ) : districtWeatherData ? (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[
+                { label: 'Temperature', value: districtWeatherData.temperature != null ? `${Math.round(Number(districtWeatherData.temperature))} C` : '--' },
+                { label: 'Humidity', value: districtWeatherData.humidity != null ? `${districtWeatherData.humidity}%` : '--' },
+                { label: 'Condition', value: districtWeatherData.condition || '--' },
+                { label: 'Wind', value: districtWeatherData.windSpeed != null ? `${districtWeatherData.windSpeed} m/s` : '--' },
+              ].map((stat) => (
+                <div key={stat.label} className="rounded-lg border p-3 text-center">
+                  <p className="text-xl font-bold">{String(stat.value)}</p>
+                  <p className="text-xs text-muted-foreground">{stat.label}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState title="No district weather" message="District weather is not available for the selected district." />
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Cloud size={20} className="text-primary" />
+            Coordinate Weather Lookup
+          </CardTitle>
+          <CardDescription>Look up live weather for any coordinate using the backend location endpoint</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <form className="grid grid-cols-1 gap-3 md:grid-cols-3" onSubmit={handleCoordinateLookup}>
+            <input
+              type="number"
+              step="any"
+              className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              placeholder="Latitude"
+              value={lookupLatInput}
+              onChange={(event) => setLookupLatInput(event.target.value)}
+            />
+            <input
+              type="number"
+              step="any"
+              className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              placeholder="Longitude"
+              value={lookupLonInput}
+              onChange={(event) => setLookupLonInput(event.target.value)}
+            />
+            <Button type="submit">Lookup Weather</Button>
+          </form>
+
+          {!submittedCoords ? (
+            <EmptyState
+              title="Enter coordinates"
+              message="Provide latitude and longitude to check current weather for a specific location."
+            />
+          ) : coordinateWeatherLoading ? (
+            <LoadingState text="Looking up coordinate weather..." size="sm" />
+          ) : coordinateWeatherData ? (
+            <div className="space-y-3">
+              <div className="flex flex-col gap-2 rounded-lg border p-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="font-medium">
+                    {submittedCoords.lat.toFixed(4)}, {submittedCoords.lon.toFixed(4)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Current conditions from the location-based weather route
+                  </p>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => refetchCoordinateWeather()}>
+                  Refresh
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                {[
+                  {
+                    label: 'Temperature',
+                    value: coordinateWeatherData.temperature != null
+                      ? `${Math.round(Number(coordinateWeatherData.temperature))} C`
+                      : '--',
+                  },
+                  {
+                    label: 'Humidity',
+                    value: coordinateWeatherData.humidity != null
+                      ? `${coordinateWeatherData.humidity}%`
+                      : '--',
+                  },
+                  {
+                    label: 'Condition',
+                    value: coordinateWeatherData.condition || '--',
+                  },
+                  {
+                    label: 'Wind',
+                    value: coordinateWeatherData.windSpeed != null
+                      ? `${coordinateWeatherData.windSpeed} m/s`
+                      : '--',
+                  },
+                ].map((stat) => (
+                  <div key={stat.label} className="rounded-lg border p-3 text-center">
+                    <p className="text-xl font-bold">{String(stat.value)}</p>
+                    <p className="text-xs text-muted-foreground">{stat.label}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <ErrorState
+              title="Lookup failed"
+              message="We could not load weather for those coordinates."
+              onRetry={refetchCoordinateWeather}
+            />
           )}
         </CardContent>
       </Card>
@@ -936,3 +2628,4 @@ function ExpertAiAdvicePanel() {
 }
 
 export default ConnectedExpertDashboard;
+

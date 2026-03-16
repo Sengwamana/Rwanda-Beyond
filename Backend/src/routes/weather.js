@@ -26,6 +26,8 @@ const getFarmUserId = async (req) => {
   return await db.farms.getUserId(farmId);
 };
 
+const toForecastDateString = (date) => date.toISOString().split('T')[0];
+
 // =====================================================
 // FARM WEATHER ROUTES
 // =====================================================
@@ -92,8 +94,8 @@ router.get('/farm/:farmId/history',
     const districtId = farm?.district_id || farm?.district;
 
     const data = await db.weatherData.getByDistrict(districtId, {
-      startDate: start.toISOString(),
-      endDate: end.toISOString()
+      startDate: toForecastDateString(start),
+      endDate: toForecastDateString(end)
     });
 
     return successResponse(res, {

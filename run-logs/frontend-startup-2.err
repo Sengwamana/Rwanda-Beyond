@@ -1,0 +1,783 @@
+[2m17:52:59[22m [31m[1m[vite][22m[39m [31mInternal server error: D:\Advanced Real World Project\Pro\Frontend\components\Settings.tsx: Unexpected token (208:0)
+
+[0m [90m 206 |[31m     setUssdGatewayEnabled(parseBooleanValue(getConfigItem(adminConfigs[33m,[31m [32m'notifications.ussd.enabled'[31m)[33m?[31m[33m.[31mvalue[33m,[31m [36mtrue[31m))[33m;[31m
+ [90m 207 |[31m   }[33m,[31m [adminConfigs])[33m;[31m
+[31m[1m>[22m[31m[90m 208 |[31m
+ [90m     |[31m [31m[1m^[22m[31m[0m[39m
+  Plugin: [35mvite:react-babel[39m
+  File: [36mD:/Advanced Real World Project/Pro/Frontend/components/Settings.tsx[39m:208:0
+[33m  206|      setUssdGatewayEnabled(parseBooleanValue(getConfigItem(adminConfigs, 'notifications.ussd.enabled')?.value, true));
+  207|    }, [adminConfigs]);
+  208|  
+     |  ^[39m
+      at constructor (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:365:19)
+      at TypeScriptParserMixin.raise (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:6599:19)
+      at TypeScriptParserMixin.unexpected (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:6619:16)
+      at TypeScriptParserMixin.parseExprAtom (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11442:22)
+      at TypeScriptParserMixin.parseExprAtom (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4764:20)
+      at TypeScriptParserMixin.parseExprSubscripts (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11081:23)
+      at TypeScriptParserMixin.parseUpdate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9786:20)
+      at TypeScriptParserMixin.parseExpressionBase (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10784:23)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10780:39
+      at TypeScriptParserMixin.allowInAnd (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12421:16)
+      at TypeScriptParserMixin.parseExpression (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10780:17)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12895:23)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12767:17)
+      at TypeScriptParserMixin.parseStatementListItem (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12747:17)
+      at TypeScriptParserMixin.parseBlockOrModuleBlockBody (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13316:61)
+      at TypeScriptParserMixin.parseBlockBody (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13309:10)
+      at TypeScriptParserMixin.parseBlock (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13297:10)
+      at TypeScriptParserMixin.parseFunctionBody (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12100:24)
+      at TypeScriptParserMixin.parseArrowExpression (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12075:10)
+      at TypeScriptParserMixin.parseParenAndDistinguishExpression (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11687:12)
+      at TypeScriptParserMixin.parseExprAtom (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11331:23)
+      at TypeScriptParserMixin.parseExprAtom (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4764:20)
+      at TypeScriptParserMixin.parseExprSubscripts (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11081:23)
+      at TypeScriptParserMixin.parseUpdate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9786:20)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12421:16)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10800:17)
+      at TypeScriptParserMixin.parseVar (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13384:91)
+      at TypeScriptParserMixin.parseVarStatement (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13230:10)
+      at TypeScriptParserMixin.parseVarStatement (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9408:31)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12851:23)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12767:17)
+      at TypeScriptParserMixin.parseStatementListItem (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12747:17)
+      at TypeScriptParserMixin.parseExportDeclaration (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13934:17)
+[2m17:52:59[22m [31m[1m[vite][22m[39m [31mInternal server error: D:\Advanced Real World Project\Pro\Frontend\components\Settings.tsx: Unexpected token (208:0)
+
+[0m [90m 206 |[31m     setUssdGatewayEnabled(parseBooleanValue(getConfigItem(adminConfigs[33m,[31m [32m'notifications.ussd.enabled'[31m)[33m?[31m[33m.[31mvalue[33m,[31m [36mtrue[31m))[33m;[31m
+ [90m 207 |[31m   }[33m,[31m [adminConfigs])[33m;[31m
+[31m[1m>[22m[31m[90m 208 |[31m
+ [90m     |[31m [31m[1m^[22m[31m[0m[39m
+  Plugin: [35mvite:react-babel[39m
+  File: [36mD:/Advanced Real World Project/Pro/Frontend/components/Settings.tsx[39m:208:0
+[33m  206|      setUssdGatewayEnabled(parseBooleanValue(getConfigItem(adminConfigs, 'notifications.ussd.enabled')?.value, true));
+  207|    }, [adminConfigs]);
+  208|  
+     |  ^[39m
+      at constructor (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:365:19)
+      at TypeScriptParserMixin.raise (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:6599:19)
+      at TypeScriptParserMixin.unexpected (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:6619:16)
+      at TypeScriptParserMixin.parseExprAtom (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11442:22)
+      at TypeScriptParserMixin.parseExprAtom (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4764:20)
+      at TypeScriptParserMixin.parseExprSubscripts (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11081:23)
+      at TypeScriptParserMixin.parseUpdate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9786:20)
+      at TypeScriptParserMixin.parseExpressionBase (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10784:23)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10780:39
+      at TypeScriptParserMixin.allowInAnd (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12421:16)
+      at TypeScriptParserMixin.parseExpression (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10780:17)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12895:23)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12767:17)
+      at TypeScriptParserMixin.parseStatementListItem (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12747:17)
+      at TypeScriptParserMixin.parseBlockOrModuleBlockBody (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13316:61)
+      at TypeScriptParserMixin.parseBlockBody (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13309:10)
+      at TypeScriptParserMixin.parseBlock (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13297:10)
+      at TypeScriptParserMixin.parseFunctionBody (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12100:24)
+      at TypeScriptParserMixin.parseArrowExpression (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12075:10)
+      at TypeScriptParserMixin.parseParenAndDistinguishExpression (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11687:12)
+      at TypeScriptParserMixin.parseExprAtom (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11331:23)
+      at TypeScriptParserMixin.parseExprAtom (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4764:20)
+      at TypeScriptParserMixin.parseExprSubscripts (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11081:23)
+      at TypeScriptParserMixin.parseUpdate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9786:20)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12421:16)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10800:17)
+      at TypeScriptParserMixin.parseVar (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13384:91)
+      at TypeScriptParserMixin.parseVarStatement (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13230:10)
+      at TypeScriptParserMixin.parseVarStatement (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9408:31)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12851:23)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12767:17)
+      at TypeScriptParserMixin.parseStatementListItem (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12747:17)
+      at TypeScriptParserMixin.parseExportDeclaration (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13934:17)
+[2m17:52:59[22m [31m[1m[vite][22m[39m [31mInternal server error: D:\Advanced Real World Project\Pro\Frontend\components\Settings.tsx: Unexpected token (208:0)
+
+[0m [90m 206 |[31m     setUssdGatewayEnabled(parseBooleanValue(getConfigItem(adminConfigs[33m,[31m [32m'notifications.ussd.enabled'[31m)[33m?[31m[33m.[31mvalue[33m,[31m [36mtrue[31m))[33m;[31m
+ [90m 207 |[31m   }[33m,[31m [adminConfigs])[33m;[31m
+[31m[1m>[22m[31m[90m 208 |[31m
+ [90m     |[31m [31m[1m^[22m[31m[0m[39m
+  Plugin: [35mvite:react-babel[39m
+  File: [36mD:/Advanced Real World Project/Pro/Frontend/components/Settings.tsx[39m:208:0
+[33m  206|      setUssdGatewayEnabled(parseBooleanValue(getConfigItem(adminConfigs, 'notifications.ussd.enabled')?.value, true));
+  207|    }, [adminConfigs]);
+  208|  
+     |  ^[39m
+      at constructor (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:365:19)
+      at TypeScriptParserMixin.raise (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:6599:19)
+      at TypeScriptParserMixin.unexpected (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:6619:16)
+      at TypeScriptParserMixin.parseExprAtom (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11442:22)
+      at TypeScriptParserMixin.parseExprAtom (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4764:20)
+      at TypeScriptParserMixin.parseExprSubscripts (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11081:23)
+      at TypeScriptParserMixin.parseUpdate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9786:20)
+      at TypeScriptParserMixin.parseExpressionBase (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10784:23)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10780:39
+      at TypeScriptParserMixin.allowInAnd (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12421:16)
+      at TypeScriptParserMixin.parseExpression (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10780:17)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12895:23)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12767:17)
+      at TypeScriptParserMixin.parseStatementListItem (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12747:17)
+      at TypeScriptParserMixin.parseBlockOrModuleBlockBody (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13316:61)
+      at TypeScriptParserMixin.parseBlockBody (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13309:10)
+      at TypeScriptParserMixin.parseBlock (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13297:10)
+      at TypeScriptParserMixin.parseFunctionBody (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12100:24)
+      at TypeScriptParserMixin.parseArrowExpression (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12075:10)
+      at TypeScriptParserMixin.parseParenAndDistinguishExpression (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11687:12)
+      at TypeScriptParserMixin.parseExprAtom (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11331:23)
+      at TypeScriptParserMixin.parseExprAtom (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4764:20)
+      at TypeScriptParserMixin.parseExprSubscripts (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11081:23)
+      at TypeScriptParserMixin.parseUpdate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9786:20)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12421:16)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10800:17)
+      at TypeScriptParserMixin.parseVar (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13384:91)
+      at TypeScriptParserMixin.parseVarStatement (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13230:10)
+      at TypeScriptParserMixin.parseVarStatement (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9408:31)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12851:23)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12767:17)
+      at TypeScriptParserMixin.parseStatementListItem (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12747:17)
+      at TypeScriptParserMixin.parseExportDeclaration (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13934:17)
+[2m17:53:34[22m [31m[1m[vite][22m[39m [31mInternal server error: D:\Advanced Real World Project\Pro\Frontend\components\Settings.tsx: Unterminated JSX contents. (445:14)
+
+[0m [90m 443 |[31m             [33m<[31m[33m/[31m[33mdiv[31m[33m>[31m
+ [90m 444 |[31m           [33m<[31m[33m/[31m[33mdiv[31m[33m>[31m
+[31m[1m>[22m[31m[90m 445 |[31m         [33m<[31m[33m/[31m[33mdiv[31m[33m>[31m
+ [90m     |[31m               [31m[1m^[22m[31m
+ [90m 446 |[31m[0m[39m
+  Plugin: [35mvite:react-babel[39m
+  File: [36mD:/Advanced Real World Project/Pro/Frontend/components/Settings.tsx[39m:445:14
+[33m  443|              </div>
+  444|            </div>
+  445|          </div>
+     |                ^
+  446|  [39m
+      at constructor (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:365:19)
+      at TypeScriptParserMixin.raise (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:6599:19)
+      at TypeScriptParserMixin.jsxReadToken (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4448:20)
+      at TypeScriptParserMixin.getTokenFromCode (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4774:12)
+      at TypeScriptParserMixin.getTokenFromCode (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9987:11)
+      at TypeScriptParserMixin.nextToken (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:5782:10)
+      at TypeScriptParserMixin.next (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:5692:10)
+      at TypeScriptParserMixin.eat (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:5696:12)
+      at TypeScriptParserMixin.expect (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:6898:15)
+      at TypeScriptParserMixin.jsxParseClosingElementAt (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4680:10)
+      at TypeScriptParserMixin.jsxParseElementAt (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4695:37)
+      at TypeScriptParserMixin.jsxParseElementAt (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4698:32)
+      at TypeScriptParserMixin.jsxParseElementAt (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4698:32)
+      at TypeScriptParserMixin.jsxParseElement (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4749:17)
+      at TypeScriptParserMixin.parseExprAtom (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4759:19)
+      at TypeScriptParserMixin.parseExprSubscripts (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11081:23)
+      at TypeScriptParserMixin.parseUpdate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10831:21)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9775:39
+      at TypeScriptParserMixin.tryParse (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:6907:20)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9775:18)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12426:12)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10800:17)
+      at TypeScriptParserMixin.parseMaybeAssignAllowInOrVoidPattern (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12493:17)
+      at TypeScriptParserMixin.parseParenAndDistinguishExpression (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11675:28)
+      at TypeScriptParserMixin.parseExprAtom (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11331:23)
+      at TypeScriptParserMixin.parseExprAtom (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4764:20)
+      at TypeScriptParserMixin.parseExprSubscripts (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11081:23)
+      at TypeScriptParserMixin.parseUpdate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9786:20)
+      at TypeScriptParserMixin.parseExpressionBase (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10784:23)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10780:39
+      at TypeScriptParserMixin.allowInAnd (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12421:16)
+      at TypeScriptParserMixin.parseExpression (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10780:17)
+      at TypeScriptParserMixin.parseReturnStatement (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13142:28)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12798:21)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12767:17)
+[2m17:53:35[22m [31m[1m[vite][22m[39m [31mInternal server error: D:\Advanced Real World Project\Pro\Frontend\components\Settings.tsx: Unterminated JSX contents. (445:14)
+
+[0m [90m 443 |[31m             [33m<[31m[33m/[31m[33mdiv[31m[33m>[31m
+ [90m 444 |[31m           [33m<[31m[33m/[31m[33mdiv[31m[33m>[31m
+[31m[1m>[22m[31m[90m 445 |[31m         [33m<[31m[33m/[31m[33mdiv[31m[33m>[31m
+ [90m     |[31m               [31m[1m^[22m[31m
+ [90m 446 |[31m[0m[39m
+  Plugin: [35mvite:react-babel[39m
+  File: [36mD:/Advanced Real World Project/Pro/Frontend/components/Settings.tsx[39m:445:14
+[33m  443|              </div>
+  444|            </div>
+  445|          </div>
+     |                ^
+  446|  [39m
+      at constructor (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:365:19)
+      at TypeScriptParserMixin.raise (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:6599:19)
+      at TypeScriptParserMixin.jsxReadToken (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4448:20)
+      at TypeScriptParserMixin.getTokenFromCode (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4774:12)
+      at TypeScriptParserMixin.getTokenFromCode (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9987:11)
+      at TypeScriptParserMixin.nextToken (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:5782:10)
+      at TypeScriptParserMixin.next (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:5692:10)
+      at TypeScriptParserMixin.eat (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:5696:12)
+      at TypeScriptParserMixin.expect (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:6898:15)
+      at TypeScriptParserMixin.jsxParseClosingElementAt (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4680:10)
+      at TypeScriptParserMixin.jsxParseElementAt (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4695:37)
+      at TypeScriptParserMixin.jsxParseElementAt (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4698:32)
+      at TypeScriptParserMixin.jsxParseElementAt (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4698:32)
+      at TypeScriptParserMixin.jsxParseElement (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4749:17)
+      at TypeScriptParserMixin.parseExprAtom (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4759:19)
+      at TypeScriptParserMixin.parseExprSubscripts (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11081:23)
+      at TypeScriptParserMixin.parseUpdate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10831:21)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9775:39
+      at TypeScriptParserMixin.tryParse (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:6907:20)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9775:18)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12426:12)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10800:17)
+      at TypeScriptParserMixin.parseMaybeAssignAllowInOrVoidPattern (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12493:17)
+      at TypeScriptParserMixin.parseParenAndDistinguishExpression (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11675:28)
+      at TypeScriptParserMixin.parseExprAtom (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11331:23)
+      at TypeScriptParserMixin.parseExprAtom (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4764:20)
+      at TypeScriptParserMixin.parseExprSubscripts (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11081:23)
+      at TypeScriptParserMixin.parseUpdate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9786:20)
+      at TypeScriptParserMixin.parseExpressionBase (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10784:23)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10780:39
+      at TypeScriptParserMixin.allowInAnd (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12421:16)
+      at TypeScriptParserMixin.parseExpression (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10780:17)
+      at TypeScriptParserMixin.parseReturnStatement (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13142:28)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12798:21)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12767:17)
+[2m17:53:35[22m [31m[1m[vite][22m[39m [31mInternal server error: D:\Advanced Real World Project\Pro\Frontend\components\Settings.tsx: Unterminated JSX contents. (445:14)
+
+[0m [90m 443 |[31m             [33m<[31m[33m/[31m[33mdiv[31m[33m>[31m
+ [90m 444 |[31m           [33m<[31m[33m/[31m[33mdiv[31m[33m>[31m
+[31m[1m>[22m[31m[90m 445 |[31m         [33m<[31m[33m/[31m[33mdiv[31m[33m>[31m
+ [90m     |[31m               [31m[1m^[22m[31m
+ [90m 446 |[31m[0m[39m
+  Plugin: [35mvite:react-babel[39m
+  File: [36mD:/Advanced Real World Project/Pro/Frontend/components/Settings.tsx[39m:445:14
+[33m  443|              </div>
+  444|            </div>
+  445|          </div>
+     |                ^
+  446|  [39m
+      at constructor (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:365:19)
+      at TypeScriptParserMixin.raise (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:6599:19)
+      at TypeScriptParserMixin.jsxReadToken (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4448:20)
+      at TypeScriptParserMixin.getTokenFromCode (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4774:12)
+      at TypeScriptParserMixin.getTokenFromCode (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9987:11)
+      at TypeScriptParserMixin.nextToken (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:5782:10)
+      at TypeScriptParserMixin.next (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:5692:10)
+      at TypeScriptParserMixin.eat (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:5696:12)
+      at TypeScriptParserMixin.expect (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:6898:15)
+      at TypeScriptParserMixin.jsxParseClosingElementAt (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4680:10)
+      at TypeScriptParserMixin.jsxParseElementAt (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4695:37)
+      at TypeScriptParserMixin.jsxParseElementAt (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4698:32)
+      at TypeScriptParserMixin.jsxParseElementAt (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4698:32)
+      at TypeScriptParserMixin.jsxParseElement (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4749:17)
+      at TypeScriptParserMixin.parseExprAtom (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4759:19)
+      at TypeScriptParserMixin.parseExprSubscripts (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11081:23)
+      at TypeScriptParserMixin.parseUpdate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10831:21)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9775:39
+      at TypeScriptParserMixin.tryParse (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:6907:20)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9775:18)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12426:12)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10800:17)
+      at TypeScriptParserMixin.parseMaybeAssignAllowInOrVoidPattern (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12493:17)
+      at TypeScriptParserMixin.parseParenAndDistinguishExpression (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11675:28)
+      at TypeScriptParserMixin.parseExprAtom (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11331:23)
+      at TypeScriptParserMixin.parseExprAtom (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4764:20)
+      at TypeScriptParserMixin.parseExprSubscripts (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11081:23)
+      at TypeScriptParserMixin.parseUpdate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9786:20)
+      at TypeScriptParserMixin.parseExpressionBase (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10784:23)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10780:39
+      at TypeScriptParserMixin.allowInAnd (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12421:16)
+      at TypeScriptParserMixin.parseExpression (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10780:17)
+      at TypeScriptParserMixin.parseReturnStatement (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13142:28)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12798:21)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12767:17)
+[2m17:55:25[22m [31m[1m[vite][22m[39m [31mInternal server error: D:\Advanced Real World Project\Pro\Frontend\components\Settings.tsx: Adjacent JSX elements must be wrapped in an enclosing tag. Did you want a JSX fragment <>...</>? (614:6)
+
+[0m [90m 612 |[31m           )}
+ [90m 613 |[31m         [33m<[31m[33m/[31m[33mbutton[31m[33m>[31m
+[31m[1m>[22m[31m[90m 614 |[31m       [33m<[31m[33m/[31m[33mdiv[31m[33m>[31m
+ [90m     |[31m       [31m[1m^[22m[31m
+ [90m 615 |[31m
+ [90m 616 |[31m       [33m<[31m[33mdiv[31m className[33m=[31m[32m"grid lg:grid-cols-3 gap-8"[31m[33m>[31m
+ [90m 617 |[31m         [33m<[31m[33mdiv[31m className[33m=[31m[32m"space-y-8"[31m[33m>[31m[0m[39m
+  Plugin: [35mvite:react-babel[39m
+  File: [36mD:/Advanced Real World Project/Pro/Frontend/components/Settings.tsx[39m:614:6
+[33m  612|            )}
+  613|          </button>
+  614|        </div>
+     |        ^
+  615|  
+  616|        <div className="grid lg:grid-cols-3 gap-8">[39m
+      at constructor (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:365:19)
+      at TypeScriptParserMixin.raise (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:6599:19)
+      at TypeScriptParserMixin.jsxParseElementAt (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4742:18)
+      at TypeScriptParserMixin.jsxParseElement (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4749:17)
+      at TypeScriptParserMixin.parseExprAtom (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4759:19)
+      at TypeScriptParserMixin.parseExprSubscripts (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11081:23)
+      at TypeScriptParserMixin.parseUpdate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10831:21)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9775:39
+      at TypeScriptParserMixin.tryParse (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:6907:20)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9775:18)
+      at TypeScriptParserMixin.parseExpressionBase (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10784:23)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10780:39
+      at TypeScriptParserMixin.allowInAnd (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12421:16)
+      at TypeScriptParserMixin.parseExpression (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10780:17)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12895:23)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12767:17)
+      at TypeScriptParserMixin.parseModuleItem (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12744:17)
+      at TypeScriptParserMixin.parseBlockOrModuleBlockBody (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13316:36)
+      at TypeScriptParserMixin.parseBlockBody (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13309:10)
+      at TypeScriptParserMixin.parseProgram (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12622:10)
+      at TypeScriptParserMixin.parseTopLevel (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12612:25)
+      at TypeScriptParserMixin.parse (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:14488:25)
+      at TypeScriptParserMixin.parse (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10126:18)
+      at parse (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:14522:38)
+      at parser (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\core\lib\parser\index.js:41:34)
+      at parser.next (<anonymous>)
+      at normalizeFile (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\core\lib\transformation\normalize-file.js:64:37)
+      at normalizeFile.next (<anonymous>)
+      at run (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\core\lib\transformation\index.js:22:50)
+      at run.next (<anonymous>)
+      at transform (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\core\lib\transform.js:22:33)
+      at transform.next (<anonymous>)
+      at step (D:\Advanced Real World Project\Pro\Frontend\node_modules\gensync\index.js:261:32)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\gensync\index.js:273:13
+      at async.call.result.err.err (D:\Advanced Real World Project\Pro\Frontend\node_modules\gensync\index.js:223:11)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\gensync\index.js:189:28
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\core\lib\gensync-utils\async.js:67:7
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\gensync\index.js:113:33
+      at step (D:\Advanced Real World Project\Pro\Frontend\node_modules\gensync\index.js:287:14)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\gensync\index.js:273:13
+      at async.call.result.err.err (D:\Advanced Real World Project\Pro\Frontend\node_modules\gensync\index.js:223:11)
+[2m17:55:25[22m [31m[1m[vite][22m[39m [31mInternal server error: D:\Advanced Real World Project\Pro\Frontend\components\Settings.tsx: Adjacent JSX elements must be wrapped in an enclosing tag. Did you want a JSX fragment <>...</>? (614:6)
+
+[0m [90m 612 |[31m           )}
+ [90m 613 |[31m         [33m<[31m[33m/[31m[33mbutton[31m[33m>[31m
+[31m[1m>[22m[31m[90m 614 |[31m       [33m<[31m[33m/[31m[33mdiv[31m[33m>[31m
+ [90m     |[31m       [31m[1m^[22m[31m
+ [90m 615 |[31m
+ [90m 616 |[31m       [33m<[31m[33mdiv[31m className[33m=[31m[32m"grid lg:grid-cols-3 gap-8"[31m[33m>[31m
+ [90m 617 |[31m         [33m<[31m[33mdiv[31m className[33m=[31m[32m"space-y-8"[31m[33m>[31m[0m[39m
+  Plugin: [35mvite:react-babel[39m
+  File: [36mD:/Advanced Real World Project/Pro/Frontend/components/Settings.tsx[39m:614:6
+[33m  612|            )}
+  613|          </button>
+  614|        </div>
+     |        ^
+  615|  
+  616|        <div className="grid lg:grid-cols-3 gap-8">[39m
+      at constructor (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:365:19)
+      at TypeScriptParserMixin.raise (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:6599:19)
+      at TypeScriptParserMixin.jsxParseElementAt (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4742:18)
+      at TypeScriptParserMixin.jsxParseElement (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4749:17)
+      at TypeScriptParserMixin.parseExprAtom (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4759:19)
+      at TypeScriptParserMixin.parseExprSubscripts (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11081:23)
+      at TypeScriptParserMixin.parseUpdate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10831:21)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9775:39
+      at TypeScriptParserMixin.tryParse (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:6907:20)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9775:18)
+      at TypeScriptParserMixin.parseExpressionBase (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10784:23)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10780:39
+      at TypeScriptParserMixin.allowInAnd (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12421:16)
+      at TypeScriptParserMixin.parseExpression (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10780:17)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12895:23)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12767:17)
+      at TypeScriptParserMixin.parseModuleItem (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12744:17)
+      at TypeScriptParserMixin.parseBlockOrModuleBlockBody (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13316:36)
+      at TypeScriptParserMixin.parseBlockBody (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13309:10)
+      at TypeScriptParserMixin.parseProgram (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12622:10)
+      at TypeScriptParserMixin.parseTopLevel (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12612:25)
+      at TypeScriptParserMixin.parse (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:14488:25)
+      at TypeScriptParserMixin.parse (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10126:18)
+      at parse (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:14522:38)
+      at parser (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\core\lib\parser\index.js:41:34)
+      at parser.next (<anonymous>)
+      at normalizeFile (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\core\lib\transformation\normalize-file.js:64:37)
+      at normalizeFile.next (<anonymous>)
+      at run (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\core\lib\transformation\index.js:22:50)
+      at run.next (<anonymous>)
+      at transform (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\core\lib\transform.js:22:33)
+      at transform.next (<anonymous>)
+      at step (D:\Advanced Real World Project\Pro\Frontend\node_modules\gensync\index.js:261:32)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\gensync\index.js:273:13
+      at async.call.result.err.err (D:\Advanced Real World Project\Pro\Frontend\node_modules\gensync\index.js:223:11)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\gensync\index.js:189:28
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\core\lib\gensync-utils\async.js:67:7
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\gensync\index.js:113:33
+      at step (D:\Advanced Real World Project\Pro\Frontend\node_modules\gensync\index.js:287:14)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\gensync\index.js:273:13
+      at async.call.result.err.err (D:\Advanced Real World Project\Pro\Frontend\node_modules\gensync\index.js:223:11)
+[2m17:55:25[22m [31m[1m[vite][22m[39m [31mInternal server error: D:\Advanced Real World Project\Pro\Frontend\components\Settings.tsx: Adjacent JSX elements must be wrapped in an enclosing tag. Did you want a JSX fragment <>...</>? (614:6)
+
+[0m [90m 612 |[31m           )}
+ [90m 613 |[31m         [33m<[31m[33m/[31m[33mbutton[31m[33m>[31m
+[31m[1m>[22m[31m[90m 614 |[31m       [33m<[31m[33m/[31m[33mdiv[31m[33m>[31m
+ [90m     |[31m       [31m[1m^[22m[31m
+ [90m 615 |[31m
+ [90m 616 |[31m       [33m<[31m[33mdiv[31m className[33m=[31m[32m"grid lg:grid-cols-3 gap-8"[31m[33m>[31m
+ [90m 617 |[31m         [33m<[31m[33mdiv[31m className[33m=[31m[32m"space-y-8"[31m[33m>[31m[0m[39m
+  Plugin: [35mvite:react-babel[39m
+  File: [36mD:/Advanced Real World Project/Pro/Frontend/components/Settings.tsx[39m:614:6
+[33m  612|            )}
+  613|          </button>
+  614|        </div>
+     |        ^
+  615|  
+  616|        <div className="grid lg:grid-cols-3 gap-8">[39m
+      at constructor (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:365:19)
+      at TypeScriptParserMixin.raise (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:6599:19)
+      at TypeScriptParserMixin.jsxParseElementAt (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4742:18)
+      at TypeScriptParserMixin.jsxParseElement (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4749:17)
+      at TypeScriptParserMixin.parseExprAtom (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4759:19)
+      at TypeScriptParserMixin.parseExprSubscripts (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11081:23)
+      at TypeScriptParserMixin.parseUpdate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10831:21)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9775:39
+      at TypeScriptParserMixin.tryParse (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:6907:20)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9775:18)
+      at TypeScriptParserMixin.parseExpressionBase (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10784:23)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10780:39
+      at TypeScriptParserMixin.allowInAnd (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12421:16)
+      at TypeScriptParserMixin.parseExpression (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10780:17)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12895:23)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12767:17)
+      at TypeScriptParserMixin.parseModuleItem (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12744:17)
+      at TypeScriptParserMixin.parseBlockOrModuleBlockBody (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13316:36)
+      at TypeScriptParserMixin.parseBlockBody (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13309:10)
+      at TypeScriptParserMixin.parseProgram (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12622:10)
+      at TypeScriptParserMixin.parseTopLevel (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12612:25)
+      at TypeScriptParserMixin.parse (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:14488:25)
+      at TypeScriptParserMixin.parse (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10126:18)
+      at parse (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:14522:38)
+      at parser (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\core\lib\parser\index.js:41:34)
+      at parser.next (<anonymous>)
+      at normalizeFile (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\core\lib\transformation\normalize-file.js:64:37)
+      at normalizeFile.next (<anonymous>)
+      at run (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\core\lib\transformation\index.js:22:50)
+      at run.next (<anonymous>)
+      at transform (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\core\lib\transform.js:22:33)
+      at transform.next (<anonymous>)
+      at step (D:\Advanced Real World Project\Pro\Frontend\node_modules\gensync\index.js:261:32)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\gensync\index.js:273:13
+      at async.call.result.err.err (D:\Advanced Real World Project\Pro\Frontend\node_modules\gensync\index.js:223:11)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\gensync\index.js:189:28
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\core\lib\gensync-utils\async.js:67:7
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\gensync\index.js:113:33
+      at step (D:\Advanced Real World Project\Pro\Frontend\node_modules\gensync\index.js:287:14)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\gensync\index.js:273:13
+      at async.call.result.err.err (D:\Advanced Real World Project\Pro\Frontend\node_modules\gensync\index.js:223:11)
+[2m18:28:49[22m [31m[1m[vite][22m[39m [31mInternal server error: D:\Advanced Real World Project\Pro\Frontend\components\VoiceAssistant.tsx: Unexpected token, expected "," (326:6)
+
+[0m [90m 324 |[31m           }
+ [90m 325 |[31m         }
+[31m[1m>[22m[31m[90m 326 |[31m       }[33m;[31m
+ [90m     |[31m       [31m[1m^[22m[31m
+ [90m 327 |[31m
+ [90m 328 |[31m       speakChunk()[33m;[31m
+ [90m 329 |[31m     })[33m;[31m[0m[39m
+  Plugin: [35mvite:react-babel[39m
+  File: [36mD:/Advanced Real World Project/Pro/Frontend/components/VoiceAssistant.tsx[39m:326:6
+[33m  324|            }
+  325|          }
+  326|        };
+     |        ^
+  327|  
+  328|        speakChunk();[39m
+      at constructor (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:365:19)
+      at TypeScriptParserMixin.raise (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:6599:19)
+      at TypeScriptParserMixin.unexpected (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:6619:16)
+      at TypeScriptParserMixin.expect (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:6899:12)
+      at TypeScriptParserMixin.parseCallExpressionArguments (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11243:14)
+      at TypeScriptParserMixin.parseCoverCallAndAsyncArrowHead (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11186:29)
+      at TypeScriptParserMixin.parseSubscript (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11120:19)
+      at TypeScriptParserMixin.parseSubscript (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9272:18)
+      at TypeScriptParserMixin.parseSubscripts (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11094:19)
+      at TypeScriptParserMixin.parseExprSubscripts (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11085:17)
+      at TypeScriptParserMixin.parseUpdate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9786:20)
+      at TypeScriptParserMixin.parseExpressionBase (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10784:23)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10780:39
+      at TypeScriptParserMixin.allowInAnd (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12421:16)
+      at TypeScriptParserMixin.parseExpression (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10780:17)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12895:23)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12767:17)
+      at TypeScriptParserMixin.parseStatementListItem (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12747:17)
+      at TypeScriptParserMixin.parseBlockOrModuleBlockBody (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13316:61)
+      at TypeScriptParserMixin.parseBlockBody (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13309:10)
+      at TypeScriptParserMixin.parseBlock (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13297:10)
+      at TypeScriptParserMixin.parseFunctionBody (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12100:24)
+      at TypeScriptParserMixin.parseArrowExpression (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12075:10)
+      at TypeScriptParserMixin.parseParenAndDistinguishExpression (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11687:12)
+      at TypeScriptParserMixin.parseExprAtom (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11331:23)
+      at TypeScriptParserMixin.parseExprAtom (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4764:20)
+      at TypeScriptParserMixin.parseExprSubscripts (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11081:23)
+      at TypeScriptParserMixin.parseUpdate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9786:20)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12421:16)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10800:17)
+      at TypeScriptParserMixin.parseVar (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13384:91)
+      at TypeScriptParserMixin.parseVarStatement (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13230:10)
+      at TypeScriptParserMixin.parseVarStatement (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9408:31)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12851:23)
+[2m18:28:50[22m [31m[1m[vite][22m[39m [31mInternal server error: D:\Advanced Real World Project\Pro\Frontend\components\VoiceAssistant.tsx: Unexpected token, expected "," (326:6)
+
+[0m [90m 324 |[31m           }
+ [90m 325 |[31m         }
+[31m[1m>[22m[31m[90m 326 |[31m       }[33m;[31m
+ [90m     |[31m       [31m[1m^[22m[31m
+ [90m 327 |[31m
+ [90m 328 |[31m       speakChunk()[33m;[31m
+ [90m 329 |[31m     })[33m;[31m[0m[39m
+  Plugin: [35mvite:react-babel[39m
+  File: [36mD:/Advanced Real World Project/Pro/Frontend/components/VoiceAssistant.tsx[39m:326:6
+[33m  324|            }
+  325|          }
+  326|        };
+     |        ^
+  327|  
+  328|        speakChunk();[39m
+      at constructor (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:365:19)
+      at TypeScriptParserMixin.raise (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:6599:19)
+      at TypeScriptParserMixin.unexpected (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:6619:16)
+      at TypeScriptParserMixin.expect (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:6899:12)
+      at TypeScriptParserMixin.parseCallExpressionArguments (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11243:14)
+      at TypeScriptParserMixin.parseCoverCallAndAsyncArrowHead (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11186:29)
+      at TypeScriptParserMixin.parseSubscript (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11120:19)
+      at TypeScriptParserMixin.parseSubscript (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9272:18)
+      at TypeScriptParserMixin.parseSubscripts (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11094:19)
+      at TypeScriptParserMixin.parseExprSubscripts (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11085:17)
+      at TypeScriptParserMixin.parseUpdate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9786:20)
+      at TypeScriptParserMixin.parseExpressionBase (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10784:23)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10780:39
+      at TypeScriptParserMixin.allowInAnd (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12421:16)
+      at TypeScriptParserMixin.parseExpression (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10780:17)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12895:23)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12767:17)
+      at TypeScriptParserMixin.parseStatementListItem (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12747:17)
+      at TypeScriptParserMixin.parseBlockOrModuleBlockBody (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13316:61)
+      at TypeScriptParserMixin.parseBlockBody (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13309:10)
+      at TypeScriptParserMixin.parseBlock (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13297:10)
+      at TypeScriptParserMixin.parseFunctionBody (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12100:24)
+      at TypeScriptParserMixin.parseArrowExpression (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12075:10)
+      at TypeScriptParserMixin.parseParenAndDistinguishExpression (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11687:12)
+      at TypeScriptParserMixin.parseExprAtom (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11331:23)
+      at TypeScriptParserMixin.parseExprAtom (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4764:20)
+      at TypeScriptParserMixin.parseExprSubscripts (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11081:23)
+      at TypeScriptParserMixin.parseUpdate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9786:20)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12421:16)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10800:17)
+      at TypeScriptParserMixin.parseVar (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13384:91)
+      at TypeScriptParserMixin.parseVarStatement (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13230:10)
+      at TypeScriptParserMixin.parseVarStatement (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9408:31)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12851:23)
+[2m18:28:50[22m [31m[1m[vite][22m[39m [31mInternal server error: D:\Advanced Real World Project\Pro\Frontend\components\VoiceAssistant.tsx: Unexpected token, expected "," (326:6)
+
+[0m [90m 324 |[31m           }
+ [90m 325 |[31m         }
+[31m[1m>[22m[31m[90m 326 |[31m       }[33m;[31m
+ [90m     |[31m       [31m[1m^[22m[31m
+ [90m 327 |[31m
+ [90m 328 |[31m       speakChunk()[33m;[31m
+ [90m 329 |[31m     })[33m;[31m[0m[39m
+  Plugin: [35mvite:react-babel[39m
+  File: [36mD:/Advanced Real World Project/Pro/Frontend/components/VoiceAssistant.tsx[39m:326:6
+[33m  324|            }
+  325|          }
+  326|        };
+     |        ^
+  327|  
+  328|        speakChunk();[39m
+      at constructor (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:365:19)
+      at TypeScriptParserMixin.raise (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:6599:19)
+      at TypeScriptParserMixin.unexpected (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:6619:16)
+      at TypeScriptParserMixin.expect (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:6899:12)
+      at TypeScriptParserMixin.parseCallExpressionArguments (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11243:14)
+      at TypeScriptParserMixin.parseCoverCallAndAsyncArrowHead (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11186:29)
+      at TypeScriptParserMixin.parseSubscript (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11120:19)
+      at TypeScriptParserMixin.parseSubscript (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9272:18)
+      at TypeScriptParserMixin.parseSubscripts (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11094:19)
+      at TypeScriptParserMixin.parseExprSubscripts (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11085:17)
+      at TypeScriptParserMixin.parseUpdate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9786:20)
+      at TypeScriptParserMixin.parseExpressionBase (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10784:23)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10780:39
+      at TypeScriptParserMixin.allowInAnd (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12421:16)
+      at TypeScriptParserMixin.parseExpression (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10780:17)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12895:23)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12767:17)
+      at TypeScriptParserMixin.parseStatementListItem (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12747:17)
+      at TypeScriptParserMixin.parseBlockOrModuleBlockBody (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13316:61)
+      at TypeScriptParserMixin.parseBlockBody (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13309:10)
+      at TypeScriptParserMixin.parseBlock (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13297:10)
+      at TypeScriptParserMixin.parseFunctionBody (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12100:24)
+      at TypeScriptParserMixin.parseArrowExpression (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12075:10)
+      at TypeScriptParserMixin.parseParenAndDistinguishExpression (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11687:12)
+      at TypeScriptParserMixin.parseExprAtom (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11331:23)
+      at TypeScriptParserMixin.parseExprAtom (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:4764:20)
+      at TypeScriptParserMixin.parseExprSubscripts (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11081:23)
+      at TypeScriptParserMixin.parseUpdate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9786:20)
+      at D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12421:16)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:10800:17)
+      at TypeScriptParserMixin.parseVar (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13384:91)
+      at TypeScriptParserMixin.parseVarStatement (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:13230:10)
+      at TypeScriptParserMixin.parseVarStatement (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:9408:31)
+      at TypeScriptParserMixin.parseStatementContent (D:\Advanced Real World Project\Pro\Frontend\node_modules\@babel\parser\lib\index.js:12851:23)
+[2m18:29:03[22m [31m[1m[vite][22m[39m Pre-transform error: D:\Advanced Real World Project\Pro\Frontend\components\VoiceAssistant.tsx: Unexpected token, expected "," (326:6)
+
+[0m [90m 324 |[39m           }
+ [90m 325 |[39m         }
+[31m[1m>[22m[39m[90m 326 |[39m       }[33m;[39m
+ [90m     |[39m       [31m[1m^[22m[39m
+ [90m 327 |[39m
+ [90m 328 |[39m       speakChunk()[33m;[39m
+ [90m 329 |[39m     })[33m;[39m[0m

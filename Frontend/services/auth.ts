@@ -46,6 +46,12 @@ export function normalizeUser(user: any): User {
     firstName: user?.firstName || user?.first_name || undefined,
     lastName: user?.lastName || user?.last_name || undefined,
     role: isValidRole(user?.role ?? null) ? user.role : 'farmer',
+    districtId:
+      user?.districtId
+      || user?.district_id
+      || metadata?.districtId
+      || metadata?.district_id
+      || undefined,
     preferredLanguage: normalizeLanguage(user?.preferredLanguage || user?.preferred_language),
     profileImageUrl: user?.profileImageUrl || user?.profile_image_url || undefined,
     isActive:

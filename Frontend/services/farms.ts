@@ -11,7 +11,8 @@ import {
   SensorData,
   SensorTrends,
   IrrigationSchedule,
-  FertilizationSchedule
+  FertilizationSchedule,
+  PestControlSchedule
 } from '../types';
 
 function normalizeCoordinates(value: any): Farm['coordinates'] | undefined {
@@ -133,6 +134,12 @@ function normalizeIrrigationScheduleItem(item: any): IrrigationSchedule {
     recommendationId: item?.recommendationId || item?.recommendation_id || undefined,
     scheduledDate: item?.scheduledDate || item?.scheduled_date || '',
     scheduledTime: item?.scheduledTime || item?.scheduled_time || undefined,
+    previousScheduledDate: item?.previousScheduledDate || item?.previous_scheduled_date || undefined,
+    previousScheduledTime: item?.previousScheduledTime || item?.previous_scheduled_time || undefined,
+    postponedAt:
+      item?.postponedAt
+      || (typeof item?.postponed_at === 'number' ? new Date(item.postponed_at).toISOString() : item?.postponed_at)
+      || undefined,
     durationMinutes: item?.durationMinutes ?? item?.duration_minutes ?? 0,
     waterVolumeLiters: item?.waterVolumeLiters ?? item?.water_volume_liters,
     isExecuted: item?.isExecuted ?? item?.is_executed ?? false,
@@ -189,6 +196,38 @@ function normalizeFertilizationScheduleItem(item: any): FertilizationSchedule {
   };
 }
 
+function normalizePestControlScheduleItem(item: any): PestControlSchedule {
+  return {
+    id: String(item?.id || item?._id || ''),
+    farmId: String(item?.farmId || item?.farm_id || ''),
+    detectionId: String(item?.detectionId || item?.detection_id || ''),
+    recommendationId: item?.recommendationId || item?.recommendation_id || undefined,
+    scheduledDate: item?.scheduledDate || item?.scheduled_date || '',
+    scheduledTime: item?.scheduledTime || item?.scheduled_time || undefined,
+    controlMethod: item?.controlMethod || item?.control_method || '',
+    treatmentSteps: Array.isArray(item?.treatmentSteps || item?.treatment_steps)
+      ? (item?.treatmentSteps || item?.treatment_steps)
+      : undefined,
+    isExecuted: item?.isExecuted ?? item?.is_executed ?? false,
+    executedAt:
+      item?.executedAt
+      || (typeof item?.executed_at === 'number' ? new Date(item.executed_at).toISOString() : item?.executed_at)
+      || undefined,
+    actualOutcome: item?.actualOutcome || item?.actual_outcome || undefined,
+    actualNotes: item?.actualNotes || item?.actual_notes || undefined,
+    triggerSource: item?.triggerSource || item?.trigger_source || undefined,
+    notes: item?.notes || undefined,
+    createdAt:
+      item?.createdAt
+      || (typeof item?.created_at === 'number' ? new Date(item.created_at).toISOString() : item?.created_at)
+      || new Date().toISOString(),
+    updatedAt:
+      item?.updatedAt
+      || (typeof item?.updated_at === 'number' ? new Date(item.updated_at).toISOString() : item?.updated_at)
+      || new Date().toISOString(),
+  };
+}
+
 function normalizePaginatedFarms(response: PaginatedResponse<Farm>): PaginatedResponse<Farm> {
   return {
     ...response,
@@ -211,6 +250,11 @@ export interface CreateFarmData {
 export interface UpdateFarmData extends Partial<CreateFarmData> {
   currentGrowthStage?: string;
   isActive?: boolean;
+}
+
+export interface SaveFarmImageData {
+  imageUrl: string;
+  capturedAt?: string;
 }
 
 export interface FarmQueryParams {
@@ -292,6 +336,31 @@ export const farmService = {
   },
 
   /**
+   * Save farm image metadata
+   */
+  saveImage: async (
+    id: string,
+    data: SaveFarmImageData
+  ): Promise<ApiResponse<{ farm: Farm; image: { url: string; capturedAt?: string }; totalImages: number }>> => {
+    const response = await apiClient.post<ApiResponse<any>>(`/farms/${id}/image`, {
+      imageUrl: data.imageUrl,
+      capturedAt: data.capturedAt,
+    });
+    const payload = response.data.data || {};
+    return {
+      ...response.data,
+      data: {
+        farm: payload.farm ? normalizeFarm(payload.farm) : ({} as Farm),
+        image: {
+          url: payload.image?.url || data.imageUrl,
+          capturedAt: payload.image?.capturedAt || payload.image?.captured_at || data.capturedAt,
+        },
+        totalImages: Number(payload.totalImages || 0),
+      },
+    };
+  },
+
+  /**
    * Get latest sensor readings for a farm
    */
   getSensorData: async (
@@ -345,7 +414,7 @@ export const farmService = {
       totalRainfall?: number;
       readingsCount: number;
     }>>>(
-      `/sensors/data/farm/${id}/daily`,
+      `/sensors/data/farm/${id}/aggregates`,
       { params: { days: params?.days } }
     );
 
@@ -406,6 +475,27 @@ export const farmService = {
   },
 
   /**
+   * Update or postpone an irrigation schedule
+   */
+  updateIrrigationSchedule: async (
+    farmId: string,
+    scheduleId: string,
+    data: {
+      scheduledDate?: string;
+      scheduledTime?: string;
+      durationMinutes?: number;
+      waterVolumeLiters?: number;
+      notes?: string;
+    }
+  ): Promise<ApiResponse<IrrigationSchedule>> => {
+    const response = await apiClient.put<ApiResponse<IrrigationSchedule>>(
+      `/farms/${farmId}/irrigation/${scheduleId}`,
+      data
+    );
+    return { ...response.data, data: normalizeIrrigationScheduleItem(response.data.data) };
+  },
+
+  /**
    * Mark irrigation as executed
    */
   executeIrrigation: async (
@@ -421,6 +511,62 @@ export const farmService = {
       data
     );
     return { ...response.data, data: normalizeIrrigationScheduleItem(response.data.data) };
+  },
+
+  /**
+   * Get pest control schedules for a farm
+   */
+  getPestControlSchedules: async (
+    farmId: string,
+    params?: {
+      detectionId?: string;
+      since?: string;
+      isExecuted?: boolean;
+    }
+  ): Promise<ApiResponse<PestControlSchedule[]>> => {
+    const response = await apiClient.get<ApiResponse<PestControlSchedule[]>>(`/farms/${farmId}/pest-control`, { params });
+    return {
+      ...response.data,
+      data: Array.isArray(response.data.data) ? response.data.data.map(normalizePestControlScheduleItem) : [],
+    };
+  },
+
+  /**
+   * Create a pest control schedule
+   */
+  createPestControlSchedule: async (
+    farmId: string,
+    data: {
+      detectionId: string;
+      recommendationId?: string;
+      scheduledDate: string;
+      scheduledTime?: string;
+      controlMethod?: string;
+      treatmentSteps?: string[];
+      notes?: string;
+      triggerSource?: string;
+    }
+  ): Promise<ApiResponse<PestControlSchedule>> => {
+    const response = await apiClient.post<ApiResponse<PestControlSchedule>>(`/farms/${farmId}/pest-control`, data);
+    return { ...response.data, data: normalizePestControlScheduleItem(response.data.data) };
+  },
+
+  /**
+   * Mark pest control as executed
+   */
+  executePestControl: async (
+    farmId: string,
+    scheduleId: string,
+    data?: {
+      actualOutcome?: string;
+      notes?: string;
+    }
+  ): Promise<ApiResponse<PestControlSchedule>> => {
+    const response = await apiClient.put<ApiResponse<PestControlSchedule>>(
+      `/farms/${farmId}/pest-control/${scheduleId}/execute`,
+      data
+    );
+    return { ...response.data, data: normalizePestControlScheduleItem(response.data.data) };
   },
 
   /**

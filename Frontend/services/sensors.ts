@@ -6,6 +6,7 @@ import apiClient from './api';
 import { 
   Sensor, 
   SensorData, 
+  SensorLatestReadingsPayload,
   ApiResponse, 
   PaginatedResponse 
 } from '../types';
@@ -72,6 +73,14 @@ function normalizeSensorReading(reading: any): SensorData {
       || (typeof reading?.created_at === 'number' ? new Date(reading.created_at).toISOString() : reading?.created_at)
       || new Date().toISOString(),
   };
+}
+
+function normalizeOptionalSensorReading(reading: any): SensorData | null {
+  if (!reading || typeof reading !== 'object') {
+    return null;
+  }
+
+  return normalizeSensorReading(reading);
 }
 
 export interface CreateSensorData {
@@ -331,7 +340,7 @@ export const sensorService = {
       signalStrength: number | null;
     }>;
   }>> => {
-    const response = await apiClient.get<ApiResponse<any>>('/admin/sensors/health', {
+    const response = await apiClient.get<ApiResponse<any>>('/sensors/health', {
       params: farmId ? { farmId } : undefined,
     });
     return response.data;
@@ -362,21 +371,26 @@ export const sensorService = {
   /**
    * Get latest sensor readings for a farm
    */
-  getFarmLatestReadings: async (farmId: string): Promise<ApiResponse<{
-    farmId: string;
-    readings: {
-      soilMoisture: SensorData | null;
-      temperature: SensorData | null;
-      humidity: SensorData | null;
-      npk: SensorData | null;
-      rainfall: SensorData | null;
-    };
-    lastUpdated: string;
-  }>> => {
+  getFarmLatestReadings: async (farmId: string): Promise<ApiResponse<SensorLatestReadingsPayload>> => {
     const response = await apiClient.get<ApiResponse<any>>(
       `/sensors/data/farm/${farmId}/latest`
     );
-    return response.data;
+    const payload = response.data.data || {};
+
+    return {
+      ...response.data,
+      data: {
+        farmId: payload?.farmId || payload?.farm_id || farmId,
+        readings: {
+          soilMoisture: normalizeOptionalSensorReading(payload?.readings?.soilMoisture),
+          temperature: normalizeOptionalSensorReading(payload?.readings?.temperature),
+          humidity: normalizeOptionalSensorReading(payload?.readings?.humidity),
+          npk: normalizeOptionalSensorReading(payload?.readings?.npk),
+          rainfall: normalizeOptionalSensorReading(payload?.readings?.rainfall),
+        },
+        lastUpdated: payload?.lastUpdated || payload?.last_updated,
+      },
+    };
   },
 
   /**
@@ -404,7 +418,7 @@ export const sensorService = {
     readingsCount: number;
   }>>> => {
     const response = await apiClient.get<ApiResponse<any>>(
-      `/sensors/data/farm/${farmId}/daily`,
+      `/sensors/data/farm/${farmId}/aggregates`,
       { params }
     );
     return response.data;
