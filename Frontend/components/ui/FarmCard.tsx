@@ -1,4 +1,4 @@
-﻿// =====================================================
+// =====================================================
 // Farm Card Component - Smart Maize Farming System
 // Display farm information with health status
 // =====================================================
@@ -114,12 +114,12 @@ export const FarmCard: React.FC<FarmCardProps> = ({
       <div
         onClick={onClick}
         className={`
-          bg-white dark:bg-slate-800
-          border border-slate-100 dark:border-slate-700
-          rounded-xl p-4
+          bg-white dark:bg-slate-900
+          border border-slate-200 dark:border-slate-800
+          rounded-[1.25rem] p-4
           flex items-center gap-4
-          transition-all duration-300
-          ${onClick ? 'cursor-pointer hover:shadow-lg hover:-translate-y-0.5' : ''}
+          transition-all duration-200
+          ${onClick ? 'cursor-pointer hover:shadow-md' : ''}
           ${className}
         `}
       >
@@ -168,11 +168,11 @@ export const FarmCard: React.FC<FarmCardProps> = ({
     <div
       onClick={onClick}
       className={`
-        bg-white dark:bg-slate-800
-        border border-slate-100 dark:border-slate-700
-        rounded-2xl overflow-hidden shadow-soft
-        transition-all duration-300
-        ${onClick ? 'cursor-pointer hover:shadow-xl hover:-translate-y-1' : ''}
+        bg-white dark:bg-slate-900
+        border border-slate-200 dark:border-slate-800
+        rounded-[1.25rem] overflow-hidden shadow-sm
+        transition-all duration-200
+        ${onClick ? 'cursor-pointer hover:shadow-md' : ''}
         ${className}
       `}
     >

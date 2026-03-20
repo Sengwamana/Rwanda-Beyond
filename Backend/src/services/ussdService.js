@@ -11,6 +11,7 @@ import { db } from '../database/convex.js';
 import logger from '../utils/logger.js';
 import * as recommendationService from './recommendationService.js';
 import * as sensorService from './sensorService.js';
+import * as weatherService from './weatherService.js';
 import { NotFoundError } from '../utils/errors.js';
 
 /**
@@ -100,6 +101,52 @@ const t = (key, lang = 'rw', params = {}) => {
     (text, [k, v]) => text.replace(new RegExp(`{${k}}`, 'g'), v),
     translation
   );
+};
+
+const formatTemperature = (value) =>
+  typeof value === 'number' && Number.isFinite(value)
+    ? `${Math.round(value)}C`
+    : 'N/A';
+
+const formatPercent = (value) =>
+  typeof value === 'number' && Number.isFinite(value)
+    ? `${Math.round(value)}%`
+    : 'N/A';
+
+const formatCondition = (value) =>
+  typeof value === 'string' && value.trim().length > 0
+    ? value.trim()
+    : 'N/A';
+
+const buildLiveWeatherResponse = (lang, location, current, tomorrow) => {
+  const labels = lang === 'rw'
+    ? {
+        title: `Ikirere i ${location}:`,
+        now: 'Ubu',
+        tomorrow: 'Ejo',
+        humidity: 'Umwuka',
+        rainChance: 'Amahirwe y\'imvura',
+        back: '0. Subira',
+      }
+    : {
+        title: `Weather for ${location}:`,
+        now: 'Now',
+        tomorrow: 'Tomorrow',
+        humidity: 'Humidity',
+        rainChance: 'Rain Chance',
+        back: '0. Back',
+      };
+
+  const lines = [
+    `${labels.now}: ${formatTemperature(current?.temperature)} ${formatCondition(current?.condition)}`,
+    `${labels.humidity}: ${formatPercent(current?.humidity)}`,
+    tomorrow
+      ? `${labels.tomorrow}: ${formatTemperature(tomorrow.temperatureMin)}-${formatTemperature(tomorrow.temperatureMax)} ${formatCondition(tomorrow.condition)}`
+      : `${labels.tomorrow}: N/A`,
+    `${labels.rainChance}: ${formatPercent(tomorrow?.precipitationProbability)}`,
+  ];
+
+  return `CON ${labels.title}\n\n${lines.join('\n')}\n\n${labels.back}`;
 };
 
 /**
@@ -266,7 +313,7 @@ const processUssdMenu = async (sessionId, inputs, currentInput, user, lang) => {
       return await handleFarmStatusMenu(sessionId, inputs, user, lang);
       
     case '3':
-      return await handleWeatherMenu(sessionId, inputs, user, lang);
+      return await handleLiveWeatherMenu(sessionId, inputs, user, lang);
       
     case '4':
       return handleReportPestMenu(lang);
@@ -492,6 +539,40 @@ const handleWeatherMenu = async (sessionId, inputs, user, lang) => {
     tomorrow: '24°C, Light Rain',
     rainChance: '60'
   })}`;
+};
+
+const handleLiveWeatherMenu = async (sessionId, inputs, user, lang) => {
+  if (inputs[1] === '0') {
+    return `CON ${t('welcome', lang)}`;
+  }
+
+  if (!user) {
+    return `CON ${t('noFarms', lang)}`;
+  }
+
+  const farms = await getUserFarms(user._id);
+  const farm = farms[0];
+
+  if (!farm?._id) {
+    return `CON ${t('noFarms', lang)}`;
+  }
+
+  try {
+    const weather = await weatherService.getWeatherForFarm(farm._id, 2);
+    const location = farm.location_name || farm.name || 'your farm';
+    const current = weather?.current || null;
+    const tomorrow = Array.isArray(weather?.forecast) ? weather.forecast[0] || null : null;
+
+    return buildLiveWeatherResponse(lang, location, current, tomorrow);
+  } catch (error) {
+    logger.error('USSD weather fetch error:', error?.message || error);
+    return `CON ${t('weatherForecast', lang, {
+      location: farm.location_name || farm.name || 'Kigali',
+      today: lang === 'rw' ? 'Ntibihari ubu' : 'Unavailable right now',
+      tomorrow: lang === 'rw' ? 'Ntibihari ubu' : 'Unavailable right now',
+      rainChance: 'N/A'
+    })}`;
+  }
 };
 
 /**

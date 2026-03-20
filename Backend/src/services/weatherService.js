@@ -283,6 +283,10 @@ export const storeWeatherData = async (districtId, lat, lon, forecastData) => {
  * @returns {Promise<Array>} Stored weather data
  */
 export const getStoredWeather = async (districtId, days = 7) => {
+  if (!districtId) {
+    return [];
+  }
+
   const startDate = new Date().toISOString().split('T')[0];
   const endDate = new Date();
   endDate.setDate(endDate.getDate() + days);

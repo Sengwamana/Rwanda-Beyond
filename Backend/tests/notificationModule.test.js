@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 const mockSmsSend = jest.fn();
+const mockEmailSend = jest.fn();
 
 const mockDb = {
   users: {
@@ -37,6 +38,14 @@ await jest.unstable_mockModule('africastalking', () => ({
   })),
 }));
 
+await jest.unstable_mockModule('nodemailer', () => ({
+  default: {
+    createTransport: jest.fn(() => ({
+      sendMail: mockEmailSend,
+    })),
+  },
+}));
+
 await jest.unstable_mockModule('../src/database/convex.js', () => ({
   db: mockDb,
 }));
@@ -47,6 +56,18 @@ await jest.unstable_mockModule('../src/config/index.js', () => ({
       username: 'sandbox',
       apiKey: 'test-key',
       senderId: '',
+    },
+    email: {
+      enabled: true,
+      host: 'smtp.example.com',
+      port: 587,
+      secure: false,
+      user: 'smtp-user',
+      pass: 'smtp-pass',
+      from: 'no-reply@example.com',
+      fromName: 'Smart Maize',
+      replyTo: 'support@example.com',
+      defaultSubject: 'Smart Maize Notification',
     },
     notifications: {
       criticalAlertDelayMs: 0,
@@ -64,6 +85,7 @@ await jest.unstable_mockModule('../src/utils/logger.js', () => ({
 
 const {
   sendBulkSMS,
+  sendEmail,
   sendRecommendationNotification,
   sendSensorAnalysisLifecycleNotifications,
   retryFailedMessages,
@@ -89,6 +111,42 @@ describe('notification and communication performance fixes', () => {
       { _id: 'user-3', role: 'expert', phone_number: null, email: 'expert@example.com', preferred_language: 'en', metadata: { districtId: 'district-2' } },
       { _id: 'user-4', role: 'admin', phone_number: null, email: 'admin@example.com', preferred_language: 'en' },
     ]);
+  });
+
+  it('sends email through SMTP and logs the sent message', async () => {
+    mockEmailSend.mockResolvedValue({
+      messageId: 'email-1',
+      accepted: ['farmer@example.com'],
+      rejected: [],
+    });
+
+    const result = await sendEmail('farmer@example.com', 'Field update', 'Weather conditions changed.', {
+      userId: 'user-1',
+    });
+
+    expect(mockEmailSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'farmer@example.com',
+        subject: 'Field update',
+        text: 'Weather conditions changed.',
+      })
+    );
+    expect(mockDb.messages.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: 'user-1',
+        channel: 'email',
+        recipient: 'farmer@example.com',
+        subject: 'Field update',
+        status: 'sent',
+        external_message_id: 'email-1',
+      })
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        success: true,
+        externalId: 'email-1',
+      })
+    );
   });
 
   it('sends bulk SMS with bounded concurrency', async () => {
@@ -131,10 +189,10 @@ describe('notification and communication performance fixes', () => {
     let maxActive = 0;
 
     mockDb.messages.getFailed.mockResolvedValue([
-      { _id: 'msg-1', recipient: '+250788000001', content: 'A', user_id: 'user-1', retry_count: 0 },
-      { _id: 'msg-2', recipient: '+250788000002', content: 'B', user_id: 'user-2', retry_count: 1 },
-      { _id: 'msg-3', recipient: '+250788000003', content: 'C', user_id: 'user-3', retry_count: 0 },
-      { _id: 'msg-4', recipient: '+250788000004', content: 'D', user_id: 'user-4', retry_count: 2 },
+      { _id: 'msg-1', recipient: '+250788000001', content: 'A', channel: 'sms', user_id: 'user-1', retry_count: 0 },
+      { _id: 'msg-2', recipient: '+250788000002', content: 'B', channel: 'sms', user_id: 'user-2', retry_count: 1 },
+      { _id: 'msg-3', recipient: '+250788000003', content: 'C', channel: 'sms', user_id: 'user-3', retry_count: 0 },
+      { _id: 'msg-4', recipient: '+250788000004', content: 'D', channel: 'sms', user_id: 'user-4', retry_count: 2 },
     ]);
 
     mockSmsSend.mockImplementation(async () => {
@@ -160,8 +218,15 @@ describe('notification and communication performance fixes', () => {
 
   it('delivers persisted queued messages through the processor', async () => {
     mockDb.messages.getQueued.mockResolvedValue([
-      { _id: 'queued-1', recipient: '+250788000001', content: 'Queued A', retry_count: 0 },
-      { _id: 'queued-2', recipient: '+250788000002', content: 'Queued B', retry_count: 0 },
+      { _id: 'queued-1', recipient: '+250788000001', content: 'Queued A', channel: 'sms', retry_count: 0 },
+      {
+        _id: 'queued-2',
+        recipient: 'farmer@example.com',
+        subject: 'Queued Email',
+        content: 'Queued B',
+        channel: 'email',
+        retry_count: 0,
+      },
     ]);
     mockDb.messages.getFailed.mockResolvedValue([]);
 
@@ -178,6 +243,11 @@ describe('notification and communication performance fixes', () => {
         },
       };
     });
+    mockEmailSend.mockResolvedValue({
+      messageId: 'queued-email-1',
+      accepted: ['farmer@example.com'],
+      rejected: [],
+    });
 
     const result = await processQueuedMessages();
 
@@ -192,6 +262,7 @@ describe('notification and communication performance fixes', () => {
     expect(mockDb.messages.getQueued).toHaveBeenCalledWith({ limit: 100 });
     expect(mockDb.messages.update).toHaveBeenCalledTimes(2);
     expect(mockDb.messages.create).not.toHaveBeenCalled();
+    expect(mockEmailSend).toHaveBeenCalledTimes(1);
     expect(maxActive).toBeLessThanOrEqual(2);
   });
 

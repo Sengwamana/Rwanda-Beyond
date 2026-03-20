@@ -147,4 +147,67 @@ describe('manual recommendation route', () => {
 
     expect(mockRecommendationService.createManualRecommendation).not.toHaveBeenCalled();
   });
+
+  it('routes /recommendations/stats to statistics instead of recommendation ID lookup', async () => {
+    const app = createApp();
+    mockRecommendationService.getRecommendationStats.mockResolvedValue({
+      total: 3,
+      byType: { irrigation: 2, general: 1 },
+    });
+
+    const response = await request(app)
+      .get('/recommendations/stats')
+      .set('x-test-role', 'expert')
+      .query({
+        farmId: 'farm-1',
+        startDate: '2026-03-01T00:00:00.000Z',
+      })
+      .expect(200);
+
+    expect(mockRecommendationService.getRecommendationStats).toHaveBeenCalledWith({
+      farmId: 'farm-1',
+      startDate: '2026-03-01T00:00:00.000Z',
+      endDate: undefined,
+    });
+    expect(mockRecommendationService.getRecommendationById).not.toHaveBeenCalled();
+    expect(mockDb.recommendations.getById).not.toHaveBeenCalled();
+    expect(response.body.data.total).toBe(3);
+  });
+
+  it('uses paginated farm recommendation history without passing page to raw Convex farm queries', async () => {
+    const app = createApp();
+    mockRecommendationService.getFarmRecommendations.mockResolvedValue({
+      data: [
+        { _id: 'rec-1', title: 'Inspect leaves', farm_id: 'farm-1', status: 'pending' },
+      ],
+      total: 1,
+      page: 1,
+      limit: 6,
+    });
+
+    const response = await request(app)
+      .get('/recommendations/history')
+      .set('x-test-role', 'expert')
+      .query({
+        farmId: 'farm-1',
+        page: 1,
+        limit: 6,
+      })
+      .expect(200);
+
+    expect(mockRecommendationService.getFarmRecommendations).toHaveBeenCalledWith(
+      'farm-1',
+      expect.objectContaining({
+        page: 1,
+        limit: 6,
+      })
+    );
+    expect(response.body.pagination).toEqual(
+      expect.objectContaining({
+        page: 1,
+        limit: 6,
+        total: 1,
+      })
+    );
+  });
 });

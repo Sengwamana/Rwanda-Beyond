@@ -6,39 +6,39 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --background: 48 22% 97%;
+    --foreground: 152 22% 14%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 152 22% 14%;
  
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover-foreground: 152 22% 14%;
  
-    --primary: 152 69% 19%;  /* #0F5132 - HSL approx */
+    --primary: 150 57% 31%;
     --primary-foreground: 210 40% 98%;
  
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 45 24% 94%;
+    --secondary-foreground: 152 18% 20%;
  
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 45 24% 94%;
+    --muted-foreground: 152 10% 42%;
  
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --accent: 150 33% 94%;
+    --accent-foreground: 152 22% 18%;
  
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 152 69% 19%;
+    --border: 40 18% 88%;
+    --input: 40 18% 88%;
+    --ring: 150 57% 31%;
  
-    --radius: 0.5rem;
+    --radius: 1.1rem;
     
     /* SmartTani Brand Colors */
-    --smartani-green: 152 69% 19%;
-    --smartani-green-light: 152 40% 92%;
+    --smartani-green: 150 57% 31%;
+    --smartani-green-light: 145 48% 94%;
     --smartani-gold: 45 93% 47%;
     --smartani-orange: 142 71% 45%;
   }
@@ -47,33 +47,33 @@
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
  
-    --card: 222.2 84% 4.9%;
+    --card: 222.2 28% 9%;
     --card-foreground: 210 40% 98%;
  
-    --popover: 222.2 84% 4.9%;
+    --popover: 222.2 28% 9%;
     --popover-foreground: 210 40% 98%;
  
-    --primary: 152 69% 25%;
+    --primary: 150 46% 43%;
     --primary-foreground: 210 40% 98%;
  
-    --secondary: 217.2 32.6% 17.5%;
+    --secondary: 217.2 25% 16%;
     --secondary-foreground: 210 40% 98%;
  
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
+    --muted: 217.2 25% 16%;
+    --muted-foreground: 215 16% 70%;
  
-    --accent: 217.2 32.6% 17.5%;
+    --accent: 150 20% 18%;
     --accent-foreground: 210 40% 98%;
  
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
  
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 152 69% 25%;
+    --border: 217.2 18% 20%;
+    --input: 217.2 18% 20%;
+    --ring: 150 46% 43%;
     
-    --smartani-green: 152 69% 30%;
-    --smartani-green-light: 152 30% 15%;
+    --smartani-green: 150 46% 43%;
+    --smartani-green-light: 150 20% 18%;
   }
 }
  
@@ -122,34 +122,34 @@
   
   /* Button styles */
   .btn-primary {
-    @apply bg-green-600 hover:bg-green-700 text-white font-semibold px-6 py-3 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0;
+    @apply bg-[#0F5132] hover:bg-[#155a3b] text-white font-medium px-6 py-2.5 rounded-full transition-all duration-200 shadow hover:shadow-md active:scale-[0.98];
   }
   
   .btn-secondary {
-    @apply bg-white hover:bg-gray-50 text-green-700 font-semibold px-6 py-3 rounded-xl transition-all duration-300 border-2 border-green-600/20 hover:border-green-600/40 shadow-md hover:shadow-lg;
+    @apply bg-white hover:bg-slate-50 text-slate-700 font-medium px-6 py-2.5 rounded-full transition-all duration-200 border border-slate-200 shadow-sm hover:shadow active:scale-[0.98];
   }
   
   .btn-outline {
-    @apply border-2 border-white/80 hover:bg-white/10 text-white font-semibold px-6 py-3 rounded-xl transition-all duration-300;
+    @apply border-2 border-white/80 hover:bg-white/10 text-white font-medium px-6 py-3 rounded-full transition-all duration-200 active:scale-[0.98];
   }
   
   /* Card styles */
   .card-hover {
-    @apply transition-all duration-300 hover:shadow-xl hover:-translate-y-1;
+    @apply transition-all duration-200 hover:shadow-md;
   }
   
   .card-feature {
-    @apply bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-soft border border-gray-100 dark:border-gray-700 card-hover;
+    @apply bg-white dark:bg-slate-900 rounded-[1.7rem] p-6 shadow-[0_18px_42px_-34px_rgba(15,23,42,0.35)] border border-[hsl(var(--border))] card-hover;
   }
   
   /* Stats card */
   .stats-card {
-    @apply bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-900 rounded-3xl p-8 shadow-soft border border-gray-100 dark:border-gray-700;
+    @apply bg-white dark:bg-slate-900 rounded-[1.7rem] p-6 shadow-[0_18px_42px_-34px_rgba(15,23,42,0.35)] border border-[hsl(var(--border))];
   }
   
   /* Input styles */
   .input-modern {
-    @apply w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-green-500/30 focus:border-green-500 transition-all duration-200 outline-none;
+    @apply w-full px-4 py-3 rounded-[1.3rem] border border-[hsl(var(--border))] bg-white dark:bg-slate-800 focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-colors duration-200 outline-none;
   }
   
   /* Badge styles */
@@ -206,19 +206,249 @@
   
   /* Dashboard design-tokens — shared across all roles */
   .dash-icon-box {
-    @apply p-2 rounded-lg bg-green-600/10 dark:bg-green-500/15 text-green-700 dark:text-green-400 flex items-center justify-center;
+    @apply p-2.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 text-primary dark:text-emerald-300 border border-emerald-100 dark:border-emerald-900/50 flex items-center justify-center shadow-[inset_0_1px_0_rgba(255,255,255,0.65)];
   }
   
   .dash-stat-card {
-    @apply rounded-2xl border border-slate-200/70 dark:border-slate-700/70 bg-gradient-to-br from-white to-slate-50 dark:from-slate-800 dark:to-slate-900 p-4 shadow-sm transition-shadow hover:shadow-md;
+    @apply rounded-[1.85rem] border border-[hsl(var(--border))] bg-white dark:bg-slate-900 p-6 shadow-[0_18px_40px_-32px_rgba(15,23,42,0.35)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_28px_48px_-34px_rgba(15,23,42,0.35)];
   }
   
   .dash-section-title {
-    @apply text-lg font-semibold flex items-center gap-2 tracking-tight;
+    @apply text-[1.05rem] md:text-[1.15rem] font-extrabold tracking-tight flex items-center gap-2;
   }
   
   .dash-panel {
-    @apply rounded-xl border border-slate-200/70 dark:border-slate-700/70 bg-white dark:bg-slate-900 border-l-4 border-l-green-600 dark:border-l-green-500;
+    @apply rounded-[1.85rem] border border-[hsl(var(--border))] bg-white dark:bg-slate-900 shadow-[0_18px_40px_-32px_rgba(15,23,42,0.35)];
+  }
+
+  .dash-shell-surface {
+    @apply rounded-[2rem] border border-[hsl(var(--border))] bg-white/95 dark:bg-slate-900/95 shadow-[0_24px_60px_-42px_rgba(15,23,42,0.38)];
+  }
+
+  .dash-hero-panel {
+    @apply rounded-[2rem] border border-[hsl(var(--border))] bg-white dark:bg-slate-900 p-5 md:p-7 shadow-[0_20px_48px_-36px_rgba(15,23,42,0.34)];
+  }
+
+  .dash-workspace-section {
+    @apply rounded-[2rem] border border-[hsl(var(--border))] bg-white/95 dark:bg-slate-900/95 p-4 md:p-5 space-y-4 md:space-y-5 shadow-[0_24px_60px_-42px_rgba(15,23,42,0.38)];
+  }
+
+  .dash-filter-bar {
+    @apply rounded-[1.7rem] border border-[hsl(var(--border))] bg-white dark:bg-slate-900 px-4 md:px-5 py-3.5 shadow-[0_16px_34px_-30px_rgba(15,23,42,0.28)];
+  }
+
+  .dash-kpi-card {
+    @apply relative rounded-[1.7rem] border border-[hsl(var(--border))] bg-white dark:bg-slate-900 p-5 shadow-[0_16px_34px_-30px_rgba(15,23,42,0.28)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_24px_42px_-30px_rgba(15,23,42,0.3)];
+  }
+
+  .dash-kpi-card-accent {
+    background: linear-gradient(135deg, #1b6b46 0%, #2a8a5b 55%, #3a9e69 100%);
+    @apply text-white border-transparent shadow-[0_22px_42px_-24px_rgba(27,107,70,0.58)];
+  }
+
+  .dash-mini-action-card {
+    @apply rounded-[1.6rem] border border-[hsl(var(--border))] bg-white dark:bg-slate-900 p-5 shadow-[0_16px_32px_-28px_rgba(15,23,42,0.28)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_24px_40px_-30px_rgba(15,23,42,0.32)];
+  }
+
+  .dash-pill {
+    @apply inline-flex items-center px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-[0.14em] bg-emerald-50 text-emerald-800 dark:bg-emerald-900/35 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-900/40;
+  }
+
+  .dashboard-page select,
+  .dashboard-page textarea,
+  .dashboard-page input[type="text"],
+  .dashboard-page input[type="date"],
+  .dashboard-page input[type="time"],
+  .dashboard-page input[type="datetime-local"],
+  .dashboard-page input[type="number"],
+  .dashboard-page input[type="email"],
+  .dashboard-page input[type="search"] {
+    @apply w-full border border-[hsl(var(--input))] bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 placeholder:text-slate-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] transition-all outline-none;
+    border-radius: 1.1rem;
+    border-color: hsl(var(--input)) !important;
+    background: hsl(var(--card)) !important;
+    border-radius: 1.1rem !important;
+  }
+
+  .dashboard-page select,
+  .dashboard-page input[type="text"],
+  .dashboard-page input[type="date"],
+  .dashboard-page input[type="time"],
+  .dashboard-page input[type="datetime-local"],
+  .dashboard-page input[type="number"],
+  .dashboard-page input[type="email"],
+  .dashboard-page input[type="search"] {
+    @apply h-11 px-4 text-sm;
+    height: 2.75rem !important;
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+  }
+
+  .dashboard-page textarea {
+    @apply px-4 py-3 text-sm leading-relaxed;
+    padding: 0.75rem 1rem !important;
+    border-radius: 1.1rem !important;
+  }
+
+  .dashboard-page select:focus,
+  .dashboard-page textarea:focus,
+  .dashboard-page input[type="text"]:focus,
+  .dashboard-page input[type="date"]:focus,
+  .dashboard-page input[type="time"]:focus,
+  .dashboard-page input[type="datetime-local"]:focus,
+  .dashboard-page input[type="number"]:focus,
+  .dashboard-page input[type="email"]:focus,
+  .dashboard-page input[type="search"]:focus {
+    @apply border-[hsl(var(--primary))] ring-4 ring-[hsl(var(--primary)/0.12)];
+  }
+
+  .dash-metric-tile {
+    @apply rounded-[1.35rem] border border-[hsl(var(--border))] bg-white dark:bg-slate-900 p-4 shadow-[0_18px_36px_-30px_rgba(15,23,42,0.28)];
+  }
+
+  .dash-metric-tile-accent {
+    @apply border-transparent bg-[#0F5132] text-white shadow-[0_24px_42px_-28px_rgba(15,81,50,0.85)];
+  }
+
+  .dash-detail-card {
+    @apply rounded-[1.35rem] border border-[hsl(var(--border))] bg-white dark:bg-slate-900 p-4 shadow-[0_18px_36px_-30px_rgba(15,23,42,0.22)];
+  }
+
+  .dash-subtile {
+    @apply rounded-[1.15rem] border border-[hsl(var(--border))] bg-[hsl(var(--secondary))] p-3;
+  }
+
+  .dash-outline-block {
+    @apply rounded-[1.15rem] border border-[hsl(var(--border))] bg-white dark:bg-slate-900 p-3;
+  }
+
+  .dash-soft-block {
+    @apply rounded-[1.15rem] border border-[hsl(var(--border))] bg-[hsl(var(--secondary))] p-3;
+  }
+
+  .dash-dashed-block {
+    @apply rounded-[1.15rem] border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--secondary))] p-3;
+  }
+
+  .dash-control {
+    @apply h-10 w-full rounded-full border border-[hsl(var(--input))] bg-[hsl(var(--card))] px-4 text-sm;
+    border-color: hsl(var(--input)) !important;
+    background: hsl(var(--card)) !important;
+    border-radius: 9999px !important;
+  }
+
+  .dash-control-compact {
+    @apply h-9 w-full rounded-full border border-[hsl(var(--input))] bg-[hsl(var(--card))] px-4 text-sm;
+    border-color: hsl(var(--input)) !important;
+    background: hsl(var(--card)) !important;
+    border-radius: 9999px !important;
+  }
+
+  .dash-textarea {
+    @apply w-full rounded-[1.15rem] border border-[hsl(var(--input))] bg-[hsl(var(--card))] px-4 py-3 text-sm leading-relaxed;
+    border-color: hsl(var(--input)) !important;
+    background: hsl(var(--card)) !important;
+    min-height: 6rem;
+  }
+
+  .dash-workspace-grid-lg {
+    @apply grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-5;
+  }
+
+  .dash-workspace-grid-xl {
+    @apply grid grid-cols-1 xl:grid-cols-12 gap-4 md:gap-6;
+  }
+
+  .dash-workspace-main-lg {
+    @apply lg:col-span-8 min-w-0;
+  }
+
+  .dash-workspace-main-stack-lg {
+    @apply lg:col-span-8 min-w-0 space-y-4;
+  }
+
+  .dash-workspace-main-wide-stack-lg {
+    @apply lg:col-span-8 min-w-0 space-y-6;
+  }
+
+  .dash-workspace-main-xl {
+    @apply xl:col-span-8 min-w-0;
+  }
+
+  .dash-workspace-rail-lg {
+    @apply lg:col-span-4 min-w-0 space-y-4 lg:sticky lg:top-24 self-start;
+  }
+
+  .dash-workspace-rail-xl {
+    @apply xl:col-span-4 min-w-0 space-y-4 xl:sticky xl:top-24 self-start;
+  }
+
+  .dash-section-stack {
+    @apply space-y-6 md:space-y-7;
+  }
+
+  .dash-workspace-grid-lg > *,
+  .dash-workspace-grid-xl > * {
+    min-width: 0;
+  }
+
+  .dashboard-page .dash-panel,
+  .dashboard-page .dash-shell-surface,
+  .dashboard-page .dash-hero-panel,
+  .dashboard-page .dash-filter-bar,
+  .dashboard-page .dash-mini-action-card,
+  .dashboard-page .dash-kpi-card,
+  .dashboard-page .dash-metric-tile,
+  .dashboard-page .dash-detail-card,
+  .dashboard-page .dash-outline-block,
+  .dashboard-page .dash-soft-block,
+  .dashboard-page .dash-dashed-block {
+    min-width: 0;
+  }
+
+  /* Legacy dashboard block normalization for expert/admin/farmer surfaces */
+  .dashboard-page .rounded-lg.bg-muted\/20.p-3[class~='border'],
+  .dashboard-page .rounded-md.bg-muted\/20.p-3[class~='border'] {
+    border-radius: 1.15rem !important;
+    border-width: 1px !important;
+    border-style: solid !important;
+    border-color: hsl(var(--border)) !important;
+    background: hsl(var(--secondary)) !important;
+    padding: 0.75rem !important;
+  }
+
+  .dashboard-page .rounded-lg.bg-muted\/30.p-3,
+  .dashboard-page .rounded-lg.bg-muted\/40.p-3,
+  .dashboard-page .rounded-md.bg-muted\/40.p-3 {
+    border-radius: 1.15rem !important;
+    border: 1px solid hsl(var(--border)) !important;
+    background: hsl(var(--secondary)) !important;
+    padding: 0.75rem !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  }
+
+  .dashboard-page .rounded-lg.p-3[class~='border-dashed'],
+  .dashboard-page .rounded-lg.p-4[class~='border-dashed'],
+  .dashboard-page .rounded-md.p-3[class~='border-dashed'],
+  .dashboard-page .rounded-md.p-4[class~='border-dashed'] {
+    border-radius: 1.15rem !important;
+    border-width: 1px !important;
+    border-style: dashed !important;
+    border-color: hsl(var(--border)) !important;
+    background: hsl(var(--secondary)) !important;
+  }
+
+  .dashboard-page .rounded-lg.p-3[class~='border'],
+  .dashboard-page .rounded-lg.p-2\.5[class~='border'],
+  .dashboard-page .rounded-lg.p-4[class~='border'],
+  .dashboard-page .rounded-md.bg-background.p-3[class~='border'],
+  .dashboard-page .rounded-md.bg-background.p-4[class~='border'] {
+    border-radius: 1.15rem !important;
+    border-width: 1px !important;
+    border-style: solid !important;
+    border-color: hsl(var(--border)) !important;
+    background: hsl(var(--card)) !important;
+    box-shadow: 0 18px 36px -30px rgba(15, 23, 42, 0.22) !important;
   }
 }
 
@@ -245,6 +475,32 @@
   
   .custom-scrollbar::-webkit-scrollbar-thumb {
     @apply bg-gray-300 dark:bg-gray-600 rounded-full hover:bg-gray-400 dark:hover:bg-gray-500;
+  }
+
+  .dash-tab-strip {
+    display: flex;
+    width: 100%;
+    gap: 0.5rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+    overscroll-behavior-x: contain;
+    padding-bottom: 0.125rem;
+  }
+
+  .dash-tab-strip::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
+  @media (min-width: 768px) {
+    .dash-tab-strip {
+      flex-wrap: wrap;
+      overflow: visible;
+      padding-bottom: 0;
+    }
   }
   
   /* Animation delays */

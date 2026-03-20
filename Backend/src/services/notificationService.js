@@ -1,13 +1,14 @@
 /**
  * Notification Service
  * 
- * Handles SMS and USSD notifications using Africa's Talking API.
- * Supports multiple languages and priority-based delivery.
+ * Handles SMS, in-app, and email notifications.
+ * Supports provider-backed delivery, batching, and retries.
  * 
  * @module services/notificationService
  */
 
 import AT from 'africastalking';
+import nodemailer from 'nodemailer';
 import { db } from '../database/convex.js';
 import config from '../config/index.js';
 import logger from '../utils/logger.js';
@@ -19,6 +20,28 @@ const africasTalking = AT({
 });
 
 const sms = africasTalking.SMS;
+
+const hasEmailTransportConfig = Boolean(
+  config.email?.enabled
+  && config.email?.host
+  && config.email?.from
+);
+
+const emailTransport = hasEmailTransportConfig
+  ? nodemailer.createTransport({
+      host: config.email.host,
+      port: config.email.port,
+      secure: config.email.secure,
+      ...(config.email.user
+        ? {
+            auth: {
+              user: config.email.user,
+              pass: config.email.pass,
+            },
+          }
+        : {}),
+    })
+  : null;
 
 // Message queue for batching routine notifications
 const messageQueue = [];
@@ -71,6 +94,53 @@ const sendSmsThroughProvider = async (phoneNumber, message) => {
     failedReason: recipient.status !== 'Success' ? recipient.status : null,
     costUnits: recipient.cost,
     succeeded: recipient.status === 'Success',
+  };
+};
+
+const normalizeEmail = (emailAddress) => String(emailAddress || '').trim().toLowerCase();
+
+const buildEmailFromAddress = () => {
+  if (!config.email?.from) {
+    return '';
+  }
+
+  if (config.email?.fromName) {
+    return `"${config.email.fromName}" <${config.email.from}>`;
+  }
+
+  return config.email.from;
+};
+
+const sendEmailThroughProvider = async (emailAddress, subject, message) => {
+  const formattedEmail = normalizeEmail(emailAddress);
+
+  if (!formattedEmail) {
+    throw new Error('Recipient email address is required');
+  }
+
+  if (!emailTransport) {
+    throw new Error('Email provider not configured');
+  }
+
+  const mailOptions = {
+    from: buildEmailFromAddress(),
+    to: formattedEmail,
+    subject: subject || config.email.defaultSubject,
+    text: message,
+    ...(config.email.replyTo ? { replyTo: config.email.replyTo } : {}),
+  };
+
+  const info = await emailTransport.sendMail(mailOptions);
+  const rejected = Array.isArray(info?.rejected) ? info.rejected : [];
+  const accepted = Array.isArray(info?.accepted) ? info.accepted : [];
+  const succeeded = accepted.length > 0 || rejected.length === 0;
+
+  return {
+    formattedEmail,
+    subject: mailOptions.subject,
+    externalMessageId: info?.messageId || info?.response || null,
+    failedReason: succeeded ? null : 'Email rejected by provider',
+    succeeded,
   };
 };
 
@@ -134,6 +204,29 @@ const buildIrrigationSummary = (analysis) => {
 
   return irrigation.message || 'no clear action';
 };
+
+const toOptionalNumber = (value) => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const match = value.match(/-?\d+(?:\.\d+)?/);
+    if (match) {
+      const parsed = Number(match[0]);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+
+  return undefined;
+};
+
+const sanitizeRecord = (record) =>
+  Object.fromEntries(
+    Object.entries(record).filter(([, value]) => value !== undefined && value !== null)
+  );
 
 const buildNutrientSummary = (analysis) => {
   const nutrients = analysis?.nutrients;
@@ -405,20 +498,95 @@ export const sendSMS = async (phoneNumber, message, options = {}) => {
   }
 };
 
-const deliverPersistedMessage = async (messageRecord, options = {}) => {
-  const delivery = await sendSmsThroughProvider(messageRecord.recipient, messageRecord.content);
-  const retryCount = (messageRecord.retry_count || 0) + (options.incrementRetry === false ? 0 : 1);
+export const sendEmail = async (emailAddress, subject, message, options = {}) => {
+  const {
+    userId,
+    recommendationId,
+  } = options;
 
-  await db.messages.update(messageRecord._id, {
-    status: delivery.succeeded ? 'sent' : 'failed',
-    recipient: delivery.formattedNumber,
-    content: delivery.truncatedMessage,
-    sent_at: delivery.succeeded ? Date.now() : messageRecord.sent_at,
-    external_message_id: delivery.externalMessageId,
-    failed_reason: delivery.failedReason,
-    cost_units: delivery.costUnits,
-    retry_count: retryCount,
-  });
+  try {
+    const delivery = await sendEmailThroughProvider(emailAddress, subject, message);
+
+    const messageRecord = await logMessage({
+      userId,
+      recommendationId,
+      channel: 'email',
+      recipient: delivery.formattedEmail,
+      subject: delivery.subject,
+      content: message,
+      status: delivery.succeeded ? 'sent' : 'failed',
+      externalMessageId: delivery.externalMessageId,
+      failedReason: delivery.failedReason,
+    });
+
+    logger.info(`Email sent to ${delivery.formattedEmail}: ${messageRecord._id}`);
+    return {
+      success: delivery.succeeded,
+      messageId: messageRecord._id,
+      externalId: delivery.externalMessageId,
+    };
+  } catch (error) {
+    logger.error(`Failed to send email to ${emailAddress}:`, error.message);
+
+    await logMessage({
+      userId,
+      recommendationId,
+      channel: 'email',
+      recipient: normalizeEmail(emailAddress),
+      subject: subject || config.email.defaultSubject,
+      content: message,
+      status: 'failed',
+      failedReason: error.message,
+    });
+
+    throw error;
+  }
+};
+
+const deliverPersistedMessage = async (messageRecord, options = {}) => {
+  const retryCount = (messageRecord.retry_count || 0) + (options.incrementRetry === false ? 0 : 1);
+  let delivery;
+  let updates;
+
+  if (messageRecord.channel === 'sms') {
+    delivery = await sendSmsThroughProvider(messageRecord.recipient, messageRecord.content);
+    updates = sanitizeRecord({
+      status: delivery.succeeded ? 'sent' : 'failed',
+      recipient: delivery.formattedNumber,
+      content: delivery.truncatedMessage,
+      sent_at: delivery.succeeded ? Date.now() : messageRecord.sent_at,
+      external_message_id: delivery.externalMessageId,
+      failed_reason: delivery.failedReason,
+      cost_units: toOptionalNumber(delivery.costUnits),
+      retry_count: retryCount,
+    });
+  } else if (messageRecord.channel === 'email') {
+    delivery = await sendEmailThroughProvider(
+      messageRecord.recipient,
+      messageRecord.subject,
+      messageRecord.content
+    );
+    updates = sanitizeRecord({
+      status: delivery.succeeded ? 'sent' : 'failed',
+      recipient: delivery.formattedEmail,
+      subject: delivery.subject,
+      sent_at: delivery.succeeded ? Date.now() : messageRecord.sent_at,
+      external_message_id: delivery.externalMessageId,
+      failed_reason: delivery.failedReason,
+      retry_count: retryCount,
+    });
+  } else if (messageRecord.channel === 'push') {
+    delivery = { succeeded: true, externalMessageId: null, failedReason: null };
+    updates = {
+      status: 'sent',
+      sent_at: messageRecord.sent_at || Date.now(),
+      retry_count: retryCount,
+    };
+  } else {
+    throw new Error(`Unsupported message channel for queued delivery: ${messageRecord.channel}`);
+  }
+
+  await db.messages.update(messageRecord._id, updates);
 
   return delivery;
 };
@@ -457,6 +625,7 @@ const logMessage = async (messageData) => {
     recommendationId,
     channel,
     recipient,
+    subject,
     content,
     contentRw,
     status,
@@ -466,17 +635,20 @@ const logMessage = async (messageData) => {
   } = messageData;
 
   const data = await db.messages.create({
-    user_id: userId,
-    recommendation_id: recommendationId,
-    channel,
-    recipient,
-    content,
-    content_rw: contentRw,
-    status,
-    external_message_id: externalMessageId,
-    failed_reason: failedReason,
-    cost_units: costUnits,
-    sent_at: status === 'sent' ? Date.now() : null
+    ...sanitizeRecord({
+      user_id: userId,
+      recommendation_id: recommendationId,
+      channel,
+      recipient,
+      subject,
+      content,
+      content_rw: contentRw,
+      status,
+      external_message_id: externalMessageId,
+      failed_reason: failedReason,
+      cost_units: toOptionalNumber(costUnits),
+      sent_at: status === 'sent' ? Date.now() : undefined,
+    }),
   });
 
   return data;
@@ -1107,6 +1279,7 @@ export const processQueuedMessages = async () => {
 
 export default {
   sendSMS,
+  sendEmail,
   sendBulkSMS,
   sendRecommendationNotification,
   sendSensorAnalysisLifecycleNotifications,

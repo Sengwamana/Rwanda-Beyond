@@ -95,6 +95,20 @@ const config = {
     senderId: process.env.AT_SENDER_ID || 'SMARTMAIZE'
   },
 
+  // Email delivery (SMTP)
+  email: {
+    enabled: process.env.EMAIL_ENABLED !== 'false',
+    host: process.env.SMTP_HOST || '',
+    port: parseInt(process.env.SMTP_PORT, 10) || 587,
+    secure: process.env.SMTP_SECURE === 'true',
+    user: process.env.SMTP_USER || '',
+    pass: process.env.SMTP_PASS || '',
+    from: process.env.SMTP_FROM || '',
+    fromName: process.env.SMTP_FROM_NAME || 'Smart Maize',
+    replyTo: process.env.SMTP_REPLY_TO || '',
+    defaultSubject: process.env.SMTP_DEFAULT_SUBJECT || 'Smart Maize Notification',
+  },
+
   // Weather API configuration
   weather: {
     apiKey: process.env.OPENWEATHERMAP_API_KEY || '',

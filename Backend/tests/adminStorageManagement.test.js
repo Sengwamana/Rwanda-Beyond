@@ -12,6 +12,8 @@ const mockDb = {
   },
   messages: {
     createBatch: jest.fn(),
+    getQueued: jest.fn(),
+    getFailed: jest.fn(),
   },
   systemConfig: {
     list: jest.fn(),
@@ -54,6 +56,10 @@ const mockDb = {
   districts: {
     list: jest.fn(),
   },
+};
+
+const mockNotificationService = {
+  processQueuedMessages: jest.fn(),
 };
 
 await jest.unstable_mockModule('../src/database/convex.js', () => ({
@@ -102,6 +108,11 @@ await jest.unstable_mockModule('../src/utils/logger.js', () => ({
   },
 }));
 
+await jest.unstable_mockModule('../src/services/notificationService.js', () => ({
+  default: mockNotificationService,
+  ...mockNotificationService,
+}));
+
 const { default: adminRouter } = await import('../src/routes/admin.js');
 
 const createApp = () => {
@@ -128,6 +139,8 @@ describe('admin storage management routes', () => {
     mockDb.users.listActive.mockResolvedValue([]);
     mockDb.users.update.mockResolvedValue({ _id: 'user-1' });
     mockDb.messages.createBatch.mockResolvedValue({ count: 0, ids: [] });
+    mockDb.messages.getQueued.mockResolvedValue([]);
+    mockDb.messages.getFailed.mockResolvedValue([]);
     mockDb.auditLogs.create.mockResolvedValue(null);
     mockDb.systemConfig.list.mockResolvedValue([]);
     mockDb.auditLogs.list.mockResolvedValue({ data: [], count: 0 });
@@ -309,7 +322,7 @@ describe('admin storage management routes', () => {
       { _id: 'expert-1', phone_number: '+250788000002', preferred_language: 'rw' },
       { _id: 'admin-2', phone_number: null, preferred_language: 'en' },
     ]);
-    mockDb.messages.createBatch.mockResolvedValue({ count: 1, ids: ['msg-1'] });
+    mockDb.messages.createBatch.mockResolvedValue({ count: 2, ids: ['msg-1', 'msg-2'] });
 
     const response = await request(app)
       .post('/admin/broadcast')
@@ -327,10 +340,23 @@ describe('admin storage management routes', () => {
         expect.objectContaining({
           user_id: 'expert-1',
           recipient: '+250788000002',
+          channel: 'sms',
           metadata: expect.objectContaining({
             broadcast: true,
             scope: 'role:expert',
             requestedTargetRole: 'expert',
+            requestedChannel: 'sms',
+            resolvedChannel: 'sms',
+          }),
+        }),
+        expect.objectContaining({
+          user_id: 'admin-2',
+          channel: 'push',
+          status: 'sent',
+          metadata: expect.objectContaining({
+            requestedChannel: 'sms',
+            resolvedChannel: 'push',
+            fallbackChannel: 'push',
           }),
         }),
       ])
@@ -339,6 +365,8 @@ describe('admin storage management routes', () => {
       expect.objectContaining({
         queued: 1,
         targetedUsers: 2,
+        stored: 2,
+        inApp: 1,
       })
     );
     expect(mockDb.auditLogs.create).toHaveBeenCalledWith(
@@ -346,6 +374,8 @@ describe('admin storage management routes', () => {
         action: 'BROADCAST_SENT',
         new_values: expect.objectContaining({
           targetRole: 'expert',
+          queuedRecipients: 1,
+          inAppRecipients: 1,
         }),
       })
     );
@@ -358,7 +388,7 @@ describe('admin storage management routes', () => {
       { _id: 'expert-1', phone_number: '+250788000002', preferred_language: 'rw' },
       { _id: 'admin-2', phone_number: null, preferred_language: 'en' },
     ]);
-    mockDb.messages.createBatch.mockResolvedValue({ count: 2, ids: ['msg-1', 'msg-2'] });
+    mockDb.messages.createBatch.mockResolvedValue({ count: 3, ids: ['msg-1', 'msg-2', 'msg-3'] });
 
     const response = await request(app)
       .post('/admin/broadcast')
@@ -381,6 +411,11 @@ describe('admin storage management routes', () => {
         }),
         expect.objectContaining({
           user_id: 'expert-1',
+          channel: 'sms',
+        }),
+        expect.objectContaining({
+          user_id: 'admin-2',
+          channel: 'push',
         }),
       ])
     );
@@ -388,6 +423,105 @@ describe('admin storage management routes', () => {
       expect.objectContaining({
         queued: 2,
         targetedUsers: 3,
+        stored: 3,
+        inApp: 1,
+      })
+    );
+  });
+
+  it('processes the queued notification pipeline on demand', async () => {
+    const app = createApp();
+    mockNotificationService.processQueuedMessages.mockResolvedValue({
+      processed: 4,
+      sent: 3,
+      failed: 1,
+      retried: 2,
+    });
+
+    const response = await request(app)
+      .post('/admin/notifications/process')
+      .send({})
+      .expect(200);
+
+    expect(mockNotificationService.processQueuedMessages).toHaveBeenCalled();
+    expect(response.body.data).toEqual({
+      processed: 4,
+      sent: 3,
+      failed: 1,
+      retried: 2,
+    });
+    expect(mockDb.auditLogs.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'NOTIFICATION_QUEUE_PROCESSED',
+        new_values: expect.objectContaining({
+          processed: 4,
+          sent: 3,
+          failed: 1,
+          retried: 2,
+          triggeredBy: 'admin_manual',
+        }),
+      })
+    );
+  });
+
+  it('returns the queued and failed notification snapshot for admin review', async () => {
+    const app = createApp();
+    mockDb.messages.getQueued.mockResolvedValue([
+      {
+        _id: 'msg-queued-1',
+        user_id: 'farmer-1',
+        channel: 'sms',
+        recipient: '+250788000001',
+        content: 'Queued SMS message',
+        status: 'queued',
+        retry_count: 0,
+        created_at: 1710000000000,
+      },
+    ]);
+    mockDb.messages.getFailed.mockResolvedValue([
+      {
+        _id: 'msg-failed-1',
+        user_id: 'expert-1',
+        channel: 'email',
+        recipient: 'expert@example.com',
+        content: 'Failed email message',
+        status: 'failed',
+        retry_count: 2,
+        failed_reason: 'SMTP timeout',
+        created_at: 1710000005000,
+      },
+    ]);
+
+    const response = await request(app)
+      .get('/admin/notifications/queue?limit=5&maxRetries=4')
+      .expect(200);
+
+    expect(mockDb.messages.getQueued).toHaveBeenCalledWith({ limit: 5 });
+    expect(mockDb.messages.getFailed).toHaveBeenCalledWith({ limit: 5, maxRetries: 4 });
+    expect(response.body.data).toEqual(
+      expect.objectContaining({
+        queued: expect.arrayContaining([
+          expect.objectContaining({
+            _id: 'msg-queued-1',
+            channel: 'sms',
+          }),
+        ]),
+        failed: expect.arrayContaining([
+          expect.objectContaining({
+            _id: 'msg-failed-1',
+            channel: 'email',
+          }),
+        ]),
+        counts: {
+          queued: 1,
+          failed: 1,
+          queuedByChannel: { sms: 1 },
+          failedByChannel: { email: 1 },
+        },
+        filters: {
+          limit: 5,
+          maxRetries: 4,
+        },
       })
     );
   });

@@ -903,12 +903,23 @@ export const getRecommendationStats = async (farmIdOrOptions = null, userIdArg =
     userId = userIdArg;
   }
 
-  const query = {
-    farmId: farmId || undefined,
-    userId: userId || undefined,
-    since,
-    until,
-  };
+  const query = {};
+
+  if (farmId) {
+    query.farmId = farmId;
+  }
+
+  if (userId) {
+    query.userId = userId;
+  }
+
+  if (Number.isFinite(since)) {
+    query.since = since;
+  }
+
+  if (Number.isFinite(until)) {
+    query.until = until;
+  }
 
   const stats = await db.recommendations.getStats(query);
   const summary = {

@@ -4,6 +4,8 @@ This guide is for setting up and running the project on a new Windows developmen
 
 Use this document for first-time setup.  
 Use [STARTUP_RUNBOOK.md](/d:/Advanced%20Real%20World%20Project/Pro/docs/STARTUP_RUNBOOK.md) for the normal day-to-day startup order after setup is complete.
+Use [SENSOR_DEVICE_INTEGRATION.md](/d:/Advanced%20Real%20World%20Project/Pro/docs/SENSOR_DEVICE_INTEGRATION.md) when you need to provision a real device and send live sensor readings into the backend.
+Use [USSD_TESTING_GUIDE.md](/d:/Advanced%20Real%20World%20Project/Pro/docs/USSD_TESTING_GUIDE.md) when you want to understand the USSD flow and test it locally.
 
 ## 1. What you need
 
@@ -17,6 +19,7 @@ Use [STARTUP_RUNBOOK.md](/d:/Advanced%20Real%20World%20Project/Pro/docs/STARTUP_
   - Gemini API key
   - Cloudinary keys
   - Africa's Talking keys
+  - SMTP email credentials if you want real outbound email delivery
   - OpenWeatherMap key
 
 Recommended check:
@@ -72,6 +75,14 @@ Fill `Backend/.env` with real values for:
 - `AT_API_KEY`
 - `AT_SHORTCODE`
 - `AT_SENDER_ID`
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_SECURE`
+- `SMTP_USER`
+- `SMTP_PASS`
+- `SMTP_FROM`
+- `SMTP_FROM_NAME`
+- `SMTP_REPLY_TO`
 - `OPENWEATHERMAP_API_KEY`
 - `GEMINI_API_KEY`
 - `JWT_SECRET`

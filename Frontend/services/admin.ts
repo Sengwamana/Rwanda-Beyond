@@ -8,6 +8,7 @@ import {
   Farm, 
   SystemConfig,
   AuditLog,
+  Message,
   SystemOverview,
   ApiResponse, 
   PaginatedResponse 
@@ -45,6 +46,52 @@ export interface SystemConfigItem {
 }
 
 export type SystemConfigMap = Record<string, Record<string, SystemConfigItem>>;
+
+export interface NotificationQueueSnapshot {
+  queued: Message[];
+  failed: Message[];
+  counts: {
+    queued: number;
+    failed: number;
+    queuedByChannel: Record<string, number>;
+    failedByChannel: Record<string, number>;
+  };
+  filters: {
+    limit: number;
+    maxRetries: number;
+  };
+}
+
+const normalizeAdminMessage = (item: any): Message => ({
+  id: String(item?.id || item?._id || ''),
+  userId: String(item?.userId || item?.user_id || ''),
+  recommendationId: item?.recommendationId || item?.recommendation_id || undefined,
+  channel: item?.channel || 'push',
+  recipient: item?.recipient || '',
+  subject: item?.subject || undefined,
+  content: item?.content || '',
+  contentRw: item?.contentRw || item?.content_rw || undefined,
+  status: ((item?.readAt || item?.read_at) ? 'read' : (item?.status || 'queued')),
+  externalMessageId: item?.externalMessageId || item?.external_message_id || undefined,
+  sentAt:
+    item?.sentAt
+    || (typeof item?.sent_at === 'number' ? new Date(item.sent_at).toISOString() : item?.sent_at)
+    || undefined,
+  deliveredAt:
+    item?.deliveredAt
+    || (typeof item?.delivered_at === 'number' ? new Date(item.delivered_at).toISOString() : item?.delivered_at)
+    || undefined,
+  readAt:
+    item?.readAt
+    || (typeof item?.read_at === 'number' ? new Date(item.read_at).toISOString() : item?.read_at)
+    || undefined,
+  failedReason: item?.failedReason || item?.failed_reason || undefined,
+  retryCount: item?.retryCount ?? item?.retry_count ?? 0,
+  createdAt:
+    item?.createdAt
+    || (typeof item?.created_at === 'number' ? new Date(item.created_at).toISOString() : item?.created_at)
+    || new Date().toISOString(),
+});
 
 // Admin service functions
 export const adminService = {
@@ -540,6 +587,51 @@ export const adminService = {
       data
     );
     return response.data;
+  },
+
+  processNotificationQueue: async (): Promise<ApiResponse<{
+    processed: number;
+    sent: number;
+    failed: number;
+    retried: number;
+  }>> => {
+    const response = await apiClient.post<ApiResponse<any>>(
+      '/admin/notifications/process',
+      {}
+    );
+    return response.data;
+  },
+
+  getNotificationQueueSnapshot: async (params?: {
+    limit?: number;
+    maxRetries?: number;
+  }): Promise<ApiResponse<NotificationQueueSnapshot>> => {
+    const response = await apiClient.get<ApiResponse<any>>(
+      '/admin/notifications/queue',
+      { params }
+    );
+
+    return {
+      ...response.data,
+      data: {
+        queued: Array.isArray(response.data?.data?.queued)
+          ? response.data.data.queued.map(normalizeAdminMessage)
+          : [],
+        failed: Array.isArray(response.data?.data?.failed)
+          ? response.data.data.failed.map(normalizeAdminMessage)
+          : [],
+        counts: {
+          queued: response.data?.data?.counts?.queued ?? 0,
+          failed: response.data?.data?.counts?.failed ?? 0,
+          queuedByChannel: response.data?.data?.counts?.queuedByChannel || {},
+          failedByChannel: response.data?.data?.counts?.failedByChannel || {},
+        },
+        filters: {
+          limit: response.data?.data?.filters?.limit ?? (params?.limit ?? 8),
+          maxRetries: response.data?.data?.filters?.maxRetries ?? (params?.maxRetries ?? 3),
+        },
+      },
+    };
   },
 };
 

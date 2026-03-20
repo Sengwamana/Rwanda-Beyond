@@ -86,7 +86,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
                 placeholder="Search farms, sensors, reports..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-11 pr-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500 transition-all"
+                className="w-full pl-11 pr-4 py-2.5 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0F5132]/20 focus:border-[#0F5132]/50 transition-colors"
               />
             </div>
           </form>
@@ -95,14 +95,14 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
         {/* Right: Actions */}
         <div className="flex items-center gap-3">
           {/* Language Switcher */}
-          <div className="hidden md:flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-50 dark:bg-slate-800 text-xs font-medium">
+          <div className="hidden md:flex items-center gap-1 px-2 py-1 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-xs font-medium">
             {['en', 'rw', 'fr'].map((lang) => (
               <button
                 key={lang}
                 onClick={() => onLanguageChange(lang as Language)}
                 className={`px-2 py-1 rounded-md transition-colors ${
                   language === lang
-                    ? 'bg-green-600 text-white'
+                    ? 'bg-[#0F5132] text-white'
                     : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
                 }`}
               >
@@ -114,7 +114,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
           {/* Theme Toggle */}
           <button
             onClick={onToggleTheme}
-            className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+            className="p-2.5 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
             aria-label="Toggle theme"
           >
             {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
@@ -123,7 +123,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
           {/* Notifications */}
           <button
             onClick={onNotificationClick}
-            className="relative p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+            className="relative p-2.5 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
             aria-label="Notifications"
           >
             <Bell size={18} />
@@ -138,9 +138,9 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
           <div className="relative">
             <button
               onClick={() => setIsProfileOpen(!isProfileOpen)}
-              className="flex items-center gap-3 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+              className="flex items-center gap-3 px-3 py-2 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
             >
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-green-400 to-emerald-600 overflow-hidden flex items-center justify-center">
+              <div className="w-8 h-8 rounded-full bg-[#0F5132] overflow-hidden flex items-center justify-center">
                 {userAvatar ? (
                   <img src={userAvatar} alt={userName} className="w-full h-full object-cover" />
                 ) : (
@@ -165,7 +165,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
 
             {/* Profile Dropdown Menu */}
             {isProfileOpen && (
-              <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-100 dark:border-slate-700 py-2 z-50 animate-fade-in">
+              <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 py-2 z-50 animate-fade-in">
                 <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-700">
                   <p className="text-sm font-semibold text-slate-900 dark:text-white">{userName}</p>
                   <p className="text-xs text-slate-500 dark:text-slate-400">{roleLabels[userRole]}</p>

@@ -62,6 +62,55 @@ const normalizeActiveStatus = (value) =>
       ? false
       : undefined;
 
+const BROADCAST_CHANNELS = new Set(['sms', 'push', 'email', 'all']);
+
+const resolveUserDistrictId = (user) => {
+  if (!user || typeof user !== 'object') return null;
+
+  const metadata = user.metadata && typeof user.metadata === 'object' ? user.metadata : {};
+
+  return (
+    user.district_id
+    || user.districtId
+    || metadata.districtId
+    || metadata.district_id
+    || metadata.coverageDistrictId
+    || metadata.coverage_district_id
+    || null
+  );
+};
+
+const getBroadcastRecipientAddress = (user, channel) => {
+  if (channel === 'sms' && user?.phone_number) return user.phone_number;
+  if (channel === 'email' && user?.email) return user.email;
+  return user?.phone_number || user?.email || `user:${user?._id || user?.id || 'unknown'}`;
+};
+
+const resolveBroadcastChannelForUser = (user, requestedChannel) => {
+  if (requestedChannel === 'push' || requestedChannel === 'all') {
+    return 'push';
+  }
+
+  if (requestedChannel === 'sms') {
+    return user?.phone_number ? 'sms' : 'push';
+  }
+
+  if (requestedChannel === 'email') {
+    return user?.email ? 'email' : 'push';
+  }
+
+  return 'push';
+};
+
+const filterBroadcastRecipientsByDistrict = (users, targetDistrict) => {
+  if (!targetDistrict) return users;
+
+  return (users || []).filter((user) => {
+    const districtId = resolveUserDistrictId(user);
+    return districtId && String(districtId) === String(targetDistrict);
+  });
+};
+
 const getSensorReadingTimestamp = (reading) => {
   if (!reading || typeof reading !== 'object') {
     return undefined;
@@ -854,42 +903,131 @@ router.post('/broadcast',
       targetRole && ['farmer', 'expert', 'admin'].includes(String(targetRole))
         ? String(targetRole)
         : 'all';
+    const normalizedChannel = BROADCAST_CHANNELS.has(String(channel)) ? String(channel) : 'sms';
 
     const activeUsers = await db.users.listActive(
       normalizedTargetRole === 'all' ? undefined : normalizedTargetRole
     );
-    const deliverableUsers = (activeUsers || []).filter((user) => user.phone_number);
+    const targetedUsers = filterBroadcastRecipientsByDistrict(activeUsers || [], targetDistrict);
 
-    // Queue messages (actual sending handled by notification service)
-    const messageDocs = deliverableUsers.map(user => ({
-      user_id: user._id,
-      recipient: user.phone_number,
-      channel,
-      content: user.preferred_language === 'rw' ? (messageKinyarwanda || message) : message,
-      status: 'queued',
-      metadata: {
-        broadcast: true,
-        scope: normalizedTargetRole === 'all' ? 'all_users' : `role:${normalizedTargetRole}`,
-        initiatedBy: req.user._id,
-        requestedTargetRole: normalizedTargetRole,
-        ...(targetDistrict ? { targetDistrict } : {}),
-      }
-    }));
+    const messageDocs = targetedUsers.map((user) => {
+      const resolvedChannel = resolveBroadcastChannelForUser(user, normalizedChannel);
+      const prefersKinyarwanda = (user?.preferred_language || 'en') === 'rw';
+      const userId = user?._id || user?.id;
+
+      return {
+        user_id: userId,
+        recipient: getBroadcastRecipientAddress(user, resolvedChannel),
+        channel: resolvedChannel,
+        content: prefersKinyarwanda ? (messageKinyarwanda || message) : message,
+        content_rw: messageKinyarwanda || undefined,
+        status: resolvedChannel === 'push' ? 'sent' : 'queued',
+        sent_at: resolvedChannel === 'push' ? Date.now() : undefined,
+        metadata: {
+          broadcast: true,
+          scope: normalizedTargetRole === 'all' ? 'all_users' : `role:${normalizedTargetRole}`,
+          initiatedBy: req.user._id,
+          requestedTargetRole: normalizedTargetRole,
+          requestedChannel: normalizedChannel,
+          resolvedChannel,
+          ...(resolvedChannel !== normalizedChannel ? { fallbackChannel: resolvedChannel } : {}),
+          ...(targetDistrict ? { targetDistrict } : {}),
+        }
+      };
+    });
 
     const inserted = await db.messages.createBatch(messageDocs);
-    const queuedCount = inserted?.count ?? inserted?.length ?? 0;
+    const storedCount = inserted?.count ?? inserted?.length ?? messageDocs.length;
+    const queuedCount = messageDocs.filter((doc) => doc.status === 'queued').length;
+    const inAppCount = messageDocs.filter((doc) => doc.channel === 'push').length;
 
     await logAuditEvent(req.user._id, 'BROADCAST_SENT', {
-      recipientCount: activeUsers.length,
-      deliverableRecipients: deliverableUsers.length,
+      recipientCount: targetedUsers.length,
+      storedRecipients: storedCount,
+      queuedRecipients: queuedCount,
+      inAppRecipients: inAppCount,
       targetRole: normalizedTargetRole,
+      channel: normalizedChannel,
       targetDistrict
     });
 
     return successResponse(res, {
       queued: queuedCount,
-      targetedUsers: activeUsers.length
+      targetedUsers: targetedUsers.length,
+      stored: storedCount,
+      inApp: inAppCount,
     }, 'Broadcast queued successfully');
+  })
+);
+
+/**
+ * @route POST /api/v1/admin/notifications/process
+ * @desc Process queued notifications immediately
+ * @access Admin only
+ */
+router.post('/notifications/process',
+  asyncHandler(async (req, res) => {
+    const { processQueuedMessages } = await import('../services/notificationService.js');
+    const results = await processQueuedMessages();
+
+    await logAuditEvent(req.user._id, 'NOTIFICATION_QUEUE_PROCESSED', {
+      processed: results?.processed ?? 0,
+      sent: results?.sent ?? 0,
+      failed: results?.failed ?? 0,
+      retried: results?.retried ?? 0,
+      triggeredBy: 'admin_manual',
+    });
+
+    return successResponse(res, {
+      processed: results?.processed ?? 0,
+      sent: results?.sent ?? 0,
+      failed: results?.failed ?? 0,
+      retried: results?.retried ?? 0,
+    }, 'Notification queue processed successfully');
+  })
+);
+
+/**
+ * @route GET /api/v1/admin/notifications/queue
+ * @desc Inspect queued and failed outbound notifications
+ * @access Admin only
+ */
+router.get('/notifications/queue',
+  asyncHandler(async (req, res) => {
+    const requestedLimit = Number.parseInt(String(req.query.limit || '8'), 10);
+    const requestedMaxRetries = Number.parseInt(String(req.query.maxRetries || '3'), 10);
+    const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 50) : 8;
+    const maxRetries = Number.isFinite(requestedMaxRetries) ? Math.max(requestedMaxRetries, 0) : 3;
+
+    const [queuedRows, failedRows] = await Promise.all([
+      db.messages.getQueued({ limit }),
+      db.messages.getFailed({ limit, maxRetries }),
+    ]);
+
+    const queued = Array.isArray(queuedRows) ? queuedRows : [];
+    const failed = Array.isArray(failedRows) ? failedRows : [];
+
+    const countByChannel = (rows) =>
+      rows.reduce((acc, row) => {
+        const channel = row?.channel || 'unknown';
+        acc[channel] = (acc[channel] || 0) + 1;
+        return acc;
+      }, {});
+
+    return successResponse(res, {
+      queued,
+      failed,
+      counts: {
+        queued: queued.length,
+        failed: failed.length,
+        queuedByChannel: countByChannel(queued),
+        failedByChannel: countByChannel(failed),
+      },
+      filters: {
+        limit,
+        maxRetries,
+      },
+    }, 'Notification queue snapshot retrieved successfully');
   })
 );
 

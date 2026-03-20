@@ -8,6 +8,7 @@ import { useMarkAllMessagesRead, useMarkMessageRead, useMyMessages, useSystemHea
 import { Message, UserRole } from '../types';
 import { Language, translations } from '../utils/translations';
 import { useAlertStore, useAppStore, useAuthStore, useFarmStore } from '../store';
+import { BrandLogo } from './ui/BrandLogo';
 
 const Settings = lazy(() => import('./Settings').then((module) => ({ default: module.Settings })));
 const ConnectedFarmerDashboard = lazy(() =>
@@ -21,22 +22,17 @@ const ConnectedAdminDashboard = lazy(() =>
 );
 
 const DashboardContentSkeleton: React.FC<{ role: UserRole }> = ({ role }) => {
-  const roleTone =
-    role === 'admin'
-      ? 'from-emerald-500/10 to-transparent dark:from-emerald-500/15'
-      : role === 'expert'
-        ? 'from-green-500/10 to-transparent dark:from-green-500/15'
-        : 'from-emerald-500/10 to-transparent dark:from-emerald-500/15';
+  const _role = role; // keep param usage
 
   return (
   <div className="space-y-5 animate-pulse">
-    <div className={`rounded-3xl border border-slate-200/70 dark:border-slate-700/70 bg-gradient-to-br ${roleTone} bg-white/80 dark:bg-slate-900/70 p-4 md:p-6`}>
+    <div className="dash-hero-panel">
       <div className="h-3 w-40 rounded-full bg-slate-200 dark:bg-slate-700 mb-3" />
       <div className="h-8 w-64 rounded-xl bg-slate-200 dark:bg-slate-700 mb-3" />
       <div className="h-3 w-5/6 max-w-xl rounded-full bg-slate-200 dark:bg-slate-700" />
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-5">
         {Array.from({ length: 4 }).map((_, index) => (
-          <div key={`dash-skeleton-kpi-${index}`} className="rounded-2xl border border-slate-200/70 dark:border-slate-700/70 bg-white/80 dark:bg-slate-900/70 p-3">
+          <div key={`dash-skeleton-kpi-${index}`} className="dash-kpi-card">
             <div className="h-2.5 w-16 rounded-full bg-slate-200 dark:bg-slate-700 mb-2" />
             <div className="h-6 w-12 rounded-lg bg-slate-200 dark:bg-slate-700" />
           </div>
@@ -46,7 +42,7 @@ const DashboardContentSkeleton: React.FC<{ role: UserRole }> = ({ role }) => {
 
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       {Array.from({ length: 3 }).map((_, index) => (
-        <div key={`dash-skeleton-panel-${index}`} className="rounded-2xl border border-slate-200/70 dark:border-slate-700/70 bg-white/80 dark:bg-slate-900/70 p-4 md:p-5">
+        <div key={`dash-skeleton-panel-${index}`} className="dash-panel p-5">
           <div className="h-4 w-32 rounded-full bg-slate-200 dark:bg-slate-700 mb-3" />
           <div className="space-y-2">
             <div className="h-3 w-full rounded-full bg-slate-200 dark:bg-slate-700" />
@@ -135,7 +131,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
         ];
       case 'expert':
         return [
-          { id: 'overview', label: t.analysis, icon: Activity },
+          { id: 'overview', label: 'Expert Snapshot', icon: Activity },
+          { id: 'farm-coordination', label: 'Farm Coordination', icon: Sprout },
+          { id: 'field-support', label: 'Field Support', icon: Bug },
+          { id: 'expert-guidance', label: 'Expert Guidance', icon: Send },
+          { id: 'issue-oversight', label: 'Issue Oversight', icon: MessageSquare },
+          { id: 'review-lanes', label: 'Review Lanes', icon: CheckCheck },
           { id: 'district-analytics', label: 'District Analytics', icon: BarChart2 },
           { id: 'ai-advice', label: 'AI Advice', icon: Bot },
           ...common
@@ -207,6 +208,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
     const active = navItems.find((item) => item.id === tabId);
     return active?.label || tabId;
   };
+  const expertTabSubtitleMap: Record<string, string> = {
+    overview: 'Review your live workload and jump into the right expert lane.',
+    'farm-coordination': 'Select a farm, monitor farmer response, and inspect farm history.',
+    'field-support': 'Track field execution and pest-control follow-through for active farms.',
+    'expert-guidance': 'Create direct advice and monitor recent system activity.',
+    'issue-oversight': 'Handle reported farm issues in a focused support workspace.',
+    'review-lanes': 'Process recommendation and pest-review decisions in separate lanes.',
+    'district-analytics': 'Inspect district performance, outbreak signals, and weather conditions.',
+    'ai-advice': 'Use the AI expert system for focused agricultural guidance.',
+    settings: 'Manage your expert profile and dashboard preferences.',
+  };
 
   const displayName =
     [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.email || userRole;
@@ -226,7 +238,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
     userRole === 'farmer'
       ? selectedFarm?.locationName || 'Live farm monitoring and actions'
       : userRole === 'expert'
-        ? 'Live district review and recommendation workflow'
+        ? expertTabSubtitleMap[activeTab] || 'Live district review and recommendation workflow'
         : 'Live platform operations and system management';
   const statusLabel =
     userRole === 'admin'
@@ -326,18 +338,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
         setShowMobileSearch(false);
       }}
       title={compactSidebar ? label : undefined}
-      className={`w-full relative border flex ${compactSidebar ? 'flex-col justify-center px-2 py-3' : 'items-center gap-3 px-6 py-4'} rounded-3xl transition-all duration-300 font-bold text-sm group ${
+      className={`relative w-[calc(100%-20px)] mx-2.5 flex ${compactSidebar ? 'flex-col justify-center px-2 py-3 mt-1.5' : 'items-center gap-3.5 px-4 py-3.5 my-1.5'} rounded-[1.25rem] transition-all duration-200 text-[15px] group ${
         activeTab === id
-          ? navAccentClass
-          : 'border-slate-200/70 dark:border-slate-700/70 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600'
+          ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#1B6B46] dark:text-emerald-300 font-semibold border border-emerald-100 dark:border-emerald-900/50 shadow-[0_14px_24px_-22px_rgba(27,107,70,0.45)]'
+          : 'text-slate-500 hover:bg-[#F5F6F1] dark:hover:bg-slate-800 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 font-medium border border-transparent'
       }`}
     >
-      {!compactSidebar && activeTab === id && (
-        <span className="absolute left-2 top-1/2 -translate-y-1/2 h-6 w-1.5 rounded-full bg-white/80" />
-      )}
-      <Icon size={20} className={activeTab === id ? 'text-white' : `text-slate-400 ${navAccentTextClass}`} />
+      <Icon size={21} strokeWidth={activeTab === id ? 2.35 : 2} className={`${activeTab === id ? 'text-[#1B6B46] dark:text-emerald-300' : 'text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300'}`} />
       {compactSidebar ? (
-        <span className="mt-1 text-[10px] leading-tight text-center font-semibold">
+        <span className="mt-1 text-[10px] leading-tight text-center font-medium">
           {label}
         </span>
       ) : (
@@ -369,13 +378,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
   };
 
   return (
-    <div className="relative flex min-h-screen bg-slate-50 dark:bg-slate-950 font-sans text-slate-800 dark:text-slate-100 animate-fade-in selection:bg-[#0F5132] selection:text-white transition-colors duration-300 overflow-hidden">
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -top-24 -left-24 h-72 w-72 rounded-full bg-emerald-200/35 blur-3xl dark:bg-emerald-700/20" />
-        <div className="absolute top-48 -right-20 h-72 w-72 rounded-full bg-green-200/35 blur-3xl dark:bg-green-700/20" />
-        <div className="absolute inset-x-0 top-0 h-44 bg-gradient-to-b from-white/70 via-white/20 to-transparent dark:from-slate-900/55 dark:via-slate-900/15" />
-        <div className="absolute inset-0 opacity-[0.16] dark:opacity-[0.08] bg-[radial-gradient(circle_at_1px_1px,_rgba(15,81,50,0.45)_1px,_transparent_0)] [background-size:22px_22px]" />
-      </div>
+    <div className="relative min-h-screen bg-[hsl(var(--background))] dark:bg-slate-950 font-sans text-slate-800 dark:text-slate-100 flex w-full">
+
       
       {/* MOBILE OVERLAY */}
       <div 
@@ -388,22 +392,25 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
 
       {/* SIDEBAR */}
       <aside className={`
-        fixed md:sticky top-0 left-0 h-screen ${compactSidebar ? 'w-24' : 'w-72'} bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl flex flex-col z-50 
-        transition-transform duration-300 ease-out border-r border-white/40 dark:border-slate-700/70
+        fixed md:sticky top-0 left-0 h-screen ${compactSidebar ? 'w-24' : 'w-[286px] shrink-0'} bg-transparent flex flex-col z-50
+        transition-transform duration-300 ease-out
         ${isMobileNavOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0 md:shadow-none'}
       `}>
-        <div className={`p-6 ${compactSidebar ? 'px-4' : 'px-8'}`}>
-          <div className={`flex items-center ${compactSidebar ? 'justify-center' : 'gap-2'} cursor-pointer`} onClick={() => setActiveTab('overview')}>
-            <div className="bg-[#0F5132] p-2 rounded-xl">
-                <Sprout size={20} className="text-white fill-current" />
-            </div>
-            {!compactSidebar && <span className="text-xl font-bold tracking-tight text-[#0F5132]">RwandaBeyond</span>}
-          </div>
+        <div className={`m-3 md:m-4 dash-shell-surface flex h-[calc(100vh-1.5rem)] md:h-[calc(100vh-2rem)] flex-col overflow-hidden ${compactSidebar ? 'px-3 py-5' : 'px-4 py-5'}`}>
+        <div className={compactSidebar ? 'px-0 pt-1 pb-4' : 'px-2 pt-1 pb-5'}>
+          <button
+            type="button"
+            onClick={() => setActiveTab('overview')}
+            title="RwandaBeyond"
+            className={`w-full rounded-[1.35rem] transition-colors ${compactSidebar ? 'flex justify-center px-0 py-1.5' : 'px-2 py-2 text-left hover:bg-[#F7F8F3] dark:hover:bg-slate-800/80'}`}
+          >
+            <BrandLogo compact={compactSidebar} variant="sidebar" />
+          </button>
         </div>
 
-        <nav className={`flex-1 ${compactSidebar ? 'px-3' : 'px-6'} space-y-2 overflow-y-auto custom-scrollbar`}>
+        <nav className="flex-1 px-1 space-y-1.5 overflow-y-auto custom-scrollbar">
           {!compactSidebar && (
-            <div className="px-4 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            <div className="px-4 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
              {userRole === 'admin' ? 'Admin Console' : userRole === 'expert' ? 'Expert Tools' : 'Main Menu'}
             </div>
           )}
@@ -413,9 +420,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
         </nav>
 
         {farmerShortcutItems.length > 0 && (
-          <div className={`shrink-0 border-t border-slate-100 dark:border-slate-700 ${compactSidebar ? 'px-3 py-3' : 'px-6 py-4'} space-y-2`}>
+          <div className={`shrink-0 ${compactSidebar ? 'px-1 py-3' : 'px-1 py-4'} space-y-1.5`}>
             {!compactSidebar && (
-              <div className="px-4 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              <div className="px-4 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
                 Insights
               </div>
             )}
@@ -425,204 +432,202 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
           </div>
         )}
 
-        <div className={`p-6 border-t border-slate-50 dark:border-slate-700 space-y-4 ${compactSidebar ? 'px-3' : ''}`}>
-           {/* Mini Profile */}
-           <div className={`bg-[#FAFAF9] dark:bg-slate-700 p-4 rounded-[2rem] flex items-center ${compactSidebar ? 'justify-center' : 'gap-3'}`}>
-              <img src={user?.profileImageUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.email || userRole}`} className="w-10 h-10 rounded-full bg-white border-2 border-white shadow-sm" />
-              {!compactSidebar && (
-                <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{displayName}</p>
-                    <p className="text-[10px] font-bold text-slate-400 truncate uppercase tracking-wider">{getRoleLabel(userRole)}</p>
-                </div>
-              )}
-           </div>
+        {!compactSidebar && (
+          <div className="px-2 pb-3">
+            <div className="rounded-[1.45rem] border border-[hsl(var(--border))] bg-[#F9FAF5] dark:bg-slate-950 px-3.5 py-3.5 flex items-center gap-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)]">
+              <img
+                src={user?.profileImageUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.email || userRole}`}
+                className="w-11 h-11 rounded-full object-cover border border-slate-200 dark:border-slate-700"
+              />
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{displayName}</p>
+                <p className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider truncate">
+                  {getRoleLabel(userRole)}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
+        <div className={`mt-auto border-t border-[hsl(var(--border))] px-2 py-4 ${compactSidebar ? 'px-1' : ''}`}>
            <button 
              onClick={onLogout}
-             className="flex items-center justify-center gap-2 w-full py-3 rounded-full text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all font-bold text-xs uppercase tracking-wider"
+             className={`w-full flex ${compactSidebar ? 'flex-col justify-center px-2 py-3' : 'items-center gap-3 px-4 py-3.5'} rounded-[1.25rem] border border-transparent text-slate-600 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-900/10 hover:border-red-100/80 dark:hover:border-red-900/40 hover:text-red-600 dark:hover:text-red-400 transition-all duration-200 text-[14px] font-medium`}
            >
-             <LogOut size={16} />
-             {!compactSidebar && <span>{t.signOut}</span>}
+             <LogOut size={20} className="text-slate-400" />
+             {compactSidebar ? (
+               <span className="mt-1 text-[10px] leading-tight text-center font-medium">{t.signOut}</span>
+             ) : (
+               <span>{t.signOut}</span>
+             )}
            </button>
+        </div>
         </div>
       </aside>
 
       {/* MAIN CONTENT AREA */}
-      <main className="relative flex-1 min-w-0">
+      <main className="relative flex-1 min-w-0 bg-[hsl(var(--background))] dark:bg-slate-950 flex flex-col h-screen overflow-y-auto">
         
-        {/* HEADER */}
-        <header className="sticky top-0 z-30 px-4 md:px-6 lg:px-10 py-4">
-          <div className="rounded-3xl border border-white/70 dark:border-slate-700/60 bg-white/80 dark:bg-slate-900/70 backdrop-blur-xl shadow-[0_10px_40px_-22px_rgba(15,81,50,0.45)] px-4 md:px-5 py-4 flex justify-between items-center gap-4">
-           <div className="flex items-center gap-4 min-w-0">
-               <button className="md:hidden p-2 -ml-2 text-slate-500" onClick={() => setIsMobileNavOpen(true)}>
+        {/* HEADER TOP BAR */}
+        <header className="sticky top-0 z-30 bg-[hsl(var(--background))]/95 dark:bg-slate-950/95 backdrop-blur-sm">
+          <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between gap-4 px-4 py-4 md:px-6 lg:px-8">
+           {/* Left */}
+           <div className="flex items-center gap-4 flex-1 min-w-0">
+               <button className="md:hidden p-2.5 -ml-2 text-slate-500 hover:bg-white rounded-full border border-[hsl(var(--border))] bg-white/85" onClick={() => setIsMobileNavOpen(true)}>
                    <Menu size={24} />
                </button>
                <button
-                 className="hidden md:flex p-2 text-slate-500 hover:text-[#0F5132] transition-colors"
+                 className="hidden md:flex p-2.5 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors rounded-full border border-[hsl(var(--border))] hover:bg-white dark:hover:bg-slate-800 bg-white/85 dark:bg-slate-900"
                  onClick={toggleSidebar}
                  title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                >
                  {sidebarCollapsed ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />}
                </button>
-               <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h1 className="text-lg md:text-xl font-bold text-slate-900 dark:text-white tracking-tight truncate">{pageTitle}</h1>
-                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full border text-[10px] font-bold uppercase tracking-[0.14em] ${rolePillClass}`}>
-                      {getRoleLabel(userRole)}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 mt-1 flex-wrap">
-                      <div className="w-2 h-2 rounded-full bg-[#0F5132] animate-pulse"></div>
-                      <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">
-                          {`${pageSubtitle} | ${statusLabel}`}
-                      </p>
-                      <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">{todayLabel}</span>
-                  </div>
-               </div>
-           </div>
-
-           <div className="flex items-center gap-3 md:gap-4">
-               <button
-                 className="md:hidden p-3 text-slate-400 hover:text-[#0F5132] transition-colors relative bg-white dark:bg-slate-800 rounded-full shadow-sm border border-slate-100 dark:border-slate-700 hover:shadow-md"
-                 onClick={() => setShowMobileSearch((previous) => !previous)}
-                 title="Search"
-               >
-                  <Search size={20} />
-               </button>
-               {toggleTheme && (
-                   <button 
-                     onClick={toggleTheme}
-                     className="p-3 text-slate-400 hover:text-[#0F5132] transition-colors bg-white dark:bg-slate-800 rounded-full shadow-sm border border-slate-100 dark:border-slate-700 hover:shadow-md"
-                     title="Toggle Dark Mode"
-                   >
-                      {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
-                   </button>
-               )}
-
-               <div className="hidden md:flex items-center gap-2 bg-white dark:bg-slate-800 px-4 py-2.5 rounded-full shadow-sm w-72 focus-within:ring-2 ring-[#0F5132]/20 transition-all border border-slate-100 dark:border-slate-700">
+               
+               {/* Search */}
+               <div className="hidden md:flex items-center gap-3 bg-white dark:bg-slate-900 px-5 py-3 rounded-full w-[430px] focus-within:ring-2 ring-emerald-200/70 dark:ring-emerald-700/40 transition-all border border-[hsl(var(--border))] shadow-[0_16px_28px_-24px_rgba(15,23,42,0.28)]">
                    <Search size={18} className="text-slate-400" />
                    <input
                      id="dashboard-search-input"
                      type="text"
-                     placeholder={t.search}
+                     placeholder="Search task"
                      value={searchQuery}
                      onChange={(event) => setSearchQuery(event.target.value)}
-                     className="bg-transparent text-sm w-full outline-none text-slate-600 dark:text-slate-300 placeholder:text-slate-400 font-medium"
+                     className="bg-transparent text-sm w-full outline-none text-slate-700 dark:text-slate-300 placeholder:text-slate-400 font-medium"
                    />
                    {searchQuery && (
                      <button
                        onClick={() => setSearchQuery('')}
                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                       title="Clear search"
                      >
                        <X size={14} />
                      </button>
                    )}
+                   <div className="hidden lg:flex items-center justify-center px-2 py-0.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 text-[10px] font-bold">
+                     Ctrl+F
+                   </div>
                </div>
+           </div>
+
+           {/* Right Actions */}
+           <div className="flex items-center gap-3 shrink-0">
+               <button
+                 className="md:hidden p-2.5 text-slate-600 hover:bg-white rounded-full transition-colors border border-[hsl(var(--border))] bg-white/85"
+                 onClick={() => setShowMobileSearch((previous) => !previous)}
+               >
+                  <Search size={20} />
+               </button>
+               
+               {toggleTheme && (
+                   <button 
+                     onClick={toggleTheme}
+                     className="p-2.5 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-full transition-colors bg-white dark:bg-slate-900 shadow-[0_14px_26px_-22px_rgba(15,23,42,0.35)] border border-[hsl(var(--border))]"
+                   >
+                      {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+                   </button>
+               )}
 
                <button
                   onClick={() => setShowAlerts((previous) => !previous)}
-                  className="p-3 text-slate-400 hover:text-[#0F5132] transition-colors relative bg-white dark:bg-slate-800 rounded-full shadow-sm border border-slate-100 dark:border-slate-700 hover:shadow-md"
+                  className="p-2.5 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-full transition-colors relative bg-white dark:bg-slate-900 shadow-[0_14px_26px_-22px_rgba(15,23,42,0.35)] border border-[hsl(var(--border))]"
                >
                   <Bell size={20} />
                   {totalUnreadCount > 0 && (
-                    <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center border border-white dark:border-slate-800">
-                      {totalUnreadCount > 9 ? '9+' : totalUnreadCount}
-                    </span>
+                     <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white dark:border-slate-900"></span>
                   )}
                </button>
+               
+               {/* Minimal visible profile for large screens is optional, but reference image has it right top */}
+               <div className="hidden lg:flex items-center gap-3 ml-2 cursor-pointer hover:opacity-90 transition-opacity pl-2 pr-3 py-2 rounded-full border border-[hsl(var(--border))] bg-white dark:bg-slate-900 shadow-[0_14px_26px_-22px_rgba(15,23,42,0.3)]" onClick={() => setActiveTab('settings')}>
+                  <img src={user?.profileImageUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.email || userRole}`} className="w-10 h-10 rounded-full object-cover border border-slate-200 dark:border-slate-700 bg-slate-100" />
+                  <div className="flex flex-col text-left">
+                      <span className="text-sm font-bold text-slate-900 dark:text-white leading-tight">{displayName}</span>
+                      <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 leading-tight">{user?.email || 'User'}</span>
+                  </div>
+               </div>
            </div>
-           </div>
-          </header>
+          </div>
+        </header>
 
         {showMobileSearch && (
-          <div className="md:hidden px-4 pt-3">
-            <div className="flex items-center gap-2 bg-white dark:bg-slate-800 px-4 py-2.5 rounded-full shadow-sm border border-slate-100 dark:border-slate-700">
-              <Search size={16} className="text-slate-400" />
-              <input
-                id="dashboard-search-input-mobile"
-                type="text"
-                placeholder={t.search}
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                className="bg-transparent text-sm w-full outline-none text-slate-600 dark:text-slate-300 placeholder:text-slate-400 font-medium"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                  title="Clear search"
-                >
-                  <X size={14} />
-                </button>
-              )}
+          <div className="md:hidden">
+            <div className="mx-auto w-full max-w-[1600px] px-4 pt-3">
+              <div className="flex items-center gap-2 bg-white dark:bg-slate-800 px-4 py-3 rounded-[1.4rem] shadow-[0_14px_26px_-22px_rgba(15,23,42,0.25)] border border-[hsl(var(--border))]">
+                <Search size={16} className="text-slate-400" />
+                <input
+                  id="dashboard-search-input-mobile"
+                  type="text"
+                  placeholder={t.search}
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  className="bg-transparent text-sm w-full outline-none text-slate-600 dark:text-slate-300 placeholder:text-slate-400 font-medium"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                    title="Clear search"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}
 
-        <div className="px-4 md:px-6 lg:px-10 mt-2">
-          <div className={`rounded-3xl border border-white/70 dark:border-slate-700/60 bg-gradient-to-r ${roleTheme.surface} bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl shadow-[0_10px_36px_-24px_rgba(15,81,50,0.55)] px-4 md:px-5 py-4`}>
-            <div className="flex flex-col gap-4">
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className={`h-10 w-10 shrink-0 rounded-2xl border border-white/70 dark:border-slate-700/60 flex items-center justify-center ${roleTheme.chip}`}>
-                    <ActiveTabIcon size={18} />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">Current Workspace</p>
-                    <p className="font-extrabold text-slate-900 dark:text-white truncate">{getTabLabel(activeTab)}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-[10px] font-bold uppercase tracking-[0.16em] ${roleTheme.chip}`}>
-                    <span className={`inline-block w-2 h-2 rounded-full ${roleTheme.dot}`}></span>
-                    {userRole}
-                  </span>
-                  {searchQuery && (
-                    <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-300 bg-white/80 dark:bg-slate-900/60">
-                      <Search size={12} />
-                      Filtered
-                    </span>
-                  )}
-                  <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-300 bg-white/80 dark:bg-slate-900/60">
-                    <Bell size={12} />
-                    {totalUnreadCount} unread
-                  </span>
-                </div>
-              </div>
+        {/* PAGE TITLE & TABS */}
+        <div className="px-4 md:px-6 lg:px-8 pt-5 pb-3 max-w-[1600px] mx-auto w-full">
+          <div className="dash-hero-panel">
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+             <div>
+                 <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-[11px] font-semibold ${rolePillClass}`}>
+                   <span className={`h-2 w-2 rounded-full ${roleTheme.dot}`}></span>
+                   {getRoleLabel(userRole)}
+                 </div>
+                 <h1 className="text-[2.15rem] md:text-[2.7rem] font-extrabold text-slate-900 dark:text-white tracking-tight leading-[1.05] mt-4">{pageTitle}</h1>
+                <p className="text-slate-500 dark:text-slate-400 text-[15px] mt-2.5 max-w-2xl">{pageSubtitle}</p>
+             </div>
+             
+             <div className="flex items-center gap-3">
+                 <span className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-[#F6F7F1] dark:bg-slate-800 border border-[hsl(var(--border))] text-xs font-semibold text-slate-700 dark:text-slate-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]">
+                   <span className="w-2 h-2 rounded-full bg-[#1B6B46] animate-pulse"></span>
+                   {statusLabel}
+                 </span>
+             </div>
+          </div>
 
-              <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
-                {navItems.map((item) => {
-                  const TabIcon = item.icon;
-                  const isActive = item.id === activeTab;
-                  return (
-                    <button
-                      key={`quick-tab-${item.id}`}
-                      onClick={() => {
-                        setActiveTab(item.id);
-                        setIsMobileNavOpen(false);
-                        setShowMobileSearch(false);
-                      }}
-                      className={`shrink-0 inline-flex items-center gap-2 px-3.5 py-2 rounded-2xl border text-xs font-bold transition-all duration-200 ${
-                        isActive
-                          ? quickActiveTabClass
-                          : 'bg-white/80 dark:bg-slate-900/60 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-[#0F5132]/40 hover:text-[#0F5132]'
-                      }`}
-                    >
-                      <TabIcon size={14} />
-                      <span>{item.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+          <div className="dash-tab-strip pt-7">
+            {navItems.map((item) => {
+              const TabIcon = item.icon;
+              const isActive = item.id === activeTab;
+              return (
+                <button
+                  key={`quick-tab-${item.id}`}
+                  onClick={() => {
+                    setActiveTab(item.id);
+                    setIsMobileNavOpen(false);
+                    setShowMobileSearch(false);
+                  }}
+                  className={`shrink-0 inline-flex items-center gap-2 py-2.5 px-4 rounded-full border text-[14px] font-medium transition-all ${
+                    isActive
+                      ? 'bg-[#1B6B46] text-white border-[#1B6B46] shadow-[0_18px_28px_-18px_rgba(27,107,70,0.62)]'
+                      : 'bg-white text-slate-500 border-[hsl(var(--border))] hover:text-slate-800 hover:border-slate-300 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <TabIcon size={16} />
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
           </div>
         </div>
 
         {showAlerts && (
-          <div className="px-4 md:px-8 lg:px-10 max-w-7xl mx-auto pt-4">
-            <div className="rounded-2xl border border-slate-200/70 dark:border-slate-700/70 bg-white dark:bg-slate-800 shadow-sm">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200/70 dark:border-slate-700/70">
+          <div className="px-4 md:px-6 lg:px-8 max-w-[1600px] mx-auto w-full pt-4">
+            <div className="dash-panel">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800">
                 <div>
                   <p className="font-semibold text-sm">Notifications & Alerts</p>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -756,7 +761,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
         )}
 
         {/* DYNAMIC PAGE CONTENT */}
-        <div className="p-4 md:p-8 lg:p-10 max-w-7xl mx-auto relative">
+        <div className="px-4 md:px-6 lg:px-8 pb-8 pt-5 max-w-[1600px] mx-auto w-full relative">
           <Suspense
             fallback={
               <DashboardContentSkeleton role={userRole} />
@@ -774,4 +779,3 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
     </div>
   );
 };
-

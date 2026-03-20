@@ -41,6 +41,8 @@ import {
   useSystemMetrics,
   useAlertStatistics,
   useSendBroadcast,
+  useProcessNotificationQueue,
+  useNotificationQueueSnapshot,
   useGenerateAdminReport,
   usePestOutbreakMap,
   useSystemAnalytics,
@@ -104,11 +106,19 @@ const ADMIN_TABS: AdminTab[] = [
   'ussd',
 ];
 
-const workspaceGridClass = 'grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-5';
-const workspaceMainClass = 'lg:col-span-8';
-const workspaceMainStackClass = 'lg:col-span-8 space-y-4';
-const workspaceMainWideStackClass = 'lg:col-span-8 space-y-6';
-const workspaceRailClass = 'lg:col-span-4 space-y-4 lg:sticky lg:top-24 self-start';
+const workspaceGridClass = 'dash-workspace-section dash-workspace-grid-lg';
+const workspaceMainClass = 'dash-workspace-main-lg';
+const workspaceMainStackClass = 'dash-workspace-main-stack-lg';
+const workspaceMainWideStackClass = 'dash-workspace-main-wide-stack-lg';
+const workspaceRailClass = 'dash-workspace-rail-lg';
+const sectionShellClass = 'dash-workspace-section';
+const centeredMetricTileClass = 'dash-metric-tile text-center';
+const softBlockClass = 'dash-soft-block';
+const outlineBlockClass = 'dash-outline-block';
+const filterBarClass = 'dash-filter-bar';
+const roundedSelectClass = 'dash-control';
+const compactSelectClass = 'dash-control-compact';
+const textAreaClass = 'dash-textarea';
 
 const normalizeTab = (value?: string): AdminTab =>
   ADMIN_TABS.includes((value || 'overview') as AdminTab) ? (value as AdminTab) : 'overview';
@@ -119,6 +129,9 @@ const toDateString = (value?: string | number) => {
   if (Number.isNaN(parsed.getTime())) return 'N/A';
   return parsed.toLocaleString();
 };
+
+const truncateText = (value: string, max = 96) =>
+  value.length > max ? `${value.slice(0, max - 1)}...` : value;
 
 const getUserDistrictId = (user: Partial<User> | any): string | undefined =>
   user?.districtId
@@ -185,6 +198,47 @@ const confirmAction = (message: string): boolean => {
   return window.confirm(message);
 };
 
+const matchesSearchTerm = (term: string, values: Array<unknown>) => {
+  if (!term) return true;
+  return values
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+    .includes(term);
+};
+
+type SearchScopeItem = {
+  label: string;
+  value: number;
+  total?: number;
+};
+
+function SearchScopePills({
+  items,
+  accent = 'sky',
+}: {
+  items: SearchScopeItem[];
+  accent?: 'sky' | 'green';
+}) {
+  if (!items.length) return null;
+
+  const accentClass =
+    accent === 'green'
+      ? 'bg-green-100 text-green-800 dark:bg-green-900/35 dark:text-green-300'
+      : 'bg-sky-100 text-sky-800 dark:bg-sky-900/35 dark:text-sky-300';
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {items.map((item) => (
+        <span key={item.label} className={`dash-pill ${accentClass}`}>
+          {item.label}: {item.value}
+          {typeof item.total === 'number' ? `/${item.total}` : ''}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = '' }: ConnectedAdminDashboardProps) {
   const tab = normalizeTab(activeTab);
 
@@ -218,10 +272,17 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
   const [broadcastMessageRw, setBroadcastMessageRw] = useState('');
   const [broadcastRole, setBroadcastRole] = useState<'all' | UserRole>('all');
   const [broadcastChannel, setBroadcastChannel] = useState<'sms' | 'push' | 'email' | 'all'>('sms');
+  const [notificationQueueResult, setNotificationQueueResult] = useState<{
+    processed: number;
+    sent: number;
+    failed: number;
+    retried: number;
+  } | null>(null);
   const [bulkGenerateDistrict, setBulkGenerateDistrict] = useState('');
   const [bulkGenerateType, setBulkGenerateType] = useState<'general' | 'irrigation' | 'fertilization' | 'pest_alert' | 'weather_alert'>('general');
   const [tabExportFormat, setTabExportFormat] = useState<'csv' | 'json'>('csv');
   const normalizedExternalSearch = searchQuery.trim();
+  const normalizedDashboardSearch = normalizedExternalSearch.toLowerCase();
   const effectiveSearch = normalizedExternalSearch || search;
 
   useEffect(() => {
@@ -302,6 +363,8 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
   const generateDeviceTokenMutation = useGenerateDeviceToken();
   const revokeDeviceTokenMutation = useRevokeDeviceToken();
   const sendBroadcastMutation = useSendBroadcast();
+  const processNotificationQueueMutation = useProcessNotificationQueue();
+  const notificationQueueQuery = useNotificationQueueSnapshot({ limit: 8, maxRetries: 3 }, tab === 'broadcast');
   const generateReportMutation = useGenerateAdminReport();
   const bulkGenerateRecommendationsMutation = useBulkGenerateRecommendations();
 
@@ -314,6 +377,74 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
   const activeRecommendations = activeRecommendationsQuery.data || [];
   const globalRecommendations = globalRecommendationsQuery.data?.data || [];
   const globalPestDetections = globalPestDetectionsQuery.data?.data || [];
+  const filteredOverviewUsers = useMemo(() => {
+    const source = recentUsersQuery.data?.data || [];
+    if (!normalizedDashboardSearch) return source;
+    return source.filter((user: any) =>
+      matchesSearchTerm(normalizedDashboardSearch, [
+        getUserName(user),
+        user.email,
+        user.phoneNumber,
+        user.phone,
+        user.role,
+      ])
+    );
+  }, [normalizedDashboardSearch, recentUsersQuery.data?.data]);
+  const filteredAdminUserDirectory = useMemo(() => {
+    if (!normalizedDashboardSearch) return adminUsersRoute;
+    return adminUsersRoute.filter((user: any) =>
+      matchesSearchTerm(normalizedDashboardSearch, [
+        getUserName(user),
+        user.email,
+        user.phoneNumber,
+        user.phone,
+        user.role,
+      ])
+    );
+  }, [adminUsersRoute, normalizedDashboardSearch]);
+  const filteredGlobalRecommendations = useMemo(() => {
+    if (!normalizedDashboardSearch) return globalRecommendations;
+    return globalRecommendations.filter((recommendation: any) =>
+      matchesSearchTerm(normalizedDashboardSearch, [
+        recommendation.title,
+        recommendation.description,
+        recommendation.actionRequired,
+        recommendation.type,
+        recommendation.priority,
+        recommendation.status,
+        recommendation.farm?.name,
+        recommendation.farmId,
+      ])
+    );
+  }, [globalRecommendations, normalizedDashboardSearch]);
+  const filteredActiveRecommendations = useMemo(() => {
+    if (!normalizedDashboardSearch) return activeRecommendations;
+    return activeRecommendations.filter((recommendation: any) =>
+      matchesSearchTerm(normalizedDashboardSearch, [
+        recommendation.title,
+        recommendation.description,
+        recommendation.actionRequired,
+        recommendation.type,
+        recommendation.priority,
+        recommendation.status,
+        recommendation.farm?.name,
+        recommendation.farmId,
+      ])
+    );
+  }, [activeRecommendations, normalizedDashboardSearch]);
+  const filteredGlobalPestDetections = useMemo(() => {
+    if (!normalizedDashboardSearch) return globalPestDetections;
+    return globalPestDetections.filter((detection: any) =>
+      matchesSearchTerm(normalizedDashboardSearch, [
+        detection.pestType,
+        detection.severity,
+        detection.status,
+        detection.farm?.name,
+        detection.farmId,
+        detection.locationDescription,
+      ])
+    );
+  }, [globalPestDetections, normalizedDashboardSearch]);
   const users = usersQuery.data?.data || [];
   const selectedUser = selectedUserQuery.data as any;
   const adminFarms = farmsQuery.data?.data || [];
@@ -323,6 +454,35 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
   const sensorHealth = sensorHealthQuery.data as any;
   const health = healthQuery.data as any;
   const metrics = metricsQuery.data as any;
+  const notificationQueueSnapshot = notificationQueueQuery.data;
+  const filteredQueuedMessages = useMemo(() => {
+    const queued = notificationQueueSnapshot?.queued || [];
+    if (!normalizedDashboardSearch) return queued;
+    return queued.filter((message: any) =>
+      matchesSearchTerm(normalizedDashboardSearch, [
+        message.channel,
+        message.recipient,
+        message.subject,
+        message.content,
+        message.failedReason,
+        message.status,
+      ])
+    );
+  }, [normalizedDashboardSearch, notificationQueueSnapshot?.queued]);
+  const filteredFailedMessages = useMemo(() => {
+    const failed = notificationQueueSnapshot?.failed || [];
+    if (!normalizedDashboardSearch) return failed;
+    return failed.filter((message: any) =>
+      matchesSearchTerm(normalizedDashboardSearch, [
+        message.channel,
+        message.recipient,
+        message.subject,
+        message.content,
+        message.failedReason,
+        message.status,
+      ])
+    );
+  }, [normalizedDashboardSearch, notificationQueueSnapshot?.failed]);
 
   useEffect(() => {
     if (tab !== 'users') return;
@@ -366,6 +526,103 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
       return haystack.includes(term);
     });
   }, [effectiveSearch, flattenedConfigs]);
+  const adminSearchScopeItems = useMemo<SearchScopeItem[]>(() => {
+    if (!effectiveSearch.trim()) return [];
+
+    if (tab === 'overview') {
+      return [
+        {
+          label: 'Users',
+          value: filteredOverviewUsers.length,
+          total: recentUsersQuery.data?.data?.length || 0,
+        },
+        {
+          label: 'Directory',
+          value: filteredAdminUserDirectory.length,
+          total: adminUsersRoute.length,
+        },
+        {
+          label: 'Recommendations',
+          value: filteredGlobalRecommendations.length,
+          total: globalRecommendations.length,
+        },
+        {
+          label: 'Active',
+          value: filteredActiveRecommendations.length,
+          total: activeRecommendations.length,
+        },
+        {
+          label: 'Detections',
+          value: filteredGlobalPestDetections.length,
+          total: globalPestDetections.length,
+        },
+      ];
+    }
+
+    if (tab === 'users') {
+      return [{ label: 'Users', value: users.length, total: usersQuery.data?.pagination?.total || users.length }];
+    }
+
+    if (tab === 'farms') {
+      return [{ label: 'Farms', value: adminFarms.length, total: farmsQuery.data?.pagination?.total || adminFarms.length }];
+    }
+
+    if (tab === 'audit') {
+      return [{ label: 'Audit Logs', value: auditLogs.length, total: auditLogsQuery.data?.pagination?.total || auditLogs.length }];
+    }
+
+    if (tab === 'devices') {
+      return [{ label: 'Devices', value: devices.length, total: devicesQuery.data?.pagination?.total || devices.length }];
+    }
+
+    if (tab === 'config') {
+      return [{ label: 'Configs', value: filteredConfigs.length, total: flattenedConfigs.length }];
+    }
+
+    if (tab === 'broadcast') {
+      return [
+        {
+          label: 'Queued',
+          value: filteredQueuedMessages.length,
+          total: notificationQueueSnapshot?.queued?.length || 0,
+        },
+        {
+          label: 'Failed',
+          value: filteredFailedMessages.length,
+          total: notificationQueueSnapshot?.failed?.length || 0,
+        },
+      ];
+    }
+
+    return [];
+  }, [
+    activeRecommendations.length,
+    adminFarms.length,
+    adminUsersRoute.length,
+    auditLogs.length,
+    auditLogsQuery.data?.pagination?.total,
+    devices.length,
+    devicesQuery.data?.pagination?.total,
+    effectiveSearch,
+    farmsQuery.data?.pagination?.total,
+    filteredActiveRecommendations.length,
+    filteredAdminUserDirectory.length,
+    filteredConfigs.length,
+    filteredFailedMessages.length,
+    filteredGlobalPestDetections.length,
+    filteredGlobalRecommendations.length,
+    filteredOverviewUsers.length,
+    filteredQueuedMessages.length,
+    flattenedConfigs.length,
+    globalPestDetections.length,
+    globalRecommendations.length,
+    notificationQueueSnapshot?.failed?.length,
+    notificationQueueSnapshot?.queued?.length,
+    recentUsersQuery.data?.data,
+    tab,
+    users.length,
+    usersQuery.data?.pagination?.total,
+  ]);
 
   const overviewCards = {
     totalUsers: overview?.users?.total || recentUsersQuery.data?.pagination?.total || 0,
@@ -447,13 +704,15 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5);
 
+    const latestAudit = auditLogs[0] as (typeof auditLogs[number] & { created_at?: string }) | undefined;
+
     return {
       total: auditLogs.length,
       uniqueEntities: Object.keys(byEntity).length,
       uniqueActions: Object.keys(byAction).length,
       topEntities,
       topActions,
-      latestTimestamp: auditLogs[0] ? toDateString(auditLogs[0].createdAt || auditLogs[0].created_at) : 'N/A',
+      latestTimestamp: latestAudit ? toDateString(latestAudit.createdAt || latestAudit.created_at) : 'N/A',
     };
   }, [auditLogs]);
 
@@ -657,6 +916,15 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
     }
   };
 
+  const handleProcessNotificationQueue = async () => {
+    try {
+      const response = await processNotificationQueueMutation.mutateAsync();
+      setNotificationQueueResult(response.data);
+    } catch {
+      // Error notification is handled in the mutation hook.
+    }
+  };
+
   const handleExportRecentActivity = async (format: 'csv' | 'json') => {
     try {
       const blob = await exportRecentActivity.mutateAsync({
@@ -715,6 +983,10 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
       healthQuery.refetch();
       metricsQuery.refetch();
       analyticsQuery.refetch();
+      return;
+    }
+    if (tab === 'broadcast') {
+      notificationQueueQuery.refetch();
     }
   };
 
@@ -960,83 +1232,112 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
     );
   }
 
-  const adminQuickStats: Array<{ label: string; value: string | number }> = [
-    { label: 'Total Users', value: overviewCards.totalUsers },
-    { label: 'Total Farms', value: overviewCards.totalFarms },
-    { label: 'Total Sensors', value: overviewCards.totalSensors },
-    { label: 'Pending Alerts', value: overviewCards.pendingAlerts },
+  const adminQuickStats: Array<{ label: string; value: string | number; badge: string; helper: string }> = [
+    {
+      label: 'Total Users',
+      value: overviewCards.totalUsers,
+      badge: `${userStatistics?.activeUsers ?? userSegmentStats.active} active`,
+      helper: `${recentUsersQuery.data?.pagination?.total || overviewCards.totalUsers} user records loaded`,
+    },
+    {
+      label: 'Total Farms',
+      value: overviewCards.totalFarms,
+      badge: `${farmStatistics?.activeFarms ?? farmSegmentStats.active} active`,
+      helper: `${typeof (farmStatistics?.totalAreaHectares ?? farmSegmentStats.totalAreaHectares) === 'number' ? Number(farmStatistics?.totalAreaHectares ?? farmSegmentStats.totalAreaHectares).toFixed(1) : '0.0'} ha recorded`,
+    },
+    {
+      label: 'Total Sensors',
+      value: overviewCards.totalSensors,
+      badge: `${analytics?.metrics?.sensorReadings ?? 0} reads`,
+      helper: 'Sensor activity in the current analytics window',
+    },
+    {
+      label: 'Pending Alerts',
+      value: overviewCards.pendingAlerts,
+      badge: `${activeRecommendations.length} active`,
+      helper: `${globalRecommendations.length} recent recommendations loaded`,
+    },
   ];
   const sectionTitleClass = 'text-base md:text-lg font-extrabold tracking-tight';
   const sectionDescriptionClass = 'text-xs md:text-sm text-muted-foreground/90';
 
   return (
-    <div className="mx-auto w-full max-w-[1600px] space-y-5 md:space-y-6 animate-fade-in">
-      <div className="rounded-3xl border border-sky-200/55 dark:border-sky-900/45 bg-gradient-to-br from-sky-500/12 via-white to-white dark:from-sky-500/18 dark:via-slate-900 dark:to-slate-900 p-4 md:p-6 shadow-[0_20px_45px_-32px_rgba(2,132,199,0.62)] animate-fade-in [animation-delay:40ms] [animation-fill-mode:both]">
+    <div className="dashboard-page dash-section-stack mx-auto w-full max-w-[1600px] px-1 animate-fade-in">
+      <div className="dash-hero-panel animate-fade-in [animation-delay:40ms] [animation-fill-mode:both]">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-sky-700/85 dark:text-sky-300/85">Administration Bridge</p>
-            <h2 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white">System Operations Hub</h2>
-            <p className="text-sm text-slate-600 dark:text-slate-300">Manage users, farms, devices, monitoring, and platform-level controls from one console.</p>
+            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-sky-700/85 dark:text-sky-300/85">Administration Bridge</p>
+            <h2 className="text-[2rem] md:text-[2.55rem] font-extrabold tracking-tight text-slate-900 dark:text-white">System Operations Hub</h2>
+            <p className="mt-2 text-[15px] text-slate-500 dark:text-slate-400">Manage users, farms, devices, monitoring, and platform-level controls from one console.</p>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
             <select
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+              className={roundedSelectClass}
               value={tabExportFormat}
               onChange={(event) => setTabExportFormat(event.target.value as 'csv' | 'json')}
             >
               <option value="csv">CSV</option>
               <option value="json">JSON</option>
             </select>
-            <Button variant="outline" size="sm" className="h-9 rounded-xl" onClick={handleExportCurrentTab}>
+            <Button variant="outline" size="sm" className="h-10 rounded-full px-4" onClick={handleExportCurrentTab}>
               Export Tab
             </Button>
-            <Button variant="outline" size="sm" className="h-9 rounded-xl" onClick={handleRefreshTab}>
+            <Button variant="outline" size="sm" className="h-10 rounded-full px-4" onClick={handleRefreshTab}>
               <RefreshCw size={14} className="mr-2" />
               Refresh Tab
             </Button>
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
           {adminQuickStats.map((stat, index) => (
             <div
               key={stat.label}
-              className="rounded-2xl border border-sky-100/80 dark:border-sky-900/45 bg-white/90 dark:bg-slate-900/80 px-3 py-2.5 shadow-[0_14px_30px_-26px_rgba(2,132,199,0.6)] animate-fade-in [animation-fill-mode:both]"
+              className={`${index === 0 ? 'dash-kpi-card dash-kpi-card-accent' : 'dash-kpi-card'} animate-fade-in [animation-fill-mode:both]`}
               style={{ animationDelay: `${80 + index * 50}ms` }}
             >
-              <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{stat.label}</p>
-              <p className="mt-1 text-xl font-black text-slate-900 dark:text-white">{stat.value}</p>
+              <p className={`text-[11px] font-bold uppercase tracking-[0.14em] ${index === 0 ? 'text-white/85' : 'text-slate-500 dark:text-slate-400'}`}>{stat.label}</p>
+              <p className={`mt-3 text-[2.2rem] font-extrabold tracking-tight ${index === 0 ? 'text-white' : 'text-slate-900 dark:text-white'}`}>{stat.value}</p>
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <span className={`inline-flex items-center rounded-full px-2 py-1 text-[10px] font-bold ${index === 0 ? 'bg-[#2D7A54] text-white' : 'bg-sky-50 text-sky-700 dark:bg-sky-900/25 dark:text-sky-300'}`}>
+                  {stat.badge}
+                </span>
+                <span className={`text-[11px] font-medium ${index === 0 ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
+                  {stat.helper}
+                </span>
+              </div>
             </div>
           ))}
         </div>
       </div>
 
-      <div className="rounded-2xl border border-sky-100/80 dark:border-sky-900/45 bg-white/85 dark:bg-slate-900/75 px-3 md:px-4 py-3 animate-fade-in [animation-delay:95ms] [animation-fill-mode:both]">
+      <div className="dash-filter-bar animate-fade-in [animation-delay:95ms] [animation-fill-mode:both]">
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div className="flex flex-wrap items-center gap-2 md:gap-3">
-            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.14em] bg-sky-100 text-sky-800 dark:bg-sky-900/35 dark:text-sky-300">
+            <span className="dash-pill bg-sky-100 text-sky-800 dark:bg-sky-900/35 dark:text-sky-300">
               Active Tab: {tab}
             </span>
-            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.14em] bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+            <span className="dash-pill bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
               User Role Filter: {roleFilter}
             </span>
-            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.14em] bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+            <span className="dash-pill bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
               User Status Filter: {statusFilter}
             </span>
-            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.14em] bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+            <span className="dash-pill bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
               Farm Status: {farmStatusFilter}
             </span>
             {effectiveSearch && (
-              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.14em] bg-sky-100 text-sky-800 dark:bg-sky-900/35 dark:text-sky-300">
+              <span className="dash-pill bg-sky-100 text-sky-800 dark:bg-sky-900/35 dark:text-sky-300">
                 Search: "{effectiveSearch}"
               </span>
             )}
+            {effectiveSearch && <SearchScopePills items={adminSearchScopeItems} accent="sky" />}
           </div>
           <Button
             size="sm"
             variant="outline"
-            className="h-8 rounded-lg self-start md:self-auto"
+            className="h-9 rounded-full self-start md:self-auto"
             onClick={() => {
               setSearch('');
               setRoleFilter('all');
@@ -1051,49 +1352,55 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
       </div>
 
       {tab === 'overview' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 lg:gap-4 animate-fade-in [animation-delay:115ms] [animation-fill-mode:both]">
+        <div className={`${workspaceGridClass} animate-fade-in [animation-delay:115ms] [animation-fill-mode:both]`}>
           <div className={workspaceMainClass}>
-          <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
-          <Card className="h-full border-sky-100/80 dark:border-sky-900/45 bg-gradient-to-br from-sky-50/85 to-white dark:from-sky-950/20 dark:to-slate-900 shadow-[0_18px_34px_-30px_rgba(2,132,199,0.85)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_42px_-28px_rgba(2,132,199,0.95)] animate-fade-in [animation-delay:130ms] [animation-fill-mode:both]">
+          <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
+          <Card className="dash-mini-action-card h-full animate-fade-in [animation-delay:130ms] [animation-fill-mode:both]">
             <CardContent className="p-4 lg:p-5 h-full flex flex-col">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-sky-700 dark:text-sky-300">Control Sync</p>
+                  <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-300">Control Sync</p>
                   <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Refresh overview routes and verify current operational totals.</p>
                 </div>
-                <RefreshCw size={16} className="text-sky-700 dark:text-sky-300" />
+                <div className="dash-icon-box">
+                  <RefreshCw size={16} className="text-emerald-700 dark:text-emerald-300" />
+                </div>
               </div>
               <p className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Ops lane - Reconcile counters</p>
-              <Button className="mt-auto h-9 w-full rounded-xl focus-visible:ring-2 focus-visible:ring-sky-500/70 focus-visible:ring-offset-2" onClick={handleRefreshTab}>
+              <Button className="mt-auto h-10 w-full rounded-full focus-visible:ring-2 focus-visible:ring-emerald-500/70 focus-visible:ring-offset-2" onClick={handleRefreshTab}>
                 Sync Overview
               </Button>
             </CardContent>
           </Card>
 
-          <Card className="h-full border-sky-100/80 dark:border-sky-900/45 bg-gradient-to-br from-emerald-50/85 to-white dark:from-emerald-950/20 dark:to-slate-900 shadow-[0_18px_34px_-30px_rgba(5,150,105,0.8)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_42px_-28px_rgba(5,150,105,0.95)] animate-fade-in [animation-delay:190ms] [animation-fill-mode:both]">
+          <Card className="dash-mini-action-card h-full animate-fade-in [animation-delay:190ms] [animation-fill-mode:both]">
             <CardContent className="p-4 lg:p-5 h-full flex flex-col">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-300">Reporting Pulse</p>
                   <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Export the active tab instantly for ops and stakeholder handoff.</p>
                 </div>
-                <FileSpreadsheet size={16} className="text-emerald-700 dark:text-emerald-300" />
+                <div className="dash-icon-box">
+                  <FileSpreadsheet size={16} className="text-emerald-700 dark:text-emerald-300" />
+                </div>
               </div>
               <p className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Reporting lane - Export snapshot</p>
-              <Button variant="outline" className="mt-auto h-9 w-full rounded-xl focus-visible:ring-2 focus-visible:ring-emerald-500/70 focus-visible:ring-offset-2" onClick={handleExportCurrentTab}>
+              <Button variant="outline" className="mt-auto h-10 w-full rounded-full focus-visible:ring-2 focus-visible:ring-emerald-500/70 focus-visible:ring-offset-2" onClick={handleExportCurrentTab}>
                 Export Current Tab
               </Button>
             </CardContent>
           </Card>
 
-          <Card className="h-full border-sky-100/80 dark:border-sky-900/45 bg-gradient-to-br from-violet-50/85 to-white dark:from-violet-950/20 dark:to-slate-900 shadow-[0_18px_34px_-30px_rgba(124,58,237,0.8)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_42px_-28px_rgba(124,58,237,0.95)] animate-fade-in [animation-delay:250ms] [animation-fill-mode:both]">
+          <Card className="dash-mini-action-card h-full animate-fade-in [animation-delay:250ms] [animation-fill-mode:both]">
             <CardContent className="p-4 lg:p-5 h-full flex flex-col">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-violet-700 dark:text-violet-300">Governance Focus</p>
+                  <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-700 dark:text-slate-200">Governance Focus</p>
                   <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Track unresolved recommendations and keep intervention backlog controlled.</p>
                 </div>
-                <Shield size={16} className="text-violet-700 dark:text-violet-300" />
+                <div className="dash-icon-box">
+                  <Shield size={16} className="text-slate-700 dark:text-slate-200" />
+                </div>
               </div>
               <p className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Governance lane - Backlog pressure</p>
               <p className="mt-auto text-2xl font-black text-slate-900 dark:text-white">{overviewCards.pendingAlerts}</p>
@@ -1103,23 +1410,23 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
           </div>
           </div>
 
-          <Card className="lg:col-span-4 lg:sticky lg:top-24 self-start border-sky-100/80 dark:border-sky-900/45 bg-white/90 dark:bg-slate-900/80 shadow-[0_18px_34px_-30px_rgba(15,23,42,0.45)]">
+          <Card className="lg:col-span-4 lg:sticky lg:top-24 self-start dash-panel">
             <CardHeader className="pb-2">
               <CardTitle className={sectionTitleClass}>Quick Actions</CardTitle>
               <CardDescription className={sectionDescriptionClass}>High-frequency admin operations from a single action rail</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2.5 lg:space-y-3">
-              <Button variant="outline" className="h-9 lg:h-10 w-full justify-start rounded-xl" onClick={handleRefreshTab}>
+              <Button variant="outline" className="h-10 w-full justify-start rounded-full" onClick={handleRefreshTab}>
                 <RefreshCw size={14} className="mr-2" />
                 Refresh Active Tab
               </Button>
-              <Button variant="outline" className="h-9 lg:h-10 w-full justify-start rounded-xl" onClick={handleExportCurrentTab}>
+              <Button variant="outline" className="h-10 w-full justify-start rounded-full" onClick={handleExportCurrentTab}>
                 <FileSpreadsheet size={14} className="mr-2" />
                 Export Active Tab
               </Button>
               <Button
                 variant="outline"
-                className="h-9 lg:h-10 w-full justify-start rounded-xl"
+                className="h-10 w-full justify-start rounded-full"
                 onClick={() => {
                   setSearch('');
                   setRoleFilter('all');
@@ -1138,7 +1445,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
       {tab === 'overview' && (
         <>
           <div className={workspaceGridClass}>
-            <Card className="lg:col-span-4">
+            <Card className="lg:col-span-4 dash-panel">
               <CardHeader className="pb-3">
                 <CardTitle className={sectionTitleClass}>Dashboard Route Snapshot</CardTitle>
                 <CardDescription className={sectionDescriptionClass}>Loaded from the primary analytics dashboard route without a farm filter</CardDescription>
@@ -1148,19 +1455,19 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                   <LoadingState text="Loading dashboard snapshot..." size="sm" />
                 ) : (
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-lg border p-3">
+                    <div className={centeredMetricTileClass}>
                       <p className="text-xs text-muted-foreground uppercase">Users</p>
                       <p className="text-xl font-semibold">{dashboardSummary?.users?.total ?? 0}</p>
                     </div>
-                    <div className="rounded-lg border p-3">
+                    <div className={centeredMetricTileClass}>
                       <p className="text-xs text-muted-foreground uppercase">Farms</p>
                       <p className="text-xl font-semibold">{dashboardSummary?.farms?.total ?? 0}</p>
                     </div>
-                    <div className="rounded-lg border p-3">
+                    <div className={centeredMetricTileClass}>
                       <p className="text-xs text-muted-foreground uppercase">Recommendations</p>
                       <p className="text-xl font-semibold">{dashboardSummary?.recommendations?.total ?? 0}</p>
                     </div>
-                    <div className="rounded-lg border p-3">
+                    <div className={centeredMetricTileClass}>
                       <p className="text-xs text-muted-foreground uppercase">Pest Detections</p>
                       <p className="text-xl font-semibold">{dashboardSummary?.pestDetections?.total ?? 0}</p>
                     </div>
@@ -1169,7 +1476,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
               </CardContent>
             </Card>
 
-            <Card className="lg:col-span-4">
+            <Card className="lg:col-span-4 dash-panel">
               <CardHeader className="pb-3">
                 <CardTitle className={sectionTitleClass}>User Statistics</CardTitle>
                 <CardDescription className={sectionDescriptionClass}>Dedicated backend user metrics from the admin statistics endpoint</CardDescription>
@@ -1180,19 +1487,19 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                 ) : (
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-3">
-                      <div className="rounded-lg border p-3">
+                      <div className={centeredMetricTileClass}>
                         <p className="text-xs text-muted-foreground uppercase">Total Users</p>
                         <p className="text-xl font-semibold">{userStatistics?.totalUsers ?? 0}</p>
                       </div>
-                      <div className="rounded-lg border p-3">
+                      <div className={centeredMetricTileClass}>
                         <p className="text-xs text-muted-foreground uppercase">Active Users</p>
                         <p className="text-xl font-semibold">{userStatistics?.activeUsers ?? 0}</p>
                       </div>
-                      <div className="rounded-lg border p-3">
+                      <div className={centeredMetricTileClass}>
                         <p className="text-xs text-muted-foreground uppercase">New This Month</p>
                         <p className="text-xl font-semibold">{userStatistics?.newUsersThisMonth ?? 0}</p>
                       </div>
-                      <div className="rounded-lg border p-3">
+                      <div className={centeredMetricTileClass}>
                         <p className="text-xs text-muted-foreground uppercase">New Last Month</p>
                         <p className="text-xl font-semibold">{userStatistics?.newUsersLastMonth ?? 0}</p>
                       </div>
@@ -1216,7 +1523,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
               </CardContent>
             </Card>
 
-            <Card className="lg:col-span-4">
+            <Card className="lg:col-span-4 dash-panel">
               <CardHeader className="pb-3">
                 <CardTitle className={sectionTitleClass}>Farm Statistics</CardTitle>
                 <CardDescription className={sectionDescriptionClass}>Dedicated backend farm metrics from the admin statistics endpoint</CardDescription>
@@ -1227,21 +1534,21 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                 ) : (
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-3">
-                      <div className="rounded-lg border p-3">
+                      <div className={centeredMetricTileClass}>
                         <p className="text-xs text-muted-foreground uppercase">Total Farms</p>
                         <p className="text-xl font-semibold">{farmStatistics?.totalFarms ?? 0}</p>
                       </div>
-                      <div className="rounded-lg border p-3">
+                      <div className={centeredMetricTileClass}>
                         <p className="text-xs text-muted-foreground uppercase">Active Farms</p>
                         <p className="text-xl font-semibold">{farmStatistics?.activeFarms ?? 0}</p>
                       </div>
-                      <div className="rounded-lg border p-3">
+                      <div className={centeredMetricTileClass}>
                         <p className="text-xs text-muted-foreground uppercase">Total Area</p>
                         <p className="text-xl font-semibold">
                           {typeof farmStatistics?.totalAreaHectares === 'number' ? farmStatistics.totalAreaHectares.toFixed(1) : '0.0'} ha
                         </p>
                       </div>
-                      <div className="rounded-lg border p-3">
+                      <div className={centeredMetricTileClass}>
                         <p className="text-xs text-muted-foreground uppercase">Average Size</p>
                         <p className="text-xl font-semibold">
                           {typeof farmStatistics?.avgSizeHectares === 'number' ? farmStatistics.avgSizeHectares.toFixed(1) : '0.0'} ha
@@ -1275,7 +1582,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
               <CardContent>
                 <form className="space-y-4" onSubmit={handleBulkGenerateRecommendations}>
                   <select
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    className={roundedSelectClass}
                     value={bulkGenerateDistrict}
                     onChange={(event) => setBulkGenerateDistrict(event.target.value)}
                   >
@@ -1287,7 +1594,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                     ))}
                   </select>
                   <select
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    className={roundedSelectClass}
                     value={bulkGenerateType}
                     onChange={(event) =>
                       setBulkGenerateType(
@@ -1310,18 +1617,18 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
           </div>
 
           <div className={workspaceGridClass}>
-          <Card className="lg:col-span-5 lg:sticky lg:top-24 self-start">
+          <Card className="lg:col-span-5 lg:sticky lg:top-24 self-start dash-panel">
             <CardHeader>
               <CardTitle>Recent Users</CardTitle>
               <CardDescription>Most recent accounts in the system</CardDescription>
             </CardHeader>
             <CardContent>
-              {(recentUsersQuery.data?.data || []).length === 0 ? (
+              {filteredOverviewUsers.length === 0 ? (
                 <EmptyState title="No users found" message="No user records available yet." />
               ) : (
                 <div className="space-y-3">
-                  {(recentUsersQuery.data?.data || []).map((user: any) => (
-                    <div key={user.id} className="flex items-center justify-between rounded-lg border p-3">
+                  {filteredOverviewUsers.map((user: any) => (
+                    <div key={user.id} className={`${outlineBlockClass} flex items-center justify-between gap-3`}>
                       <div>
                         <p className="font-semibold">{getUserName(user)}</p>
                         <p className="text-xs text-muted-foreground">{user.email || user.phoneNumber || user.phone || 'No contact'}</p>
@@ -1339,7 +1646,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
             </CardContent>
           </Card>
 
-            <Card className="lg:col-span-7">
+            <Card className="lg:col-span-7 dash-panel">
             <CardHeader>
               <CardTitle>Admin User Directory Snapshot</CardTitle>
               <CardDescription>Loaded from the admin-scoped user list route</CardDescription>
@@ -1347,12 +1654,12 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
             <CardContent>
               {adminUsersRouteQuery.isLoading ? (
                 <LoadingState text="Loading admin user directory..." size="sm" />
-              ) : adminUsersRoute.length === 0 ? (
+              ) : filteredAdminUserDirectory.length === 0 ? (
                 <EmptyState title="No users found" message="The admin user directory route returned no users." />
               ) : (
                 <div className="space-y-3">
-                  {adminUsersRoute.map((user: any) => (
-                    <div key={user.id} className="flex items-center justify-between rounded-lg border p-3">
+                  {filteredAdminUserDirectory.map((user: any) => (
+                    <div key={user.id} className={`${outlineBlockClass} flex items-center justify-between gap-3`}>
                       <div>
                         <p className="font-semibold">{getUserName(user)}</p>
                         <p className="text-xs text-muted-foreground">{user.email || user.phoneNumber || user.phone || 'No contact'}</p>
@@ -1372,7 +1679,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
           </div>
 
           <div className={workspaceGridClass}>
-            <Card className="lg:col-span-4">
+            <Card className="lg:col-span-4 dash-panel">
               <CardHeader>
                 <CardTitle>Recommendation Ledger</CardTitle>
                 <CardDescription>Loaded from the primary unscoped recommendations route</CardDescription>
@@ -1380,12 +1687,12 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
               <CardContent>
                 {globalRecommendationsQuery.isLoading ? (
                   <LoadingState text="Loading recommendations..." size="sm" />
-                ) : globalRecommendations.length === 0 ? (
+                ) : filteredGlobalRecommendations.length === 0 ? (
                   <EmptyState title="No recommendations" message="No recommendation records are available yet." />
                 ) : (
                   <div className="space-y-3">
-                    {globalRecommendations.map((recommendation: any) => (
-                      <div key={recommendation.id} className="rounded-lg border p-3">
+                    {filteredGlobalRecommendations.map((recommendation: any) => (
+                      <div key={recommendation.id} className={outlineBlockClass}>
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <p className="font-semibold text-sm">{recommendation.title}</p>
@@ -1412,7 +1719,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
               </CardContent>
             </Card>
 
-            <Card className="lg:col-span-4">
+            <Card className="lg:col-span-4 dash-panel">
               <CardHeader>
                 <CardTitle>Active Recommendation Watch</CardTitle>
                 <CardDescription>Loaded from the primary unscoped active recommendations route</CardDescription>
@@ -1420,12 +1727,12 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
               <CardContent>
                 {activeRecommendationsQuery.isLoading ? (
                   <LoadingState text="Loading active recommendations..." size="sm" />
-                ) : activeRecommendations.length === 0 ? (
+                ) : filteredActiveRecommendations.length === 0 ? (
                   <EmptyState title="No active recommendations" message="There are no currently active recommendations." />
                 ) : (
                   <div className="space-y-3">
-                    {activeRecommendations.slice(0, 6).map((recommendation: any) => (
-                      <div key={recommendation.id} className="rounded-lg border p-3">
+                    {filteredActiveRecommendations.slice(0, 6).map((recommendation: any) => (
+                      <div key={recommendation.id} className={outlineBlockClass}>
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <p className="font-semibold text-sm">{recommendation.title}</p>
@@ -1450,7 +1757,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
               </CardContent>
             </Card>
 
-            <Card className="lg:col-span-4">
+            <Card className="lg:col-span-4 dash-panel">
               <CardHeader>
                 <CardTitle>Pest Detection Ledger</CardTitle>
                 <CardDescription>Loaded from the primary unscoped pest-detection route</CardDescription>
@@ -1458,12 +1765,12 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
               <CardContent>
                 {globalPestDetectionsQuery.isLoading ? (
                   <LoadingState text="Loading pest detections..." size="sm" />
-                ) : globalPestDetections.length === 0 ? (
+                ) : filteredGlobalPestDetections.length === 0 ? (
                   <EmptyState title="No pest detections" message="No pest detection records are available yet." />
                 ) : (
                   <div className="space-y-3">
-                    {globalPestDetections.map((detection: any) => (
-                      <div key={detection.id} className="rounded-lg border p-3">
+                    {filteredGlobalPestDetections.map((detection: any) => (
+                      <div key={detection.id} className={outlineBlockClass}>
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <p className="font-semibold text-sm">{detection.pestType || 'Unknown pest'}</p>
@@ -1492,26 +1799,26 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
           </div>
 
           <div className={workspaceGridClass}>
-          <Card className="lg:col-span-4">
+          <Card className="lg:col-span-4 dash-panel">
             <CardHeader>
               <CardTitle>30-Day Activity Snapshot</CardTitle>
               <CardDescription>Backend-generated system metrics</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="rounded-lg border p-3">
+                <div className={centeredMetricTileClass}>
                   <p className="text-xs text-muted-foreground uppercase">Sensor Readings</p>
                   <p className="text-xl font-semibold">{analytics?.metrics?.sensorReadings ?? 0}</p>
                 </div>
-                <div className="rounded-lg border p-3">
+                <div className={centeredMetricTileClass}>
                   <p className="text-xs text-muted-foreground uppercase">Recommendations</p>
                   <p className="text-xl font-semibold">{analytics?.metrics?.recommendationsGenerated ?? 0}</p>
                 </div>
-                <div className="rounded-lg border p-3">
+                <div className={centeredMetricTileClass}>
                   <p className="text-xs text-muted-foreground uppercase">Messages</p>
                   <p className="text-xl font-semibold">{analytics?.metrics?.messagesSent ?? 0}</p>
                 </div>
-                <div className="rounded-lg border p-3">
+                <div className={centeredMetricTileClass}>
                   <p className="text-xs text-muted-foreground uppercase">Errors</p>
                   <p className="text-xl font-semibold">{analytics?.metrics?.errors ?? 0}</p>
                 </div>
@@ -1519,7 +1826,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
             </CardContent>
           </Card>
 
-          <Card className={workspaceMainClass}>
+          <Card className={`${workspaceMainClass} dash-panel`}>
             <CardHeader>
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div>
@@ -1528,7 +1835,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <select
-                    className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                    className={compactSelectClass}
                     value={activityHours}
                     onChange={(event) => setActivityHours(Number(event.target.value) as 6 | 24 | 168)}
                   >
@@ -1537,7 +1844,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                     <option value={168}>Last 7 days</option>
                   </select>
                   <select
-                    className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                    className={compactSelectClass}
                     value={activityType}
                     onChange={(event) =>
                       setActivityType(
@@ -1568,27 +1875,27 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
               ) : (
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
-                    <div className="rounded-lg border p-3">
+                    <div className={centeredMetricTileClass}>
                       <p className="text-xs text-muted-foreground uppercase">Users</p>
                       <p className="text-xl font-semibold">{recentActivityQuery.data?.summary?.newUsers ?? 0}</p>
                     </div>
-                    <div className="rounded-lg border p-3">
+                    <div className={centeredMetricTileClass}>
                       <p className="text-xs text-muted-foreground uppercase">Farms</p>
                       <p className="text-xl font-semibold">{recentActivityQuery.data?.summary?.newFarms ?? 0}</p>
                     </div>
-                    <div className="rounded-lg border p-3">
+                    <div className={centeredMetricTileClass}>
                       <p className="text-xs text-muted-foreground uppercase">Readings</p>
                       <p className="text-xl font-semibold">{recentActivityQuery.data?.summary?.sensorReadings ?? 0}</p>
                     </div>
-                    <div className="rounded-lg border p-3">
+                    <div className={centeredMetricTileClass}>
                       <p className="text-xs text-muted-foreground uppercase">Recommendations</p>
                       <p className="text-xl font-semibold">{recentActivityQuery.data?.summary?.recommendations ?? 0}</p>
                     </div>
-                    <div className="rounded-lg border p-3">
+                    <div className={centeredMetricTileClass}>
                       <p className="text-xs text-muted-foreground uppercase">Pest Events</p>
                       <p className="text-xl font-semibold">{recentActivityQuery.data?.summary?.pestDetections ?? 0}</p>
                     </div>
-                    <div className="rounded-lg border p-3">
+                    <div className={centeredMetricTileClass}>
                       <p className="text-xs text-muted-foreground uppercase">Pest Control</p>
                       <p className="text-xl font-semibold">{recentActivityQuery.data?.summary?.pestControlActions ?? 0}</p>
                     </div>
@@ -1597,7 +1904,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                   {Array.isArray(recentActivityQuery.data?.activities) && recentActivityQuery.data.activities.length > 0 ? (
                     <div className="space-y-2">
                       {recentActivityQuery.data.activities.map((item) => (
-                        <div key={item.id} className="rounded-lg border p-3">
+                        <div key={item.id} className={outlineBlockClass}>
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <div className="flex flex-wrap items-center gap-2">
@@ -1630,7 +1937,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
 
       {tab === 'farms' && (
         <div className={workspaceGridClass}>
-          <Card className={workspaceMainClass}>
+          <Card className={`${workspaceMainClass} dash-panel`}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Sprout size={20} />
@@ -1651,7 +1958,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                   readOnly={!!normalizedExternalSearch}
                 />
                 <select
-                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  className={roundedSelectClass}
                   value={farmDistrictFilter}
                   onChange={(event) => setFarmDistrictFilter(event.target.value)}
                 >
@@ -1663,7 +1970,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                   ))}
                 </select>
                 <select
-                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  className={roundedSelectClass}
                   value={farmStatusFilter}
                   onChange={(event) => setFarmStatusFilter(event.target.value as 'all' | 'active' | 'inactive')}
                 >
@@ -1673,11 +1980,11 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                 </select>
               </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/20 p-3">
+              <div className={filterBarClass}>
                 <p className="text-xs text-muted-foreground uppercase tracking-wide">Fleet controls</p>
                 <div className="flex flex-wrap items-center gap-2">
                   <select
-                    className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                    className={compactSelectClass}
                     value={tabExportFormat}
                     onChange={(event) => setTabExportFormat(event.target.value as 'csv' | 'json')}
                   >
@@ -1730,7 +2037,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                     const farmStatus = farm.isActive === false || farm.is_active === false ? 'inactive' : 'active';
 
                     return (
-                      <div key={farm.id || farm._id} className="rounded-lg border p-4 space-y-3">
+                      <div key={farm.id || farm._id} className="dash-detail-card space-y-3">
                         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                           <div>
                             <p className="font-semibold">{farm.name || 'Unnamed farm'}</p>
@@ -1747,15 +2054,15 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                         </div>
 
                         <div className="grid gap-3 md:grid-cols-4 text-sm">
-                          <div className="rounded-lg bg-muted/30 p-3">
+                          <div className={softBlockClass}>
                             <p className="text-xs text-muted-foreground uppercase">Crop</p>
                             <p className="font-medium">{farm.cropVariety || farm.crop_variety || 'N/A'}</p>
                           </div>
-                          <div className="rounded-lg bg-muted/30 p-3">
+                          <div className={softBlockClass}>
                             <p className="text-xs text-muted-foreground uppercase">Growth Stage</p>
                             <p className="font-medium">{farm.currentGrowthStage || farm.current_growth_stage || 'N/A'}</p>
                           </div>
-                          <div className="rounded-lg bg-muted/30 p-3">
+                          <div className={softBlockClass}>
                             <p className="text-xs text-muted-foreground uppercase">Size</p>
                             <p className="font-medium">
                               {typeof (farm.sizeHectares ?? farm.size_hectares) === 'number'
@@ -1763,7 +2070,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                                 : 'N/A'}
                             </p>
                           </div>
-                          <div className="rounded-lg bg-muted/30 p-3">
+                          <div className={softBlockClass}>
                             <p className="text-xs text-muted-foreground uppercase">Location</p>
                             <p className="font-medium">{farm.locationName || farm.location_name || 'N/A'}</p>
                           </div>
@@ -1783,38 +2090,38 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
           </Card>
 
           <div className={workspaceRailClass}>
-            <Card>
+            <Card className="dash-panel">
               <CardHeader className="pb-3">
                 <CardTitle className={sectionTitleClass}>Farm Fleet Snapshot</CardTitle>
                 <CardDescription className={sectionDescriptionClass}>Current result set health and distribution</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-lg border p-3">
+                  <div className={centeredMetricTileClass}>
                     <p className="text-xs text-muted-foreground uppercase">Visible farms</p>
                     <p className="text-xl font-semibold">{farmSegmentStats.total}</p>
                   </div>
-                  <div className="rounded-lg border p-3">
+                  <div className={centeredMetricTileClass}>
                     <p className="text-xs text-muted-foreground uppercase">Active</p>
                     <p className="text-xl font-semibold">{farmSegmentStats.active}</p>
                   </div>
-                  <div className="rounded-lg border p-3">
+                  <div className={centeredMetricTileClass}>
                     <p className="text-xs text-muted-foreground uppercase">Inactive</p>
                     <p className="text-xl font-semibold">{farmSegmentStats.inactive}</p>
                   </div>
-                  <div className="rounded-lg border p-3">
+                  <div className={centeredMetricTileClass}>
                     <p className="text-xs text-muted-foreground uppercase">Avg size</p>
                     <p className="text-xl font-semibold">{farmSegmentStats.averageAreaHectares.toFixed(1)} ha</p>
                   </div>
                 </div>
-                <div className="rounded-lg border p-3">
+                <div className={outlineBlockClass}>
                   <p className="text-xs text-muted-foreground uppercase">Total visible area</p>
                   <p className="text-xl font-semibold">{farmSegmentStats.totalAreaHectares.toFixed(1)} ha</p>
                 </div>
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="dash-panel">
               <CardHeader className="pb-3">
                 <CardTitle className={sectionTitleClass}>District Concentration</CardTitle>
                 <CardDescription className={sectionDescriptionClass}>Highest farm volumes in current filters</CardDescription>
@@ -1825,7 +2132,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                 ) : (
                   <div className="space-y-2">
                     {farmSegmentStats.topDistricts.map(([districtName, count]) => (
-                      <div key={districtName} className="flex items-center justify-between rounded-lg border p-2.5">
+                      <div key={districtName} className={`${outlineBlockClass} flex items-center justify-between gap-3`}>
                         <p className="text-sm font-medium">{districtName}</p>
                         <Badge variant="outline">{count}</Badge>
                       </div>
@@ -1840,7 +2147,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
 
       {tab === 'users' && (
         <div className={workspaceGridClass}>
-          <Card className={workspaceMainClass}>
+          <Card className={`${workspaceMainClass} dash-panel`}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Users size={20} />
@@ -1861,7 +2168,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                   readOnly={!!normalizedExternalSearch}
                 />
                 <select
-                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  className={roundedSelectClass}
                   value={roleFilter}
                   onChange={(event) => setRoleFilter(event.target.value as 'all' | UserRole)}
                 >
@@ -1871,7 +2178,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                   <option value="admin">Admin</option>
                 </select>
                 <select
-                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  className={roundedSelectClass}
                   value={statusFilter}
                   onChange={(event) => setStatusFilter(event.target.value as 'all' | 'active' | 'inactive')}
                 >
@@ -1881,11 +2188,11 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                 </select>
               </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/20 p-3">
+              <div className={filterBarClass}>
                 <p className="text-xs text-muted-foreground uppercase tracking-wide">Directory controls</p>
                 <div className="flex flex-wrap items-center gap-2">
                   <select
-                    className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                    className={compactSelectClass}
                     value={tabExportFormat}
                     onChange={(event) => setTabExportFormat(event.target.value as 'csv' | 'json')}
                   >
@@ -1918,7 +2225,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
               ) : (
                 <div className="space-y-3">
                   {users.map((user: any) => (
-                    <div key={user.id} className="rounded-lg border p-4 space-y-3">
+                    <div key={user.id} className="dash-detail-card space-y-3">
                       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                         <div>
                           <p className="font-semibold">{getUserName(user)}</p>
@@ -1934,7 +2241,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
 
                       <div className="flex flex-col md:flex-row gap-2">
                         <select
-                          className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                          className={compactSelectClass}
                           value={toRole(user.role)}
                           onChange={(event) => handleRoleChange(user, event.target.value as UserRole)}
                           disabled={updateUserMutation.isPending}
@@ -1964,7 +2271,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                         <div className="flex flex-col gap-2 md:flex-row md:items-center">
                           <span className="text-xs text-muted-foreground min-w-28">Coverage district</span>
                           <select
-                            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                            className={compactSelectClass}
                             value={getUserDistrictId(user) || ''}
                             onChange={(event) => handleExpertDistrictChange(user, event.target.value || null)}
                             disabled={updateUserMutation.isPending || districtsQuery.isLoading}
@@ -1995,26 +2302,26 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
           </Card>
 
           <div className={workspaceRailClass}>
-            <Card>
+            <Card className="dash-panel">
               <CardHeader className="pb-3">
                 <CardTitle className={sectionTitleClass}>Directory Snapshot</CardTitle>
                 <CardDescription className={sectionDescriptionClass}>Role and status composition from current result set</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-lg border p-3">
+                  <div className={centeredMetricTileClass}>
                     <p className="text-xs text-muted-foreground uppercase">Visible users</p>
                     <p className="text-xl font-semibold">{userSegmentStats.total}</p>
                   </div>
-                  <div className="rounded-lg border p-3">
+                  <div className={centeredMetricTileClass}>
                     <p className="text-xs text-muted-foreground uppercase">Active</p>
                     <p className="text-xl font-semibold">{userSegmentStats.active}</p>
                   </div>
-                  <div className="rounded-lg border p-3">
+                  <div className={centeredMetricTileClass}>
                     <p className="text-xs text-muted-foreground uppercase">Experts</p>
                     <p className="text-xl font-semibold">{userSegmentStats.roleBreakdown.expert}</p>
                   </div>
-                  <div className="rounded-lg border p-3">
+                  <div className={centeredMetricTileClass}>
                     <p className="text-xs text-muted-foreground uppercase">Farmers</p>
                     <p className="text-xl font-semibold">{userSegmentStats.roleBreakdown.farmer}</p>
                   </div>
@@ -2026,7 +2333,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="dash-panel">
               <CardHeader>
                 <CardTitle>Selected User Profile</CardTitle>
                 <CardDescription>Route-backed detail view from the single-user backend endpoint</CardDescription>
@@ -2056,29 +2363,29 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                     </div>
 
                     <div className="grid grid-cols-1 gap-3 text-sm">
-                      <div className="rounded-lg bg-muted/30 p-3">
+                      <div className={softBlockClass}>
                         <p className="text-xs text-muted-foreground uppercase">Email</p>
                         <p className="font-medium">{selectedUser.email || 'N/A'}</p>
                       </div>
-                      <div className="rounded-lg bg-muted/30 p-3">
+                      <div className={softBlockClass}>
                         <p className="text-xs text-muted-foreground uppercase">Phone</p>
                         <p className="font-medium">{selectedUser.phoneNumber || selectedUser.phone || 'N/A'}</p>
                       </div>
-                      <div className="rounded-lg bg-muted/30 p-3">
+                      <div className={softBlockClass}>
                         <p className="text-xs text-muted-foreground uppercase">Coverage District</p>
                         <p className="font-medium">
                           {districts.find((district: any) => String(district.id) === String(getUserDistrictId(selectedUser)))?.name || 'Not set'}
                         </p>
                       </div>
-                      <div className="rounded-lg bg-muted/30 p-3">
+                      <div className={softBlockClass}>
                         <p className="text-xs text-muted-foreground uppercase">Last Login</p>
                         <p className="font-medium">{toDateString(selectedUser.lastLoginAt || selectedUser.last_login_at)}</p>
                       </div>
-                      <div className="rounded-lg bg-muted/30 p-3">
+                      <div className={softBlockClass}>
                         <p className="text-xs text-muted-foreground uppercase">Created</p>
                         <p className="font-medium">{toDateString(selectedUser.createdAt || selectedUser.created_at)}</p>
                       </div>
-                      <div className="rounded-lg bg-muted/30 p-3">
+                      <div className={softBlockClass}>
                         <p className="text-xs text-muted-foreground uppercase">Metadata</p>
                         <pre className="whitespace-pre-wrap break-words text-xs text-muted-foreground">
                           {JSON.stringify(selectedUser.metadata || {}, null, 2)}
@@ -2097,7 +2404,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
 
       {tab === 'audit' && (
         <div className={workspaceGridClass}>
-          <Card className={workspaceMainClass}>
+          <Card className={`${workspaceMainClass} dash-panel`}>
             <CardHeader>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
@@ -2109,7 +2416,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <select
-                    className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                    className={compactSelectClass}
                     value={tabExportFormat}
                     onChange={(event) => setTabExportFormat(event.target.value as 'csv' | 'json')}
                   >
@@ -2135,7 +2442,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
               ) : (
                 <div className="space-y-2">
                   {auditLogs.map((log: any, index: number) => (
-                    <div key={log.id || `${log.action}-${index}`} className="rounded-lg border p-3">
+                    <div key={log.id || `${log.action}-${index}`} className={outlineBlockClass}>
                       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                         <div>
                           <p className="font-medium">{log.action || 'UNKNOWN_ACTION'}</p>
@@ -2159,26 +2466,26 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
           </Card>
 
           <div className={workspaceRailClass}>
-            <Card>
+            <Card className="dash-panel">
               <CardHeader className="pb-3">
                 <CardTitle className={sectionTitleClass}>Audit Snapshot</CardTitle>
                 <CardDescription className={sectionDescriptionClass}>Current page distribution and activity mix</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-lg border p-3">
+                  <div className={centeredMetricTileClass}>
                     <p className="text-xs text-muted-foreground uppercase">Visible events</p>
                     <p className="text-xl font-semibold">{auditSegmentStats.total}</p>
                   </div>
-                  <div className="rounded-lg border p-3">
+                  <div className={centeredMetricTileClass}>
                     <p className="text-xs text-muted-foreground uppercase">Entity types</p>
                     <p className="text-xl font-semibold">{auditSegmentStats.uniqueEntities}</p>
                   </div>
-                  <div className="rounded-lg border p-3">
+                  <div className={centeredMetricTileClass}>
                     <p className="text-xs text-muted-foreground uppercase">Unique actions</p>
                     <p className="text-xl font-semibold">{auditSegmentStats.uniqueActions}</p>
                   </div>
-                  <div className="rounded-lg border p-3">
+                  <div className={centeredMetricTileClass}>
                     <p className="text-xs text-muted-foreground uppercase">Latest event</p>
                     <p className="text-xs font-medium">{auditSegmentStats.latestTimestamp}</p>
                   </div>
@@ -2186,7 +2493,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="dash-panel">
               <CardHeader className="pb-3">
                 <CardTitle className={sectionTitleClass}>Top Event Types</CardTitle>
                 <CardDescription className={sectionDescriptionClass}>Most frequent action names in the current page</CardDescription>
@@ -2197,7 +2504,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                 ) : (
                   <div className="space-y-2">
                     {auditSegmentStats.topActions.map(([action, count]) => (
-                      <div key={action} className="flex items-center justify-between rounded-lg border p-2.5">
+                      <div key={action} className={`${outlineBlockClass} flex items-center justify-between gap-3`}>
                         <p className="text-sm font-medium">{action}</p>
                         <Badge variant="outline">{count}</Badge>
                       </div>
@@ -2213,7 +2520,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
       {tab === 'devices' && (
         <div className={workspaceGridClass}>
           <div className={workspaceMainStackClass}>
-            <Card>
+            <Card className="dash-panel">
               <CardHeader>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
@@ -2225,7 +2532,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <select
-                      className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                      className={compactSelectClass}
                       value={tabExportFormat}
                       onChange={(event) => setTabExportFormat(event.target.value as 'csv' | 'json')}
                     >
@@ -2254,7 +2561,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                       const status = getDeviceStatus(device);
                       const deviceId = getDeviceId(device);
                       return (
-                        <div key={deviceId || device.createdAt || `device-${index}`} className="rounded-lg border p-3">
+                        <div key={deviceId || device.createdAt || `device-${index}`} className={outlineBlockClass}>
                           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                             <div>
                               <p className="font-medium">{device.device_name || device.deviceName || deviceId || 'Unknown device'}</p>
@@ -2300,7 +2607,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="dash-panel">
               <CardHeader>
                 <CardTitle>Generate Device Token</CardTitle>
                 <CardDescription>Create a new device credential for farm ingestion</CardDescription>
@@ -2323,7 +2630,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                 </form>
 
                 {deviceTokenResult && (
-                  <div className="rounded-lg border border-green-300 bg-green-50 p-3 text-sm space-y-1">
+                  <div className={`${softBlockClass} text-sm space-y-1`}>
                     <p><span className="font-semibold">Device ID:</span> {deviceTokenResult.deviceId}</p>
                     <p className="break-all"><span className="font-semibold">Token:</span> {deviceTokenResult.token}</p>
                     <p><span className="font-semibold">Expires:</span> {toDateString(deviceTokenResult.expiresAt)}</p>
@@ -2346,26 +2653,26 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
           </div>
 
           <div className={workspaceRailClass}>
-            <Card>
+            <Card className="dash-panel">
               <CardHeader className="pb-3">
                 <CardTitle className={sectionTitleClass}>Device Fleet Snapshot</CardTitle>
                 <CardDescription className={sectionDescriptionClass}>Status mix from the current device page</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-lg border p-3">
+                  <div className={centeredMetricTileClass}>
                     <p className="text-xs text-muted-foreground uppercase">Visible devices</p>
                     <p className="text-xl font-semibold">{deviceSegmentStats.total}</p>
                   </div>
-                  <div className="rounded-lg border p-3">
+                  <div className={centeredMetricTileClass}>
                     <p className="text-xs text-muted-foreground uppercase">Active</p>
                     <p className="text-xl font-semibold">{deviceSegmentStats.active}</p>
                   </div>
-                  <div className="rounded-lg border p-3">
+                  <div className={centeredMetricTileClass}>
                     <p className="text-xs text-muted-foreground uppercase">Inactive</p>
                     <p className="text-xl font-semibold">{deviceSegmentStats.inactive}</p>
                   </div>
-                  <div className="rounded-lg border p-3">
+                  <div className={centeredMetricTileClass}>
                     <p className="text-xs text-muted-foreground uppercase">Revoked</p>
                     <p className="text-xl font-semibold">{deviceSegmentStats.revoked}</p>
                   </div>
@@ -2373,7 +2680,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="dash-panel">
               <CardHeader className="pb-3">
                 <CardTitle className={sectionTitleClass}>Status Distribution</CardTitle>
                 <CardDescription className={sectionDescriptionClass}>Most frequent status categories</CardDescription>
@@ -2384,7 +2691,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                 ) : (
                   <div className="space-y-2">
                     {deviceSegmentStats.topStatuses.map(([status, count]) => (
-                      <div key={status} className="flex items-center justify-between rounded-lg border p-2.5">
+                      <div key={status} className={`${outlineBlockClass} flex items-center justify-between gap-3`}>
                         <Badge variant={getBadgeVariant(status)}>{status}</Badge>
                         <span className="text-sm font-medium">{count}</span>
                       </div>
@@ -2399,7 +2706,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
 
       {tab === 'config' && (
         <div className={workspaceGridClass}>
-          <Card className={workspaceMainClass}>
+          <Card className={`${workspaceMainClass} dash-panel`}>
             <CardHeader>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
@@ -2434,7 +2741,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
               ) : (
                 <div className="space-y-3">
                   {filteredConfigs.map((entry) => (
-                    <div key={entry.key} className="rounded-lg border p-4 space-y-3">
+                    <div key={entry.key} className="dash-detail-card space-y-3">
                       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                         <div>
                           <p className="font-semibold">{entry.key}</p>
@@ -2449,7 +2756,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                       </div>
 
                       <textarea
-                        className="w-full min-h-24 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        className={textAreaClass}
                         value={
                           configDrafts[entry.key] ??
                           (typeof entry.value === 'string' ? entry.value : JSON.stringify(entry.value, null, 2))
@@ -2475,26 +2782,26 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
           </Card>
 
           <div className={workspaceRailClass}>
-            <Card>
+            <Card className="dash-panel">
               <CardHeader className="pb-3">
                 <CardTitle className={sectionTitleClass}>Config Snapshot</CardTitle>
                 <CardDescription className={sectionDescriptionClass}>Current configuration inventory in view</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-lg border p-3">
+                  <div className={centeredMetricTileClass}>
                     <p className="text-xs text-muted-foreground uppercase">Visible keys</p>
                     <p className="text-xl font-semibold">{configSegmentStats.total}</p>
                   </div>
-                  <div className="rounded-lg border p-3">
+                  <div className={centeredMetricTileClass}>
                     <p className="text-xs text-muted-foreground uppercase">Categories</p>
                     <p className="text-xl font-semibold">{configSegmentStats.categories}</p>
                   </div>
-                  <div className="rounded-lg border p-3">
+                  <div className={centeredMetricTileClass}>
                     <p className="text-xs text-muted-foreground uppercase">Active</p>
                     <p className="text-xl font-semibold">{configSegmentStats.active}</p>
                   </div>
-                  <div className="rounded-lg border p-3">
+                  <div className={centeredMetricTileClass}>
                     <p className="text-xs text-muted-foreground uppercase">Inactive</p>
                     <p className="text-xl font-semibold">{configSegmentStats.inactive}</p>
                   </div>
@@ -2502,7 +2809,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="dash-panel">
               <CardHeader className="pb-3">
                 <CardTitle className={sectionTitleClass}>Top Categories</CardTitle>
                 <CardDescription className={sectionDescriptionClass}>Most populated config groups in current results</CardDescription>
@@ -2513,7 +2820,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                 ) : (
                   <div className="space-y-2">
                     {configSegmentStats.topCategories.map(([category, count]) => (
-                      <div key={category} className="flex items-center justify-between rounded-lg border p-2.5">
+                      <div key={category} className={`${outlineBlockClass} flex items-center justify-between gap-3`}>
                         <p className="text-sm font-medium">{category}</p>
                         <Badge variant="outline">{count}</Badge>
                       </div>
@@ -2529,7 +2836,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
       {tab === 'monitoring' && (
         <div className={workspaceGridClass}>
           <div className={workspaceMainStackClass}>
-            <Card>
+            <Card className="dash-panel">
               <CardHeader>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
@@ -2556,23 +2863,23 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                 ) : (
                   <div className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                      <div className="rounded-lg border p-3">
+                      <div className={centeredMetricTileClass}>
                         <p className="text-xs text-muted-foreground uppercase">Total Sensors</p>
                         <p className="text-xl font-semibold">{sensorHealth?.totalSensors ?? 0}</p>
                       </div>
-                      <div className="rounded-lg border p-3">
+                      <div className={centeredMetricTileClass}>
                         <p className="text-xs text-muted-foreground uppercase">Active</p>
                         <p className="text-xl font-semibold">{sensorHealth?.activeSensors ?? 0}</p>
                       </div>
-                      <div className="rounded-lg border p-3">
+                      <div className={centeredMetricTileClass}>
                         <p className="text-xs text-muted-foreground uppercase">Faulty</p>
                         <p className="text-xl font-semibold">{sensorHealth?.faultySensors ?? 0}</p>
                       </div>
-                      <div className="rounded-lg border p-3">
+                      <div className={centeredMetricTileClass}>
                         <p className="text-xs text-muted-foreground uppercase">Maintenance Needed</p>
                         <p className="text-xl font-semibold">{sensorHealth?.maintenanceRequired ?? 0}</p>
                       </div>
-                      <div className="rounded-lg border p-3">
+                      <div className={centeredMetricTileClass}>
                         <p className="text-xs text-muted-foreground uppercase">Avg Battery</p>
                         <p className="text-xl font-semibold">
                           {typeof sensorHealth?.avgBatteryLevel === 'number'
@@ -2598,7 +2905,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                             const inactive = Math.max(total - active, 0);
 
                             return (
-                              <div key={type} className="rounded-lg border p-3 space-y-2">
+                              <div key={type} className={`${outlineBlockClass} space-y-2`}>
                                 <div className="flex items-center justify-between gap-2">
                                   <p className="font-medium">{formatActivityLabel(type)}</p>
                                   <Badge variant={inactive > 0 ? 'outline' : 'secondary'}>
@@ -2630,7 +2937,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="dash-panel">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <RadioTower size={20} />
@@ -2655,7 +2962,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                     <p className="text-xs text-muted-foreground">Checked at: {toDateString(health?.timestamp)}</p>
                     <div className="space-y-2">
                       {Object.entries(health?.checks || {}).map(([key, value]) => (
-                        <div key={key} className="rounded border p-2 text-sm flex items-center justify-between gap-2">
+                        <div key={key} className={`${outlineBlockClass} text-sm flex items-center justify-between gap-2`}>
                           <span className="font-medium">{key}</span>
                           <span className="text-muted-foreground">{typeof value === 'object' ? JSON.stringify(value) : String(value)}</span>
                         </div>
@@ -2666,7 +2973,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="dash-panel">
               <CardHeader>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
@@ -2674,7 +2981,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                     <CardDescription>Backend metrics for selected window</CardDescription>
                   </div>
                   <select
-                    className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                    className={compactSelectClass}
                     value={metricsPeriod}
                     onChange={(event) => setMetricsPeriod(event.target.value as '1h' | '6h' | '24h' | '7d')}
                   >
@@ -2692,19 +2999,19 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                   <ErrorState title="Failed to load metrics" message="Please retry." onRetry={metricsQuery.refetch} />
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div className="rounded-lg border p-3">
+                    <div className={centeredMetricTileClass}>
                       <p className="text-xs text-muted-foreground uppercase">Sensor Readings</p>
                       <p className="text-xl font-semibold">{metrics?.metrics?.sensorReadings ?? 0}</p>
                     </div>
-                    <div className="rounded-lg border p-3">
+                    <div className={centeredMetricTileClass}>
                       <p className="text-xs text-muted-foreground uppercase">Recommendations</p>
                       <p className="text-xl font-semibold">{metrics?.metrics?.recommendationsGenerated ?? 0}</p>
                     </div>
-                    <div className="rounded-lg border p-3">
+                    <div className={centeredMetricTileClass}>
                       <p className="text-xs text-muted-foreground uppercase">Messages</p>
                       <p className="text-xl font-semibold">{metrics?.metrics?.messagesSent ?? 0}</p>
                     </div>
-                    <div className="rounded-lg border p-3">
+                    <div className={centeredMetricTileClass}>
                       <p className="text-xs text-muted-foreground uppercase">Errors</p>
                       <p className="text-xl font-semibold">{metrics?.metrics?.errors ?? 0}</p>
                     </div>
@@ -2715,31 +3022,31 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
           </div>
 
           <div className={workspaceRailClass}>
-            <Card>
+            <Card className="dash-panel">
               <CardHeader className="pb-3">
                 <CardTitle className={sectionTitleClass}>Monitoring Snapshot</CardTitle>
                 <CardDescription className={sectionDescriptionClass}>Cross-source health summary for current period</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-lg border p-3">
+                  <div className={centeredMetricTileClass}>
                     <p className="text-xs text-muted-foreground uppercase">Sensors</p>
                     <p className="text-xl font-semibold">{monitoringSegmentStats.totalSensors}</p>
                   </div>
-                  <div className="rounded-lg border p-3">
+                  <div className={centeredMetricTileClass}>
                     <p className="text-xs text-muted-foreground uppercase">Active</p>
                     <p className="text-xl font-semibold">{monitoringSegmentStats.activeSensors}</p>
                   </div>
-                  <div className="rounded-lg border p-3">
+                  <div className={centeredMetricTileClass}>
                     <p className="text-xs text-muted-foreground uppercase">Faulty</p>
                     <p className="text-xl font-semibold">{monitoringSegmentStats.faultySensors}</p>
                   </div>
-                  <div className="rounded-lg border p-3">
+                  <div className={centeredMetricTileClass}>
                     <p className="text-xs text-muted-foreground uppercase">Maintenance</p>
                     <p className="text-xl font-semibold">{monitoringSegmentStats.maintenanceRequired}</p>
                   </div>
                 </div>
-                <div className="rounded-lg border p-3 space-y-2">
+                <div className={`${outlineBlockClass} space-y-2`}>
                   <div className="flex items-center justify-between">
                     <p className="text-xs text-muted-foreground uppercase">System status</p>
                     <Badge variant={getBadgeVariant(monitoringSegmentStats.healthStatus)}>
@@ -2754,25 +3061,25 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="dash-panel">
               <CardHeader className="pb-3">
                 <CardTitle className={sectionTitleClass}>Metrics Window</CardTitle>
                 <CardDescription className={sectionDescriptionClass}>Operational totals for selected period</CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
-                <div className="flex items-center justify-between rounded-lg border p-2.5">
+                <div className={`${outlineBlockClass} flex items-center justify-between gap-3`}>
                   <p className="text-sm">Sensor Readings</p>
                   <span className="font-medium">{monitoringSegmentStats.sensorReadings}</span>
                 </div>
-                <div className="flex items-center justify-between rounded-lg border p-2.5">
+                <div className={`${outlineBlockClass} flex items-center justify-between gap-3`}>
                   <p className="text-sm">Recommendations</p>
                   <span className="font-medium">{monitoringSegmentStats.recommendationsGenerated}</span>
                 </div>
-                <div className="flex items-center justify-between rounded-lg border p-2.5">
+                <div className={`${outlineBlockClass} flex items-center justify-between gap-3`}>
                   <p className="text-sm">Messages</p>
                   <span className="font-medium">{monitoringSegmentStats.messagesSent}</span>
                 </div>
-                <div className="flex items-center justify-between rounded-lg border p-2.5">
+                <div className={`${outlineBlockClass} flex items-center justify-between gap-3`}>
                   <p className="text-sm">Errors</p>
                   <span className="font-medium">{monitoringSegmentStats.errors}</span>
                 </div>
@@ -2784,7 +3091,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
 
       {tab === 'reports' && (
         <div className={workspaceGridClass}>
-          <Card className={workspaceMainClass}>
+          <Card className={`${workspaceMainClass} dash-panel`}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <FileSpreadsheet size={20} />
@@ -2796,7 +3103,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
               <form className="space-y-4" onSubmit={handleGenerateReport}>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <select
-                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                    className={roundedSelectClass}
                     value={reportType}
                     onChange={(event) =>
                       setReportType(
@@ -2814,7 +3121,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                     <option value="pest-control">Pest Control</option>
                   </select>
                   <select
-                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                    className={roundedSelectClass}
                     value={reportFormat}
                     onChange={(event) => setReportFormat(event.target.value as 'json' | 'csv')}
                   >
@@ -2850,21 +3157,21 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
           </Card>
 
           <div className={workspaceRailClass}>
-            <Card>
+            <Card className="dash-panel">
               <CardHeader className="pb-3">
                 <CardTitle className={sectionTitleClass}>Report Snapshot</CardTitle>
                 <CardDescription className={sectionDescriptionClass}>Current export configuration before generation</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="rounded-lg border p-3">
+                <div className={outlineBlockClass}>
                   <p className="text-xs text-muted-foreground uppercase">Type</p>
                   <p className="font-medium capitalize">{reportSegmentStats.type.replace('-', ' ')}</p>
                 </div>
-                <div className="rounded-lg border p-3">
+                <div className={outlineBlockClass}>
                   <p className="text-xs text-muted-foreground uppercase">Format</p>
                   <p className="font-medium uppercase">{reportSegmentStats.format}</p>
                 </div>
-                <div className="rounded-lg border p-3">
+                <div className={outlineBlockClass}>
                   <p className="text-xs text-muted-foreground uppercase">Window</p>
                   <p className="text-sm font-medium">{reportSegmentStats.windowLabel}</p>
                 </div>
@@ -2876,103 +3183,276 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
 
       {tab === 'broadcast' && (
         <div className={workspaceGridClass}>
-          <Card className={workspaceMainClass}>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Send size={20} />
-                Broadcast Message
-              </CardTitle>
-              <CardDescription>Send operational updates to a chosen role or to every active user at once</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form className="space-y-4" onSubmit={handleSendBroadcast}>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <select
-                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-                    value={broadcastRole}
-                    onChange={(event) => setBroadcastRole(event.target.value as 'all' | UserRole)}
-                  >
-                    <option value="all">All roles</option>
-                    <option value="farmer">Farmers</option>
-                    <option value="expert">Experts</option>
-                    <option value="admin">Admins</option>
-                  </select>
-                  <select
-                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-                    value={broadcastChannel}
-                    onChange={(event) => setBroadcastChannel(event.target.value as 'sms' | 'push' | 'email' | 'all')}
-                  >
-                    <option value="sms">SMS</option>
-                    <option value="push">Push</option>
-                    <option value="email">Email</option>
-                    <option value="all">All channels</option>
-                  </select>
-                </div>
+          <div className={workspaceMainStackClass}>
+            <Card className="dash-panel">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Send size={20} />
+                  Broadcast Message
+                </CardTitle>
+                <CardDescription>Send operational updates to a chosen role or to every active user at once</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form className="space-y-4" onSubmit={handleSendBroadcast}>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <select
+                      className={roundedSelectClass}
+                      value={broadcastRole}
+                      onChange={(event) => setBroadcastRole(event.target.value as 'all' | UserRole)}
+                    >
+                      <option value="all">All roles</option>
+                      <option value="farmer">Farmers</option>
+                      <option value="expert">Experts</option>
+                      <option value="admin">Admins</option>
+                    </select>
+                    <select
+                      className={roundedSelectClass}
+                      value={broadcastChannel}
+                      onChange={(event) => setBroadcastChannel(event.target.value as 'sms' | 'push' | 'email' | 'all')}
+                    >
+                      <option value="sms">SMS</option>
+                      <option value="push">Push</option>
+                      <option value="email">Email</option>
+                      <option value="all">All channels</option>
+                    </select>
+                  </div>
 
-                <textarea
-                  className="w-full min-h-24 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  placeholder="Message (English)"
-                  value={broadcastMessage}
-                  onChange={(event) => setBroadcastMessage(event.target.value)}
-                />
-                <textarea
-                  className="w-full min-h-24 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  placeholder="Message (Kinyarwanda, optional)"
-                  value={broadcastMessageRw}
-                  onChange={(event) => setBroadcastMessageRw(event.target.value)}
-                />
-                <div className="flex flex-wrap gap-2">
-                  <Button type="submit" disabled={sendBroadcastMutation.isPending || !broadcastMessage.trim()}>
-                    {sendBroadcastMutation.isPending ? 'Queueing...' : 'Queue Broadcast'}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setBroadcastMessage('');
-                      setBroadcastMessageRw('');
-                      setBroadcastRole('all');
-                      setBroadcastChannel('sms');
-                    }}
-                  >
-                    Reset Broadcast Draft
+                  <textarea
+                    className={textAreaClass}
+                    placeholder="Message (English)"
+                    value={broadcastMessage}
+                    onChange={(event) => setBroadcastMessage(event.target.value)}
+                  />
+                  <textarea
+                    className={textAreaClass}
+                    placeholder="Message (Kinyarwanda, optional)"
+                    value={broadcastMessageRw}
+                    onChange={(event) => setBroadcastMessageRw(event.target.value)}
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="submit" disabled={sendBroadcastMutation.isPending || !broadcastMessage.trim()}>
+                      {sendBroadcastMutation.isPending ? 'Queueing...' : 'Queue Broadcast'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleProcessNotificationQueue}
+                      disabled={processNotificationQueueMutation.isPending}
+                    >
+                      {processNotificationQueueMutation.isPending ? 'Processing queue...' : 'Process Queue Now'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setBroadcastMessage('');
+                        setBroadcastMessageRw('');
+                        setBroadcastRole('all');
+                        setBroadcastChannel('sms');
+                      }}
+                    >
+                      Reset Broadcast Draft
+                    </Button>
+                  </div>
+                </form>
+              </CardContent>
+            </Card>
+
+            <Card className="dash-panel">
+              <CardHeader className="pb-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <CardTitle className={sectionTitleClass}>Delivery Queue Inspector</CardTitle>
+                    <CardDescription className={sectionDescriptionClass}>
+                      Review queued and failed outbound messages for SMS and email delivery.
+                    </CardDescription>
+                  </div>
+                  <Button size="sm" variant="outline" onClick={() => notificationQueueQuery.refetch()}>
+                    Refresh Queue
                   </Button>
                 </div>
-              </form>
-            </CardContent>
-          </Card>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {notificationQueueQuery.isLoading ? (
+                  <LoadingState text="Loading notification queue..." />
+                ) : notificationQueueQuery.error ? (
+                  <ErrorState
+                    title="Failed to load delivery queue"
+                    message="Please retry."
+                    onRetry={notificationQueueQuery.refetch}
+                  />
+                ) : (
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    <div className="space-y-3 min-w-0">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <h3 className="text-sm font-semibold">Queued Outbound Messages</h3>
+                          <p className="text-xs text-muted-foreground">Waiting for SMS or email processing.</p>
+                        </div>
+                        <Badge variant="outline">{notificationQueueSnapshot?.counts?.queued ?? 0}</Badge>
+                      </div>
+                      {filteredQueuedMessages.length === 0 ? (
+                        <div className={outlineBlockClass}>
+                          <p className="text-sm font-medium">No queued outbound messages</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            New SMS or email broadcasts will appear here until the queue processor runs.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {filteredQueuedMessages.map((message: any) => (
+                            <div key={message.id} className={outlineBlockClass}>
+                              <div className="flex flex-wrap items-start justify-between gap-2">
+                                <div className="space-y-1 min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <Badge variant="outline" className="uppercase">{message.channel}</Badge>
+                                    <span className="text-xs text-muted-foreground break-all">{message.recipient}</span>
+                                  </div>
+                                  <p className="text-sm font-medium break-words">
+                                    {truncateText(message.subject || message.content || 'Queued notification')}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground break-words">
+                                    {truncateText(message.content || 'No content preview available', 120)}
+                                  </p>
+                                </div>
+                                <div className="text-right text-xs text-muted-foreground">
+                                  <p>{toDateString(message.createdAt)}</p>
+                                  <p>Retries: {message.retryCount}</p>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-3 min-w-0">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <h3 className="text-sm font-semibold">Failed Delivery Candidates</h3>
+                          <p className="text-xs text-muted-foreground">Retryable failures returned by the backend queue view.</p>
+                        </div>
+                        <Badge variant="destructive">{notificationQueueSnapshot?.counts?.failed ?? 0}</Badge>
+                      </div>
+                      {filteredFailedMessages.length === 0 ? (
+                        <div className={outlineBlockClass}>
+                          <p className="text-sm font-medium">No retryable failed messages</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Failed SMS or email items with retries remaining will appear here.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {filteredFailedMessages.map((message: any) => (
+                            <div key={message.id} className={outlineBlockClass}>
+                              <div className="flex flex-wrap items-start justify-between gap-2">
+                                <div className="space-y-1 min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <Badge variant="destructive" className="uppercase">{message.channel}</Badge>
+                                    <span className="text-xs text-muted-foreground break-all">{message.recipient}</span>
+                                  </div>
+                                  <p className="text-sm font-medium break-words">
+                                    {truncateText(message.subject || message.content || 'Failed notification')}
+                                  </p>
+                                  <p className="text-xs text-rose-600 dark:text-rose-300 break-words">
+                                    {truncateText(message.failedReason || 'Delivery failed without a detailed reason.', 120)}
+                                  </p>
+                                </div>
+                                <div className="text-right text-xs text-muted-foreground">
+                                  <p>{toDateString(message.createdAt)}</p>
+                                  <p>Retries: {message.retryCount}</p>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
 
           <div className={workspaceRailClass}>
-            <Card>
+            <Card className="dash-panel">
               <CardHeader className="pb-3">
                 <CardTitle className={sectionTitleClass}>Broadcast Snapshot</CardTitle>
                 <CardDescription className={sectionDescriptionClass}>Live preview of target and draft payload size</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="rounded-lg border p-3">
+                <div className={outlineBlockClass}>
                   <p className="text-xs text-muted-foreground uppercase">Target role</p>
                   <p className="font-medium capitalize">{broadcastSegmentStats.targetRole}</p>
                 </div>
-                <div className="rounded-lg border p-3">
+                <div className={outlineBlockClass}>
                   <p className="text-xs text-muted-foreground uppercase">Channel</p>
                   <p className="font-medium uppercase">{broadcastSegmentStats.channel}</p>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-lg border p-3">
+                  <div className={centeredMetricTileClass}>
                     <p className="text-xs text-muted-foreground uppercase">EN chars</p>
                     <p className="text-xl font-semibold">{broadcastSegmentStats.englishLength}</p>
                   </div>
-                  <div className="rounded-lg border p-3">
+                  <div className={centeredMetricTileClass}>
                     <p className="text-xs text-muted-foreground uppercase">RW chars</p>
                     <p className="text-xl font-semibold">{broadcastSegmentStats.kinyarwandaLength}</p>
                   </div>
                 </div>
-                <div className="rounded-lg border p-3">
+                <div className={outlineBlockClass}>
                   <p className="text-xs text-muted-foreground uppercase">Total payload</p>
                   <p className="text-xl font-semibold">{broadcastSegmentStats.totalLength}</p>
                   <p className="text-xs text-muted-foreground mt-1">
                     {broadcastSegmentStats.hasDraft ? 'Draft ready to queue' : 'No message drafted yet'}
                   </p>
+                </div>
+                <div className={outlineBlockClass}>
+                  <p className="text-xs text-muted-foreground uppercase">Queue runner</p>
+                  {notificationQueueResult ? (
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium">
+                        Processed {notificationQueueResult.processed}, sent {notificationQueueResult.sent}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Failed {notificationQueueResult.failed}, retried {notificationQueueResult.retried}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Use this when SMS or email broadcasts are queued and local scheduled tasks are disabled.
+                    </p>
+                  )}
+                </div>
+                <div className={outlineBlockClass}>
+                  <p className="text-xs text-muted-foreground uppercase">Queue snapshot</p>
+                  <div className="mt-2 grid grid-cols-2 gap-3">
+                    <div className={centeredMetricTileClass}>
+                      <p className="text-xs text-muted-foreground uppercase">Queued</p>
+                      <p className="text-xl font-semibold">{notificationQueueSnapshot?.counts?.queued ?? 0}</p>
+                    </div>
+                    <div className={centeredMetricTileClass}>
+                      <p className="text-xs text-muted-foreground uppercase">Failed</p>
+                      <p className="text-xl font-semibold">{notificationQueueSnapshot?.counts?.failed ?? 0}</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    <div className={softBlockClass}>
+                      <p className="text-xs text-muted-foreground uppercase">Queued by channel</p>
+                      <p className="mt-1 text-sm font-medium break-words">
+                        {Object.entries(notificationQueueSnapshot?.counts?.queuedByChannel || {})
+                          .map(([channel, count]) => `${channel}: ${count}`)
+                          .join(' • ') || 'No queued outbound items'}
+                      </p>
+                    </div>
+                    <div className={softBlockClass}>
+                      <p className="text-xs text-muted-foreground uppercase">Failed by channel</p>
+                      <p className="mt-1 text-sm font-medium break-words">
+                        {Object.entries(notificationQueueSnapshot?.counts?.failedByChannel || {})
+                          .map(([channel, count]) => `${channel}: ${count}`)
+                          .join(' • ') || 'No retryable failures'}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -2981,12 +3461,12 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
       )}
       {/* ===== Analytics Tab ===== */}
       {tab === 'analytics' && (
-        <AdminAnalyticsPanel />
+        <AdminAnalyticsPanel searchQuery={normalizedExternalSearch} />
       )}
 
       {/* ===== Content Tab ===== */}
       {tab === 'content' && (
-        <AdminContentPanel />
+        <AdminContentPanel searchQuery={normalizedExternalSearch} />
       )}
 
       {/* ===== USSD Monitor Tab ===== */}
@@ -2998,7 +3478,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
 }
 
 // ---------- Admin Analytics Panel ----------
-function AdminAnalyticsPanel() {
+function AdminAnalyticsPanel({ searchQuery = '' }: { searchQuery?: string }) {
   const { data: systemStats, isLoading: systemLoading } = useSystemAnalytics();
   const { data: districts, isLoading: districtsLoading } = useAllDistrictsAnalytics();
   const exportAnalyticsData = useExportAnalyticsData();
@@ -3050,6 +3530,7 @@ function AdminAnalyticsPanel() {
   const updateFarmIssue = useUpdateFarmIssue();
   const s = systemStats as any;
   const farmIssues = allFarmIssuesResponse?.data || [];
+  const normalizedSearch = searchQuery.trim().toLowerCase();
   const selectedIssue = selectedIssueQuery.data as any;
   const assignableExperts = expertUsersQuery.data?.data || [];
   const assignmentDistricts = districtsQuery.data || [];
@@ -3060,8 +3541,34 @@ function AdminAnalyticsPanel() {
       ),
     [assignmentDistricts]
   );
+  const filteredAnalyticsDistricts = useMemo(() => {
+    const source = Array.isArray(districts) ? districts : [];
+    if (!normalizedSearch) return source;
+    return source.filter((district: any) =>
+      matchesSearchTerm(normalizedSearch, [
+        district.district,
+        district.name,
+        district.region,
+      ])
+    );
+  }, [districts, normalizedSearch]);
+  const filteredFarmIssues = useMemo(() => {
+    if (!normalizedSearch) return farmIssues;
+    return farmIssues.filter((issue) =>
+      matchesSearchTerm(normalizedSearch, [
+        issue.title,
+        issue.description,
+        issue.category,
+        issue.severity,
+        issue.status,
+        issue.farm?.name,
+        issue.assignee?.firstName,
+        issue.assignee?.email,
+      ])
+    );
+  }, [farmIssues, normalizedSearch]);
   const issueSummary = useMemo(() => {
-    return farmIssues.reduce(
+    return filteredFarmIssues.reduce(
       (acc, issue) => {
         acc.total += 1;
         acc.byStatus[issue.status] = (acc.byStatus[issue.status] || 0) + 1;
@@ -3074,16 +3581,16 @@ function AdminAnalyticsPanel() {
         bySeverity: {} as Record<string, number>,
       }
     );
-  }, [farmIssues]);
+  }, [filteredFarmIssues]);
   useEffect(() => {
-    if (!selectedIssueId && farmIssues.length > 0) {
-      setSelectedIssueId(farmIssues[0].id);
+    if (!selectedIssueId && filteredFarmIssues.length > 0) {
+      setSelectedIssueId(filteredFarmIssues[0].id);
       return;
     }
-    if (selectedIssueId && farmIssues.length > 0 && !farmIssues.some((issue) => issue.id === selectedIssueId)) {
-      setSelectedIssueId(farmIssues[0].id);
+    if (selectedIssueId && filteredFarmIssues.length > 0 && !filteredFarmIssues.some((issue) => issue.id === selectedIssueId)) {
+      setSelectedIssueId(filteredFarmIssues[0].id);
     }
-  }, [farmIssues, selectedIssueId]);
+  }, [filteredFarmIssues, selectedIssueId]);
   const pestControlSummary = useMemo(() => {
     return (pestControlActivity?.activities || []).reduce(
       (acc, item) => {
@@ -3099,7 +3606,9 @@ function AdminAnalyticsPanel() {
     );
   }, [pestControlActivity]);
   const outbreakSummary = useMemo(() => {
-    const districts = outbreakMap?.byDistrict || [];
+    const districts = (outbreakMap?.byDistrict || []).filter((district: any) =>
+      matchesSearchTerm(normalizedSearch, [district.district])
+    );
     const severeSignals = districts.reduce(
       (total, item) => total + Number(item.severity?.high || 0) + Number(item.severity?.severe || 0),
       0
@@ -3110,7 +3619,7 @@ function AdminAnalyticsPanel() {
       topDistrict: districts[0]?.district || 'N/A',
       severeSignals,
     };
-  }, [outbreakMap]);
+  }, [normalizedSearch, outbreakMap]);
 
   const analyticsSnapshot = useMemo(() => {
     return {
@@ -3120,9 +3629,24 @@ function AdminAnalyticsPanel() {
       recommendations: s?.recommendationCount ?? s?.totalRecommendations ?? 0,
       openIssues: issueSummary.byStatus.open || 0,
       severeSignals: outbreakSummary.severeSignals,
-      districtsTracked: Array.isArray(districts) ? districts.length : 0,
+      districtsTracked: filteredAnalyticsDistricts.length,
     };
-  }, [districts, issueSummary.byStatus.open, outbreakSummary.severeSignals, s]);
+  }, [filteredAnalyticsDistricts.length, issueSummary.byStatus.open, outbreakSummary.severeSignals, s]);
+  const analyticsSearchScopeItems: SearchScopeItem[] = normalizedSearch
+    ? [
+        { label: 'Issues', value: filteredFarmIssues.length, total: farmIssues.length },
+        {
+          label: 'Districts',
+          value: filteredAnalyticsDistricts.length,
+          total: Array.isArray(districts) ? districts.length : 0,
+        },
+        {
+          label: 'Outbreak Rows',
+          value: outbreakSummary.affectedDistricts,
+          total: Array.isArray(outbreakMap?.byDistrict) ? outbreakMap.byDistrict.length : 0,
+        },
+      ]
+    : [];
 
   const handleIssueUpdate = async (
     issue: any,
@@ -3180,8 +3704,20 @@ function AdminAnalyticsPanel() {
 
   return (
     <div className={workspaceGridClass}>
+      {normalizedSearch && (
+        <div className="lg:col-span-12">
+          <div className={filterBarClass}>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="dash-pill bg-sky-100 text-sky-800 dark:bg-sky-900/35 dark:text-sky-300">
+                Analytics Filter: "{searchQuery.trim()}"
+              </span>
+              <SearchScopePills items={analyticsSearchScopeItems} accent="sky" />
+            </div>
+          </div>
+        </div>
+      )}
       <div className={workspaceMainWideStackClass}>
-      <Card>
+      <Card className="dash-panel">
         <CardHeader>
           <CardTitle className="text-base">Analytics Export</CardTitle>
           <CardDescription>Use the general analytics export endpoint for summary dataset downloads</CardDescription>
@@ -3190,7 +3726,7 @@ function AdminAnalyticsPanel() {
           <form className="space-y-4" onSubmit={handleExportAnalytics}>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
               <select
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                className={roundedSelectClass}
                 value={analyticsExportType}
                 onChange={(event) =>
                   setAnalyticsExportType(
@@ -3204,7 +3740,7 @@ function AdminAnalyticsPanel() {
                 <option value="pest-detections">Pest Detections</option>
               </select>
               <select
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                className={roundedSelectClass}
                 value={analyticsExportFormat}
                 onChange={(event) => setAnalyticsExportFormat(event.target.value as 'json' | 'csv')}
               >
@@ -3229,7 +3765,7 @@ function AdminAnalyticsPanel() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="dash-panel">
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
             <BarChart2 size={20} className="text-primary" />
@@ -3247,10 +3783,17 @@ function AdminAnalyticsPanel() {
                 { label: 'Total Farms', value: s?.farmCount ?? s?.totalFarms ?? '--' },
                 { label: 'Total Sensors', value: s?.sensorCount ?? s?.totalSensors ?? '--' },
                 { label: 'Recommendations', value: s?.recommendationCount ?? s?.totalRecommendations ?? '--' },
-              ].map((stat) => (
-                <div key={stat.label} className="rounded-lg border p-4 text-center">
-                  <p className="text-2xl font-bold">{String(stat.value)}</p>
-                  <p className="text-xs text-muted-foreground mt-1">{stat.label}</p>
+              ].map((stat, index) => (
+                <div 
+                  key={stat.label} 
+                  className={`${index === 0 ? 'dash-metric-tile dash-metric-tile-accent' : 'dash-metric-tile'} flex flex-col justify-center p-4 sm:p-5`}
+                >
+                  <p className={`text-3xl font-bold ${index === 0 ? '' : 'text-slate-900 dark:text-white'}`}>
+                    {String(stat.value)}
+                  </p>
+                  <p className={`text-xs mt-1 font-medium ${index === 0 ? 'text-white/80' : 'text-slate-500'}`}>
+                    {stat.label}
+                  </p>
                 </div>
               ))}
             </div>
@@ -3258,7 +3801,7 @@ function AdminAnalyticsPanel() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="dash-panel">
         <CardHeader>
           <CardTitle className="text-base">Recommendation Response Overview</CardTitle>
           <CardDescription>System-wide farmer response behavior over the last 30 days</CardDescription>
@@ -3269,11 +3812,11 @@ function AdminAnalyticsPanel() {
           ) : (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-                <div className="rounded-lg border p-4 text-center">
+                <div className="dash-metric-tile text-center">
                   <p className="text-2xl font-bold">{recommendationStats?.total ?? 0}</p>
                   <p className="text-xs text-muted-foreground mt-1">Recommendations</p>
                 </div>
-                <div className="rounded-lg border p-4 text-center">
+                <div className="dash-metric-tile text-center">
                   <p className="text-2xl font-bold">
                     {typeof recommendationStats?.responseRate === 'number'
                       ? `${Math.round(recommendationStats.responseRate)}%`
@@ -3281,7 +3824,7 @@ function AdminAnalyticsPanel() {
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">Response Rate</p>
                 </div>
-                <div className="rounded-lg border p-4 text-center">
+                <div className="dash-metric-tile text-center">
                   <p className="text-2xl font-bold">
                     {typeof recommendationStats?.acceptanceRate === 'number'
                       ? `${Math.round(recommendationStats.acceptanceRate)}%`
@@ -3289,7 +3832,7 @@ function AdminAnalyticsPanel() {
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">Acceptance Rate</p>
                 </div>
-                <div className="rounded-lg border p-4 text-center">
+                <div className="dash-metric-tile text-center">
                   <p className="text-2xl font-bold">
                     {typeof recommendationStats?.avgResponseTime === 'number'
                       ? `${recommendationStats.avgResponseTime}h`
@@ -3300,7 +3843,7 @@ function AdminAnalyticsPanel() {
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
-                <div className="rounded-lg border p-4">
+                <div className="dash-detail-card">
                   <p className="font-medium">Response Channels</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {Object.entries(recommendationStats?.byChannel || {}).length > 0 ? (
@@ -3315,7 +3858,7 @@ function AdminAnalyticsPanel() {
                   </div>
                 </div>
 
-                <div className="rounded-lg border p-4">
+                <div className="dash-detail-card">
                   <p className="font-medium">Status Breakdown</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {Object.entries(recommendationStats?.byStatus || {}).length > 0 ? (
@@ -3335,7 +3878,7 @@ function AdminAnalyticsPanel() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="dash-panel">
         <CardHeader>
           <CardTitle className="text-base">Pest Outbreak Watch</CardTitle>
           <CardDescription>System-wide outbreak signals from the backend outbreak-map endpoint</CardDescription>
@@ -3346,19 +3889,19 @@ function AdminAnalyticsPanel() {
           ) : (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-                <div className="rounded-lg border p-4 text-center">
+                <div className="dash-metric-tile text-center">
                   <p className="text-2xl font-bold">{outbreakSummary.totalDetections}</p>
                   <p className="text-xs text-muted-foreground mt-1">Detections</p>
                 </div>
-                <div className="rounded-lg border p-4 text-center">
+                <div className="dash-metric-tile text-center">
                   <p className="text-2xl font-bold">{outbreakSummary.affectedDistricts}</p>
                   <p className="text-xs text-muted-foreground mt-1">Districts Affected</p>
                 </div>
-                <div className="rounded-lg border p-4 text-center">
+                <div className="dash-metric-tile text-center">
                   <p className="text-2xl font-bold">{outbreakSummary.severeSignals}</p>
                   <p className="text-xs text-muted-foreground mt-1">High + Severe Signals</p>
                 </div>
-                <div className="rounded-lg border p-4 text-center">
+                <div className="dash-metric-tile text-center">
                   <p className="text-lg font-bold">{outbreakSummary.topDistrict}</p>
                   <p className="text-xs text-muted-foreground mt-1">Top District</p>
                 </div>
@@ -3367,7 +3910,7 @@ function AdminAnalyticsPanel() {
               {outbreakMap?.byDistrict?.length ? (
                 <div className="space-y-2">
                   {outbreakMap.byDistrict.slice(0, 5).map((district) => (
-                    <div key={district.district} className="flex items-center justify-between rounded-lg border p-3">
+                    <div key={district.district} className="dash-subtile flex items-center justify-between">
                       <div>
                         <p className="font-medium">{district.district}</p>
                         <p className="text-xs text-muted-foreground">
@@ -3389,7 +3932,7 @@ function AdminAnalyticsPanel() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="dash-panel">
         <CardHeader>
           <CardTitle className="text-base">Pest Control Operations</CardTitle>
           <CardDescription>System-wide pest-control follow-through over the last 7 days.</CardDescription>
@@ -3400,15 +3943,15 @@ function AdminAnalyticsPanel() {
           ) : (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
-                <div className="rounded-lg border p-4 text-center">
+                <div className="dash-metric-tile text-center">
                   <p className="text-2xl font-bold">{pestControlSummary.total}</p>
                   <p className="text-xs text-muted-foreground mt-1">Logged Operations</p>
                 </div>
-                <div className="rounded-lg border p-4 text-center">
+                <div className="dash-metric-tile text-center">
                   <p className="text-2xl font-bold">{pestControlSummary.scheduled}</p>
                   <p className="text-xs text-muted-foreground mt-1">Scheduled</p>
                 </div>
-                <div className="rounded-lg border p-4 text-center">
+                <div className="dash-metric-tile text-center">
                   <p className="text-2xl font-bold">{pestControlSummary.executed}</p>
                   <p className="text-xs text-muted-foreground mt-1">Executed</p>
                 </div>
@@ -3417,7 +3960,7 @@ function AdminAnalyticsPanel() {
               {Array.isArray(pestControlActivity?.activities) && pestControlActivity.activities.length > 0 ? (
                 <div className="space-y-2">
                   {pestControlActivity.activities.slice(0, 5).map((item) => (
-                    <div key={item.id} className="rounded-lg border p-3">
+                    <div key={item.id} className="dash-subtile">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <div className="flex flex-wrap items-center gap-2">
@@ -3445,7 +3988,7 @@ function AdminAnalyticsPanel() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="dash-panel">
         <CardHeader>
           <CardTitle className="text-base">Alert Statistics</CardTitle>
           <CardDescription>Backend alert metrics over the last 30 days</CardDescription>
@@ -3456,19 +3999,19 @@ function AdminAnalyticsPanel() {
           ) : (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-                <div className="rounded-lg border p-4 text-center">
+                <div className="dash-metric-tile text-center">
                   <p className="text-2xl font-bold">{alertStats?.totalAlerts ?? 0}</p>
                   <p className="text-xs text-muted-foreground mt-1">Total Alerts</p>
                 </div>
-                <div className="rounded-lg border p-4 text-center">
+                <div className="dash-metric-tile text-center">
                   <p className="text-2xl font-bold">{alertStats?.criticalAlerts ?? 0}</p>
                   <p className="text-xs text-muted-foreground mt-1">Critical Alerts</p>
                 </div>
-                <div className="rounded-lg border p-4 text-center">
+                <div className="dash-metric-tile text-center">
                   <p className="text-2xl font-bold">{alertStats?.resolvedAlerts ?? 0}</p>
                   <p className="text-xs text-muted-foreground mt-1">Resolved Alerts</p>
                 </div>
-                <div className="rounded-lg border p-4 text-center">
+                <div className="dash-metric-tile text-center">
                   <p className="text-2xl font-bold">
                     {typeof alertStats?.avgResolutionTime === 'number' ? `${alertStats.avgResolutionTime}h` : 'N/A'}
                   </p>
@@ -3477,7 +4020,7 @@ function AdminAnalyticsPanel() {
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
-                <div className="rounded-lg border p-4">
+                <div className="dash-detail-card">
                   <p className="font-medium">By Type</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {Object.entries(alertStats?.byType || {}).length > 0 ? (
@@ -3492,7 +4035,7 @@ function AdminAnalyticsPanel() {
                   </div>
                 </div>
 
-                <div className="rounded-lg border p-4">
+                <div className="dash-detail-card">
                   <p className="font-medium">By District</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {Object.entries(alertStats?.byDistrict || {}).length > 0 ? (
@@ -3512,7 +4055,7 @@ function AdminAnalyticsPanel() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="dash-panel">
         <CardHeader>
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -3521,7 +4064,7 @@ function AdminAnalyticsPanel() {
             </div>
             <div className="flex items-center gap-2">
               <select
-                className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                className={compactSelectClass}
                 value={issueStatusFilter}
                 onChange={(event) => {
                   setIssueStatusFilter(event.target.value as typeof issueStatusFilter);
@@ -3555,25 +4098,25 @@ function AdminAnalyticsPanel() {
           ) : (
             <>
               <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-                <div className="rounded-lg border p-4 text-center">
+                <div className="dash-metric-tile text-center">
                   <p className="text-2xl font-bold">{allFarmIssuesResponse?.pagination?.total || issueSummary.total}</p>
                   <p className="text-xs text-muted-foreground mt-1">Visible Issues</p>
                 </div>
-                <div className="rounded-lg border p-4 text-center">
+                <div className="dash-metric-tile text-center">
                   <p className="text-2xl font-bold">{issueSummary.byStatus.open || 0}</p>
                   <p className="text-xs text-muted-foreground mt-1">Open</p>
                 </div>
-                <div className="rounded-lg border p-4 text-center">
+                <div className="dash-metric-tile text-center">
                   <p className="text-2xl font-bold">{issueSummary.byStatus.in_progress || 0}</p>
                   <p className="text-xs text-muted-foreground mt-1">In Progress</p>
                 </div>
-                <div className="rounded-lg border p-4 text-center">
+                <div className="dash-metric-tile text-center">
                   <p className="text-2xl font-bold">{(issueSummary.bySeverity.high || 0) + (issueSummary.bySeverity.urgent || 0)}</p>
                   <p className="text-xs text-muted-foreground mt-1">High / Urgent</p>
                 </div>
               </div>
 
-              <Card className="border-dashed">
+              <Card className="dash-panel">
                 <CardHeader>
                   <CardTitle className="text-sm">Selected Issue Detail</CardTitle>
                   <CardDescription>Route-backed detail from the single farm-issue endpoint</CardDescription>
@@ -3595,41 +4138,41 @@ function AdminAnalyticsPanel() {
                       </div>
                       <p className="text-sm text-muted-foreground">{selectedIssue.description}</p>
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                        <div className="rounded-lg bg-muted/30 p-3">
+                        <div className={softBlockClass}>
                           <p className="text-xs text-muted-foreground uppercase">Farm</p>
                           <p className="font-medium">{selectedIssue.farm?.name || selectedIssue.farmId || 'N/A'}</p>
                         </div>
-                        <div className="rounded-lg bg-muted/30 p-3">
+                        <div className={softBlockClass}>
                           <p className="text-xs text-muted-foreground uppercase">Reporter</p>
                           <p className="font-medium">
                             {selectedIssue.reporter?.firstName || selectedIssue.reporter?.email || selectedIssue.reportedBy || 'N/A'}
                           </p>
                         </div>
-                        <div className="rounded-lg bg-muted/30 p-3">
+                        <div className={softBlockClass}>
                           <p className="text-xs text-muted-foreground uppercase">Location</p>
                           <p className="font-medium">{selectedIssue.locationDescription || 'N/A'}</p>
                         </div>
-                        <div className="rounded-lg bg-muted/30 p-3">
+                        <div className={softBlockClass}>
                           <p className="text-xs text-muted-foreground uppercase">Source Channel</p>
                           <p className="font-medium">{selectedIssue.sourceChannel || 'N/A'}</p>
                         </div>
-                        <div className="rounded-lg bg-muted/30 p-3">
+                        <div className={softBlockClass}>
                           <p className="text-xs text-muted-foreground uppercase">Created</p>
                           <p className="font-medium">{toDateString(selectedIssue.createdAt)}</p>
                         </div>
-                        <div className="rounded-lg bg-muted/30 p-3">
+                        <div className={softBlockClass}>
                           <p className="text-xs text-muted-foreground uppercase">Updated</p>
                           <p className="font-medium">{toDateString(selectedIssue.updatedAt)}</p>
                         </div>
                       </div>
                       {selectedIssue.expertNotes && (
-                        <div className="rounded-lg bg-muted/30 p-3">
+                        <div className={softBlockClass}>
                           <p className="text-xs text-muted-foreground uppercase">Expert Notes</p>
                           <p className="font-medium">{selectedIssue.expertNotes}</p>
                         </div>
                       )}
                       {selectedIssue.resolutionNotes && (
-                        <div className="rounded-lg bg-muted/30 p-3">
+                        <div className={softBlockClass}>
                           <p className="text-xs text-muted-foreground uppercase">Resolution Notes</p>
                           <p className="font-medium">{selectedIssue.resolutionNotes}</p>
                         </div>
@@ -3641,11 +4184,18 @@ function AdminAnalyticsPanel() {
                 </CardContent>
               </Card>
 
-              {farmIssues.length === 0 ? (
-                <EmptyState title="No farm issues" message="No farmer-reported issues match the selected status filter." />
+              {filteredFarmIssues.length === 0 ? (
+                <EmptyState
+                  title={normalizedSearch ? 'No matching farm issues' : 'No farm issues'}
+                  message={
+                    normalizedSearch
+                      ? `No farmer-reported issues match "${searchQuery}".`
+                      : 'No farmer-reported issues match the selected status filter.'
+                  }
+                />
               ) : (
                 <div className="space-y-3">
-                  {farmIssues.map((issue) => {
+                  {filteredFarmIssues.map((issue) => {
                     const farmDistrictId = getFarmDistrictId(issue);
                     const issueDistrictName =
                       issue.farm?.district?.name
@@ -3657,7 +4207,7 @@ function AdminAnalyticsPanel() {
                     });
 
                     return (
-                    <div key={issue.id} className="rounded-lg border p-4">
+                    <div key={issue.id} className="dash-detail-card">
                       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                         <div className="space-y-1">
                           <div className="flex flex-wrap items-center gap-2">
@@ -3696,7 +4246,7 @@ function AdminAnalyticsPanel() {
 
                         <div className="flex flex-wrap gap-2">
                           <select
-                            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                            className={compactSelectClass}
                             value={issueAssignments[issue.id] ?? issue.assignedTo ?? ''}
                             onChange={(event) =>
                               setIssueAssignments((current) => ({
@@ -3820,17 +4370,17 @@ function AdminAnalyticsPanel() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="dash-panel">
         <CardHeader>
           <CardTitle className="text-base">District Breakdown</CardTitle>
         </CardHeader>
         <CardContent>
           {districtsLoading ? (
             <LoadingState text="Loading district data..." size="sm" />
-          ) : Array.isArray(districts) && districts.length > 0 ? (
+          ) : filteredAnalyticsDistricts.length > 0 ? (
             <div className="space-y-2">
-              {(districts as any[]).map((d) => (
-                <div key={d.district} className="flex items-center justify-between rounded-lg border px-4 py-2">
+              {filteredAnalyticsDistricts.map((d: any) => (
+                <div key={d.district} className={`${outlineBlockClass} flex items-center justify-between gap-4`}>
                   <p className="font-medium">{d.district}</p>
                   <div className="flex items-center gap-4 text-sm text-muted-foreground">
                     <span>{d.farmCount ?? 0} farms</span>
@@ -3841,7 +4391,14 @@ function AdminAnalyticsPanel() {
               ))}
             </div>
           ) : (
-            <EmptyState title="No district data" message="No district analytics available." />
+            <EmptyState
+              title={normalizedSearch ? 'No matching district data' : 'No district data'}
+              message={
+                normalizedSearch
+                  ? `No district analytics match "${searchQuery}".`
+                  : 'No district analytics available.'
+              }
+            />
           )}
         </CardContent>
       </Card>
@@ -3849,31 +4406,31 @@ function AdminAnalyticsPanel() {
       </div>
 
       <div className={workspaceRailClass}>
-        <Card>
+        <Card className="dash-panel">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm">Analytics Snapshot</CardTitle>
             <CardDescription>Cross-surface summary from active analytics feeds</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-lg border p-3">
+              <div className={centeredMetricTileClass}>
                 <p className="text-xs text-muted-foreground uppercase">Users</p>
                 <p className="text-xl font-semibold">{analyticsSnapshot.totalUsers}</p>
               </div>
-              <div className="rounded-lg border p-3">
+              <div className={centeredMetricTileClass}>
                 <p className="text-xs text-muted-foreground uppercase">Farms</p>
                 <p className="text-xl font-semibold">{analyticsSnapshot.totalFarms}</p>
               </div>
-              <div className="rounded-lg border p-3">
+              <div className={centeredMetricTileClass}>
                 <p className="text-xs text-muted-foreground uppercase">Sensors</p>
                 <p className="text-xl font-semibold">{analyticsSnapshot.totalSensors}</p>
               </div>
-              <div className="rounded-lg border p-3">
+              <div className={centeredMetricTileClass}>
                 <p className="text-xs text-muted-foreground uppercase">Recs</p>
                 <p className="text-xl font-semibold">{analyticsSnapshot.recommendations}</p>
               </div>
             </div>
-            <div className="rounded-lg border p-3 space-y-2">
+            <div className={`${outlineBlockClass} space-y-2`}>
               <div className="flex items-center justify-between">
                 <p className="text-sm">Open Issues</p>
                 <Badge variant="outline">{analyticsSnapshot.openIssues}</Badge>
@@ -3895,29 +4452,70 @@ function AdminAnalyticsPanel() {
 }
 
 // ---------- Admin Content Panel ----------
-function AdminContentPanel() {
+function AdminContentPanel({ searchQuery = '' }: { searchQuery?: string }) {
   const { data: resourcesData, isLoading: resLoading } = useContentResources();
   const { data: faqData, isLoading: faqLoading } = useContentFAQ();
   const [activeSection, setActiveSection] = useState<'resources' | 'faq'>('resources');
 
   const resources = (resourcesData as any)?.items ?? [];
   const faqs = (faqData as any)?.items ?? [];
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+  const filteredResources = useMemo(() => {
+    if (!normalizedSearch) return resources;
+    return resources.filter((resource: any) =>
+      matchesSearchTerm(normalizedSearch, [
+        resource.title,
+        resource.category,
+        resource.type,
+        resource.desc,
+        resource.url,
+      ])
+    );
+  }, [normalizedSearch, resources]);
+  const filteredFaqs = useMemo(() => {
+    if (!normalizedSearch) return faqs;
+    return faqs.filter((faq: any) =>
+      matchesSearchTerm(normalizedSearch, [
+        faq.question,
+        faq.answer,
+        faq.category,
+      ])
+    );
+  }, [faqs, normalizedSearch]);
   const contentStats = useMemo(() => {
     const categories = new Set<string>();
-    resources.forEach((resource: any) => {
+    filteredResources.forEach((resource: any) => {
       if (resource?.category) categories.add(String(resource.category));
     });
     return {
-      resources: resources.length,
-      faqs: faqs.length,
+      resources: filteredResources.length,
+      faqs: filteredFaqs.length,
       categories: categories.size,
       activeSection,
     };
-  }, [activeSection, faqs.length, resources]);
+  }, [activeSection, filteredFaqs.length, filteredResources, normalizedSearch]);
+  const contentSearchScopeItems: SearchScopeItem[] = normalizedSearch
+    ? [
+        { label: 'Resources', value: filteredResources.length, total: resources.length },
+        { label: 'FAQ', value: filteredFaqs.length, total: faqs.length },
+      ]
+    : [];
 
   return (
     <div className={workspaceGridClass}>
-      <Card className={workspaceMainClass}>
+      {normalizedSearch && (
+        <div className="lg:col-span-12">
+          <div className={filterBarClass}>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="dash-pill bg-sky-100 text-sky-800 dark:bg-sky-900/35 dark:text-sky-300">
+                Content Filter: "{searchQuery.trim()}"
+              </span>
+              <SearchScopePills items={contentSearchScopeItems} accent="sky" />
+            </div>
+          </div>
+        </div>
+      )}
+      <Card className={`${workspaceMainClass} dash-panel`}>
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
             <BookOpen size={20} className="text-primary" />
@@ -3926,29 +4524,38 @@ function AdminContentPanel() {
           <CardDescription>View and manage public-facing content (resources, FAQ)</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               variant={activeSection === 'resources' ? 'default' : 'outline'}
               size="sm"
               onClick={() => setActiveSection('resources')}
             >
-              Resources ({resources.length})
+              Resources ({filteredResources.length})
             </Button>
             <Button
               variant={activeSection === 'faq' ? 'default' : 'outline'}
               size="sm"
               onClick={() => setActiveSection('faq')}
             >
-              FAQ ({faqs.length})
+              FAQ ({filteredFaqs.length})
             </Button>
           </div>
 
           {activeSection === 'resources' && (
             resLoading ? <LoadingState text="Loading resources..." size="sm" /> :
-            resources.length === 0 ? <EmptyState title="No resources" message="No content resources found." /> :
+            filteredResources.length === 0 ? (
+              <EmptyState
+                title={normalizedSearch ? 'No matching resources' : 'No resources'}
+                message={
+                  normalizedSearch
+                    ? `No content resources match "${searchQuery}".`
+                    : 'No content resources found.'
+                }
+              />
+            ) :
             <div className="space-y-2 max-h-96 overflow-y-auto">
-              {resources.map((r: any, i: number) => (
-                <div key={r.id ?? i} className="rounded-lg border p-3">
+              {filteredResources.map((r: any, i: number) => (
+                <div key={r.id ?? i} className={outlineBlockClass}>
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <p className="font-medium">{r.title}</p>
@@ -3967,13 +4574,22 @@ function AdminContentPanel() {
 
           {activeSection === 'faq' && (
             faqLoading ? <LoadingState text="Loading FAQ..." size="sm" /> :
-            faqs.length === 0 ? <EmptyState title="No FAQ" message="No FAQ items found." /> :
+            filteredFaqs.length === 0 ? (
+              <EmptyState
+                title={normalizedSearch ? 'No matching FAQ items' : 'No FAQ'}
+                message={
+                  normalizedSearch
+                    ? `No FAQ items match "${searchQuery}".`
+                    : 'No FAQ items found.'
+                }
+              />
+            ) :
             <div className="space-y-3 max-h-96 overflow-y-auto">
-              {faqs.map((f: any, i: number) => (
-                <div key={f.id ?? i} className="rounded-lg border p-3">
+              {filteredFaqs.map((f: any, i: number) => (
+                <div key={f.id ?? i} className={outlineBlockClass}>
                   <p className="font-medium text-sm">{f.question}</p>
                   <p className="text-sm text-muted-foreground mt-1">{f.answer}</p>
-                  <span className="mt-1 inline-block text-xs bg-muted px-2 py-0.5 rounded">{f.category}</span>
+                  <span className="mt-1 inline-block text-xs bg-muted px-2 py-0.5 rounded-full">{f.category}</span>
                 </div>
               ))}
             </div>
@@ -3982,27 +4598,27 @@ function AdminContentPanel() {
       </Card>
 
       <div className={workspaceRailClass}>
-        <Card>
+        <Card className="dash-panel">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm">Content Snapshot</CardTitle>
             <CardDescription>Current content inventory and active workspace section</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-lg border p-3">
+              <div className={centeredMetricTileClass}>
                 <p className="text-xs text-muted-foreground uppercase">Resources</p>
                 <p className="text-xl font-semibold">{contentStats.resources}</p>
               </div>
-              <div className="rounded-lg border p-3">
+              <div className={centeredMetricTileClass}>
                 <p className="text-xs text-muted-foreground uppercase">FAQ</p>
                 <p className="text-xl font-semibold">{contentStats.faqs}</p>
               </div>
             </div>
-            <div className="rounded-lg border p-3">
+            <div className={outlineBlockClass}>
               <p className="text-xs text-muted-foreground uppercase">Resource categories</p>
               <p className="text-xl font-semibold">{contentStats.categories}</p>
             </div>
-            <div className="rounded-lg border p-3">
+            <div className={outlineBlockClass}>
               <p className="text-xs text-muted-foreground uppercase">Active section</p>
               <p className="font-medium capitalize">{contentStats.activeSection}</p>
             </div>
@@ -4066,7 +4682,7 @@ function AdminUssdPanel() {
 
   return (
     <div className={workspaceGridClass}>
-      <Card className={workspaceMainClass}>
+      <Card className={`${workspaceMainClass} dash-panel`}>
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
             <MessageSquare size={20} className="text-primary" />
@@ -4075,7 +4691,7 @@ function AdminUssdPanel() {
           <CardDescription>Monitor the USSD integration status and AI service health</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="rounded-lg border p-4 space-y-3">
+          <div className="dash-detail-card space-y-3">
             <div className="flex items-center justify-between">
               <p className="font-medium">USSD Service</p>
               {ussdLoading ? (
@@ -4101,7 +4717,7 @@ function AdminUssdPanel() {
             </div>
           </div>
 
-          <div className="rounded-lg border p-4 space-y-3">
+          <div className="dash-detail-card space-y-3">
             <p className="font-medium">AI Service Health</p>
             {aiLoading ? (
               <LoadingState text="Checking AI status..." size="sm" />
@@ -4121,7 +4737,7 @@ function AdminUssdPanel() {
             )}
           </div>
 
-          <div className="rounded-lg border p-4 space-y-4">
+          <div className="dash-detail-card space-y-4">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="font-medium">USSD Session Simulator</p>
@@ -4130,7 +4746,7 @@ function AdminUssdPanel() {
                   real recommendation, farm, and weather menu responses.
                 </p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button
                   size="sm"
                   variant={useEnhancedFlow ? 'default' : 'outline'}
@@ -4177,7 +4793,7 @@ function AdminUssdPanel() {
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 placeholder="Leave empty for the first menu, or enter values like 1 or 1*2"
-                className="min-h-[88px] w-full rounded-xl border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+                className={textAreaClass}
               />
             </div>
 
@@ -4197,7 +4813,7 @@ function AdminUssdPanel() {
               </Button>
             </div>
 
-            <div className="rounded-lg bg-muted/40 p-3 space-y-2">
+            <div className={`${softBlockClass} space-y-2`}>
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium">Latest backend response</p>
                 <Badge variant="outline">{lastEndpoint.toUpperCase()}</Badge>
@@ -4215,13 +4831,13 @@ function AdminUssdPanel() {
       </Card>
 
       <div className={workspaceRailClass}>
-        <Card>
+        <Card className="dash-panel">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm">USSD Snapshot</CardTitle>
             <CardDescription>Live simulator and service status summary</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="rounded-lg border p-3">
+            <div className={outlineBlockClass}>
               <p className="text-xs text-muted-foreground uppercase">Service health</p>
               <div className="mt-1">
                 <Badge variant={ussdPanelStats.healthStatus === 'healthy' ? 'secondary' : 'destructive'}>
@@ -4229,21 +4845,21 @@ function AdminUssdPanel() {
                 </Badge>
               </div>
             </div>
-            <div className="rounded-lg border p-3">
+            <div className={outlineBlockClass}>
               <p className="text-xs text-muted-foreground uppercase">AI status</p>
               <p className="font-medium capitalize">{ussdPanelStats.aiStatus}</p>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-lg border p-3">
+              <div className={centeredMetricTileClass}>
                 <p className="text-xs text-muted-foreground uppercase">Flow</p>
                 <p className="font-medium uppercase">{ussdPanelStats.flow}</p>
               </div>
-              <div className="rounded-lg border p-3">
+              <div className={centeredMetricTileClass}>
                 <p className="text-xs text-muted-foreground uppercase">Endpoint</p>
                 <p className="font-medium">{ussdPanelStats.endpoint}</p>
               </div>
             </div>
-            <div className="rounded-lg border p-3">
+            <div className={outlineBlockClass}>
               <p className="text-xs text-muted-foreground uppercase">Latest response</p>
               <p className="text-sm font-medium">
                 {ussdPanelStats.hasResponse ? `${ussdPanelStats.responseLength} chars` : 'No response yet'}
@@ -4257,5 +4873,3 @@ function AdminUssdPanel() {
 }
 
 export default ConnectedAdminDashboard;
-
-

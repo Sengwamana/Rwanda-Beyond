@@ -1,4 +1,4 @@
-﻿// =====================================================
+// =====================================================
 // Sensor Card Component - Smart Maize Farming System
 // Display real-time sensor data with visual indicators
 // =====================================================
@@ -127,12 +127,12 @@ export const SensorCard: React.FC<SensorCardProps> = ({
     <div
       onClick={onClick}
       className={`
-        bg-white dark:bg-slate-800 
-        border border-slate-100 dark:border-slate-700 
-        rounded-2xl p-5 
-        shadow-soft hover:shadow-lg
-        transition-all duration-300
-        ${onClick ? 'cursor-pointer hover:-translate-y-1' : ''}
+        bg-white dark:bg-slate-900 
+        border border-slate-200 dark:border-slate-800 
+        rounded-[1.25rem] p-5 
+        shadow-sm hover:shadow-md
+        transition-all duration-200
+        ${onClick ? 'cursor-pointer' : ''}
         ${className}
       `}
     >
@@ -297,9 +297,9 @@ export const SensorSummary: React.FC<SensorSummaryProps> = ({
 }) => {
   return (
     <div className={`
-      bg-white dark:bg-slate-800 
-      border border-slate-100 dark:border-slate-700 
-      rounded-xl p-4
+      bg-white dark:bg-slate-900 
+      border border-slate-200 dark:border-slate-800 
+      rounded-[1.25rem] p-4
       ${className}
     `}>
       <div className="flex items-center gap-2 mb-3">

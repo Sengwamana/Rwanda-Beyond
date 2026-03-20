@@ -69,10 +69,10 @@ export const StatsCard: React.FC<StatsCardProps> = ({
 
   // Variant configurations
   const variantClasses = {
-    default: 'bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 shadow-soft',
-    gradient: 'bg-gradient-to-br from-green-500 to-emerald-600 text-white border-0',
-    outline: 'bg-transparent border-2 border-slate-200 dark:border-slate-700',
-    minimal: 'bg-slate-50 dark:bg-slate-800/50 border-0'
+    default: 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm',
+    gradient: 'bg-[#0F5132] text-white border-0 shadow-sm',
+    outline: 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800',
+    minimal: 'bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800'
   };
 
   const isGradient = variant === 'gradient';
@@ -92,10 +92,10 @@ export const StatsCard: React.FC<StatsCardProps> = ({
     <div
       onClick={onClick}
       className={`
-        rounded-2xl transition-all duration-300
+        rounded-[1.25rem] transition-all duration-200
         ${config.padding}
         ${variantClasses[variant]}
-        ${onClick ? 'cursor-pointer hover:shadow-lg hover:-translate-y-1' : ''}
+        ${onClick ? 'cursor-pointer hover:shadow-md' : ''}
         ${className}
       `}
     >
@@ -145,7 +145,7 @@ export const StatsCard: React.FC<StatsCardProps> = ({
           <div className={`
             ${config.iconContainer}
             ${isGradient ? 'bg-white/20' : iconBgColor}
-            rounded-xl flex items-center justify-center flex-shrink-0
+            rounded-2xl flex items-center justify-center flex-shrink-0
           `}>
             <Icon 
               size={config.iconSize} 

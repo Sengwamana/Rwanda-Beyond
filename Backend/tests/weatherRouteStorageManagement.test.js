@@ -94,4 +94,40 @@ describe('weather route storage management fixes', () => {
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(200);
   });
+
+  it('returns empty historical weather when the farm has no district mapping', async () => {
+    const historyRoute = getRouteHandler('/farm/:farmId/history');
+    mockDb.farms.getById.mockResolvedValue({
+      _id: 'farm-1',
+      district_id: null,
+    });
+
+    const req = {
+      params: { farmId: 'farm-1' },
+      query: {
+        startDate: '2026-03-01',
+        endDate: '2026-03-05',
+      },
+    };
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
+    const next = jest.fn();
+
+    await historyRoute(req, res, next);
+
+    expect(mockDb.weatherData.getByDistrict).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: true,
+        data: expect.objectContaining({
+          farmId: 'farm-1',
+          data: [],
+        }),
+      })
+    );
+  });
 });

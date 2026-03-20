@@ -222,7 +222,7 @@ router.get('/history',
 
     let data;
     if (farmId) {
-      data = await db.recommendations.getByFarm(farmId, opts);
+      data = await recommendationService.getFarmRecommendations(farmId, opts);
     } else {
       data = await db.recommendations.list(opts);
     }
@@ -275,6 +275,27 @@ router.get('/pending',
       count,
       'Pending recommendations retrieved successfully'
     );
+  })
+);
+
+/**
+ * @route GET /api/v1/recommendations/stats
+ * @desc Get recommendation statistics
+ * @access Admin, Expert
+ */
+router.get('/stats',
+  authenticate,
+  requireMinimumRole(ROLES.EXPERT),
+  asyncHandler(async (req, res) => {
+    const { farmId, startDate, endDate } = req.query;
+
+    const stats = await recommendationService.getRecommendationStats({
+      farmId,
+      startDate,
+      endDate
+    });
+
+    return successResponse(res, stats, 'Recommendation statistics retrieved successfully');
   })
 );
 
@@ -369,27 +390,6 @@ router.post('/:recommendationId/complete',
 // =====================================================
 // EXPERT/ADMIN ROUTES
 // =====================================================
-
-/**
- * @route GET /api/v1/recommendations/stats
- * @desc Get recommendation statistics
- * @access Admin, Expert
- */
-router.get('/stats',
-  authenticate,
-  requireMinimumRole(ROLES.EXPERT),
-  asyncHandler(async (req, res) => {
-    const { farmId, startDate, endDate } = req.query;
-
-    const stats = await recommendationService.getRecommendationStats({
-      farmId,
-      startDate,
-      endDate
-    });
-
-    return successResponse(res, stats, 'Recommendation statistics retrieved successfully');
-  })
-);
 
 /**
  * @route POST /api/v1/recommendations/manual

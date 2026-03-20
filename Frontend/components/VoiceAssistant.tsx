@@ -531,7 +531,7 @@ export const VoiceAssistant: React.FC = () => {
       )}
 
       {isSessionActive && (
-        <div className="w-[22rem] rounded-[1.75rem] border border-[#9BC53D]/20 bg-[radial-gradient(circle_at_top,#3f7d35,#20461d_60%,#163214)] text-white shadow-2xl mb-2 animate-slide-up overflow-hidden">
+        <div className="w-[22rem] rounded-[1.75rem] border border-[#9BC53D]/20 bg-[radial-gradient(circle_at_top,#3f7d35,#20461d_60%,#163214)] text-white shadow-lg mb-2 animate-slide-up overflow-hidden">
           <div className="px-4 py-4 border-b border-white/10 bg-white/5 backdrop-blur-md">
             <div className="flex justify-between items-center">
               <span className="font-semibold flex items-center gap-2 tracking-tight">
@@ -627,8 +627,8 @@ export const VoiceAssistant: React.FC = () => {
       <button
         onClick={isSessionActive ? cleanupSession : startSession}
         disabled={isProcessing && !isSessionActive}
-        className={`h-14 w-14 rounded-full shadow-2xl flex items-center justify-center transition-all duration-300 transform hover:scale-105 ${
-          isSessionActive ? 'bg-red-500 hover:bg-red-600' : 'bg-[#2D5A27] hover:bg-[#1a3817]'
+        className={`h-14 w-14 rounded-full shadow-md hover:shadow-lg flex items-center justify-center transition-all duration-300 transform hover:scale-105 ${
+          isSessionActive ? 'bg-red-500 hover:bg-red-600' : 'bg-[#0F5132] hover:bg-[#0a3621]'
         } text-white`}
         aria-label="Toggle Voice Assistant"
       >

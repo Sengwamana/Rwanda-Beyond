@@ -15,9 +15,24 @@ export const create = mutation({
         ? (data as any).data
         : data;
 
+    const normalizedPayload =
+      payload && typeof payload === "object" && !Array.isArray(payload)
+        ? Object.fromEntries(
+            Object.entries(payload as Record<string, unknown>).filter(
+              ([, value]) => value !== null
+            )
+          )
+        : payload;
+
     await ctx.db.insert("audit_logs", {
-      ...payload,
-      created_at: payload.created_at ?? Date.now(),
+      ...normalizedPayload,
+      created_at:
+        normalizedPayload &&
+        typeof normalizedPayload === "object" &&
+        !Array.isArray(normalizedPayload) &&
+        "created_at" in normalizedPayload
+          ? (normalizedPayload as any).created_at ?? Date.now()
+          : Date.now(),
     });
     return null;
   },

@@ -106,7 +106,7 @@ export const createFarm = async (userId, farmData) => {
     longitude,
     sizeHectares,
     soilType,
-    cropVariety = 'maize',
+    cropVariety,
     plantingDate,
     expectedHarvestDate,
     metadata = {}

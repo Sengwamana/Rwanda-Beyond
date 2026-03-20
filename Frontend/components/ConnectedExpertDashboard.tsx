@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Sprout, Bug, Activity, RefreshCw, CheckCircle2, XCircle, Clock3, BarChart2, Bot, Cloud } from 'lucide-react';
 import {
   useFarms,
@@ -41,6 +41,13 @@ interface ConnectedExpertDashboardProps {
   activeTab?: string;
 }
 
+const DASH_CONTROL_CLASS = 'dash-control';
+const DASH_CONTROL_COMPACT_CLASS = 'dash-control-compact';
+const DASH_TEXTAREA_CLASS = 'dash-textarea';
+const controlClass = DASH_CONTROL_CLASS;
+const compactControlClass = DASH_CONTROL_COMPACT_CLASS;
+const textAreaClass = DASH_TEXTAREA_CLASS;
+
 const recommendationPriorityClass: Record<string, string> = {
   critical: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
   high: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
@@ -60,6 +67,39 @@ const getSensorStatusBadgeVariant = (status?: string): 'default' | 'secondary' |
   if (normalized === 'critical' || normalized === 'offline' || normalized === 'faulty') return 'destructive';
   return 'outline';
 };
+
+const matchesSearchTerm = (term: string, values: Array<unknown>) => {
+  if (!term) return true;
+  return values
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+    .includes(term);
+};
+
+type SearchScopeItem = {
+  label: string;
+  value: number;
+  total?: number;
+};
+
+function SearchScopePills({ items }: { items: SearchScopeItem[] }) {
+  if (!items.length) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {items.map((item) => (
+        <span
+          key={item.label}
+          className="dash-pill bg-green-100 text-green-800 dark:bg-green-900/35 dark:text-green-300"
+        >
+          {item.label}: {item.value}
+          {typeof item.total === 'number' ? `/${item.total}` : ''}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 type ExpertFarmActivityExportType =
   | 'all'
@@ -96,6 +136,21 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
   const [pendingReviewPage, setPendingReviewPage] = useState(1);
   const [selectedReviewId, setSelectedReviewId] = useState('');
   const [issuePage, setIssuePage] = useState(1);
+  const isSnapshotTab = activeTab === 'overview';
+  const isFarmCoordinationTab = activeTab === 'farm-coordination';
+  const isFieldSupportTab = activeTab === 'field-support';
+  const isExpertGuidanceTab = activeTab === 'expert-guidance';
+  const isIssueOversightTab = activeTab === 'issue-oversight';
+  const isReviewLanesTab = activeTab === 'review-lanes';
+  const isDistrictAnalyticsTab = activeTab === 'district-analytics';
+  const isAiAdviceTab = activeTab === 'ai-advice';
+  const showExpertWorkspaceChrome =
+    isSnapshotTab
+    || isFarmCoordinationTab
+    || isFieldSupportTab
+    || isExpertGuidanceTab
+    || isIssueOversightTab
+    || isReviewLanesTab;
 
   const {
     data: farmsResponse,
@@ -201,11 +256,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
   const filteredFarms = useMemo(() => {
     if (!normalizedSearch) return farms;
     return farms.filter((farm) => {
-      const haystack = [farm.name, farm.locationName, farm.district?.name, farm.currentGrowthStage]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-      return haystack.includes(normalizedSearch);
+      return matchesSearchTerm(normalizedSearch, [farm.name, farm.locationName, farm.district?.name, farm.currentGrowthStage]);
     });
   }, [farms, normalizedSearch]);
 
@@ -223,7 +274,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
       page: 1,
       limit: 6,
     },
-    activeTab === 'overview'
+    isFarmCoordinationTab
   );
   const {
     data: selectedFarmActivity,
@@ -237,29 +288,24 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
     data: sensorHealth,
     isLoading: sensorHealthLoading,
     refetch: refetchSensorHealth,
-  } = useSensorHealth(selectedFarm?.id || undefined, activeTab === 'overview');
+  } = useSensorHealth(selectedFarm?.id || undefined, isFarmCoordinationTab);
   const {
     data: recentActivity,
     isLoading: recentActivityLoading,
-  } = useRecentActivityAnalytics({ hours: activityHours, limit: 6, type: activityType }, activeTab === 'overview');
+  } = useRecentActivityAnalytics({ hours: activityHours, limit: 6, type: activityType }, isExpertGuidanceTab);
 
   const filteredRecommendations = useMemo(() => {
     return recommendations.filter((recommendation) => {
       if (selectedFarmId && recommendation.farmId !== selectedFarmId) return false;
       if (recommendationTypeFilter !== 'all' && recommendation.type !== recommendationTypeFilter) return false;
       if (!normalizedSearch) return true;
-
-      const haystack = [
+      return matchesSearchTerm(normalizedSearch, [
         recommendation.title,
         recommendation.description,
         recommendation.type,
         recommendation.priority,
         recommendation.farm?.name,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-      return haystack.includes(normalizedSearch);
+      ]);
     });
   }, [recommendations, selectedFarmId, normalizedSearch, recommendationTypeFilter]);
 
@@ -268,39 +314,42 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
       if (selectedFarmId && review.farmId !== selectedFarmId) return false;
       if (reviewSeverityFilter !== 'all' && review.severity !== reviewSeverityFilter) return false;
       if (!normalizedSearch) return true;
-
-      const haystack = [
+      return matchesSearchTerm(normalizedSearch, [
         review.pestType,
         review.severity,
         review.locationDescription,
         review.farm?.name,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-      return haystack.includes(normalizedSearch);
+      ]);
     });
   }, [pendingReviews, selectedFarmId, normalizedSearch, reviewSeverityFilter]);
 
   const filteredFarmIssues = useMemo(() => {
     return farmIssues.filter((issue) => {
       if (!normalizedSearch) return true;
-
-      const haystack = [
+      return matchesSearchTerm(normalizedSearch, [
         issue.title,
         issue.description,
         issue.category,
         issue.severity,
         issue.status,
         issue.farm?.name,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-
-      return haystack.includes(normalizedSearch);
+      ]);
     });
   }, [farmIssues, normalizedSearch]);
+  const filteredRecommendationHistoryFeed = useMemo(() => {
+    const items = recommendationHistoryFeed?.data || [];
+    if (!normalizedSearch) return items;
+    return items.filter((item) =>
+      matchesSearchTerm(normalizedSearch, [
+        item.title,
+        item.type,
+        item.status,
+        item.recommendedAction,
+        item.farm?.name,
+        item.farmId,
+      ])
+    );
+  }, [normalizedSearch, recommendationHistoryFeed?.data]);
   const pendingPestControlSchedules = useMemo(
     () => pestControlSchedules.filter((schedule) => !schedule.isExecuted),
     [pestControlSchedules]
@@ -319,6 +368,42 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
         .sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime()),
     [selectedFarmActivity]
   );
+  const filteredPendingPestControlSchedules = useMemo(() => {
+    if (!normalizedSearch) return pendingPestControlSchedules;
+    return pendingPestControlSchedules.filter((schedule) =>
+      matchesSearchTerm(normalizedSearch, [
+        schedule.controlMethod,
+        schedule.notes,
+        schedule.scheduledDate,
+        schedule.scheduledTime,
+        schedule.triggerSource,
+      ])
+    );
+  }, [normalizedSearch, pendingPestControlSchedules]);
+  const filteredCompletedPestControlSchedules = useMemo(() => {
+    if (!normalizedSearch) return completedPestControlSchedules;
+    return completedPestControlSchedules.filter((schedule) =>
+      matchesSearchTerm(normalizedSearch, [
+        schedule.controlMethod,
+        schedule.notes,
+        schedule.scheduledDate,
+        schedule.executedAt,
+        schedule.actualOutcome,
+      ])
+    );
+  }, [completedPestControlSchedules, normalizedSearch]);
+  const filteredPestControlActivity = useMemo(() => {
+    if (!normalizedSearch) return pestControlActivity;
+    return pestControlActivity.filter((item) =>
+      matchesSearchTerm(normalizedSearch, [
+        item.title,
+        item.description,
+        item.type,
+        item.action,
+        item.status,
+      ])
+    );
+  }, [normalizedSearch, pestControlActivity]);
   const formatActivityLabel = (value: string) =>
     value
       .split('_')
@@ -383,6 +468,52 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
   );
 
   const farmCount = farmsResponse?.pagination?.total || farms.length;
+  const filteredRecentActivityItems = useMemo(() => {
+    const items = Array.isArray(recentActivity?.activities) ? recentActivity.activities : [];
+    if (!normalizedSearch) return items;
+    return items.filter((item) =>
+      matchesSearchTerm(normalizedSearch, [
+        item.title,
+        item.description,
+        item.type,
+        item.status,
+      ])
+    );
+  }, [normalizedSearch, recentActivity?.activities]);
+  const expertSearchScopeItems = useMemo<SearchScopeItem[]>(() => {
+    if (!normalizedSearch) return [];
+
+    return [
+      { label: 'Farms', value: filteredFarms.length, total: farms.length },
+      { label: 'Recommendations', value: filteredRecommendations.length, total: recommendations.length },
+      { label: 'Reviews', value: filteredPendingReviews.length, total: pendingReviews.length },
+      { label: 'Issues', value: filteredFarmIssues.length, total: farmIssues.length },
+      {
+        label: 'History',
+        value: filteredRecommendationHistoryFeed.length,
+        total: Array.isArray(recommendationHistoryFeed?.data) ? recommendationHistoryFeed.data.length : 0,
+      },
+      {
+        label: 'Activity',
+        value: filteredRecentActivityItems.length,
+        total: Array.isArray(recentActivity?.activities) ? recentActivity.activities.length : 0,
+      },
+    ];
+  }, [
+    farmIssues.length,
+    farms.length,
+    filteredFarms.length,
+    filteredFarmIssues.length,
+    filteredPendingReviews.length,
+    filteredRecommendationHistoryFeed.length,
+    filteredRecommendations.length,
+    filteredRecentActivityItems.length,
+    normalizedSearch,
+    pendingReviews.length,
+    recentActivity?.activities,
+    recommendationHistoryFeed?.data,
+    recommendations.length,
+  ]);
   const pendingRecommendationCount =
     recommendationsResponse?.pagination?.total || recommendations.length;
   const pendingReviewCount = pestStats?.pendingReviewCount || pendingReviewsResponse?.pagination?.total || 0;
@@ -742,11 +873,11 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
     exportRowsAsCsv(headers, rows);
   };
 
-  if (farmsLoading) {
+  if (showExpertWorkspaceChrome && farmsLoading) {
     return <LoadingState text="Loading expert dashboard..." />;
   }
 
-  if (farmsError) {
+  if (showExpertWorkspaceChrome && farmsError) {
     return (
       <ErrorState
         title="Failed to load expert dashboard"
@@ -756,123 +887,283 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
     );
   }
 
-  const expertQuickStats: Array<{ label: string; value: string | number }> = [
-    { label: 'Assigned Farms', value: farmCount },
-    { label: 'Pending Advice', value: recommendationsLoading ? '--' : pendingRecommendationCount },
-    { label: 'Pending Reviews', value: pestStatsLoading ? '--' : pendingReviewCount },
-    { label: 'High/Severe Cases', value: pestStatsLoading ? '--' : severePestCount },
+  const expertQuickStats: Array<{ label: string; value: string | number; badge: string; helper: string }> = [
+    {
+      label: 'Assigned Farms',
+      value: farmCount,
+      badge: `${filteredFarms.length} visible`,
+      helper: selectedFarm ? `Focused on ${selectedFarm.name}` : 'Across all accessible farms',
+    },
+    {
+      label: 'Pending Advice',
+      value: recommendationsLoading ? '--' : pendingRecommendationCount,
+      badge: `${filteredRecommendations.length} visible`,
+      helper: `${recommendationsResponse?.pagination?.total || recommendations.length} queued from records`,
+    },
+    {
+      label: 'Pending Reviews',
+      value: pestStatsLoading ? '--' : pendingReviewCount,
+      badge: `${filteredPendingReviews.length} visible`,
+      helper: `${pendingReviewsResponse?.pagination?.total || pendingReviews.length} detections awaiting review`,
+    },
+    {
+      label: 'High/Severe Cases',
+      value: pestStatsLoading ? '--' : severePestCount,
+      badge: `${pestStats?.totalDetections ?? pendingReviews.length} detections`,
+      helper: `${pestStats?.pendingReviewCount ?? pendingReviewCount} still awaiting expert action`,
+    },
   ];
   const sectionTitleClass = 'text-base md:text-lg font-extrabold tracking-tight';
   const sectionDescriptionClass = 'text-xs md:text-sm text-muted-foreground/90';
-  const workspaceGridClass = 'grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-5';
-  const workspaceMainClass = 'lg:col-span-8';
-  const workspaceRailClass = 'lg:col-span-4 space-y-4 lg:sticky lg:top-24 self-start';
+  const metricTileClass = 'dash-metric-tile';
+  const centeredMetricTileClass = 'dash-metric-tile text-center';
+  const outlineBlockClass = 'dash-outline-block';
+  const softBlockClass = 'dash-soft-block';
+  const dashedBlockClass = 'dash-dashed-block';
+  const workspaceGridClass = 'dash-workspace-grid-lg';
+  const workspaceMainClass = 'dash-workspace-main-lg';
+  const workspaceRailClass = 'dash-workspace-rail-lg';
+  const sectionShellClass = 'dash-workspace-section';
+  const controlClass = DASH_CONTROL_CLASS;
+  const compactControlClass = DASH_CONTROL_COMPACT_CLASS;
+  const textAreaClass = DASH_TEXTAREA_CLASS;
+  const renderSectionIntro = (eyebrow: string, title: string, description: string) => (
+    <div className="space-y-2 px-1">
+      <div className="flex items-center gap-3">
+        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">{eyebrow}</p>
+        <div className="h-px flex-1 bg-gradient-to-r from-green-200/70 to-transparent dark:from-green-900/50" />
+      </div>
+      <div className="max-w-3xl">
+        <p className="text-lg md:text-[1.35rem] font-extrabold tracking-tight text-slate-900 dark:text-white">{title}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+      </div>
+    </div>
+  );
+  const renderSubsectionIntro = (title: string, description: string, className = 'lg:col-span-12') => (
+    <div className={className}>
+      <div className="dash-soft-block space-y-1.5">
+        <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{title}</p>
+        <p className="text-sm text-muted-foreground">{description}</p>
+      </div>
+    </div>
+  );
+  const activeWorkspaceMeta: Record<string, { eyebrow: string; title: string; description: string }> = {
+    overview: {
+      eyebrow: 'Overview Workspace',
+      title: 'Expert Snapshot',
+      description: 'Review your live workload, jump into the right expert lane, and keep the current farm focus in view.',
+    },
+    'farm-coordination': {
+      eyebrow: 'Operational Context',
+      title: 'Farm Coordination',
+      description: 'Select a farm, monitor farmer response, and inspect recent monitoring history in one place.',
+    },
+    'field-support': {
+      eyebrow: 'Field Support',
+      title: 'Field Support',
+      description: 'Track pest-control execution and field follow-through for the active farm.',
+    },
+    'expert-guidance': {
+      eyebrow: 'Execution Workbench',
+      title: 'Expert Guidance',
+      description: 'Create direct expert advice and watch recent multi-farm activity while you work.',
+    },
+    'issue-oversight': {
+      eyebrow: 'Issue Oversight',
+      title: 'Issue Oversight',
+      description: 'Handle reported farm issues in their own support lane without mixing them into other queues.',
+    },
+    'review-lanes': {
+      eyebrow: 'Decision Lanes',
+      title: 'Review Lanes',
+      description: 'Process recommendation decisions and pest adjudications in separate, focused review lanes.',
+    },
+    'district-analytics': {
+      eyebrow: 'District Intelligence',
+      title: 'District Analytics',
+      description: 'Compare district performance, outbreak activity, and weather conditions from the analytics routes.',
+    },
+    'ai-advice': {
+      eyebrow: 'AI Expert System',
+      title: 'AI Advice',
+      description: 'Ask the AI expert system for agricultural guidance and formatted response suggestions.',
+    },
+  };
+  const currentWorkspaceMeta = activeWorkspaceMeta[activeTab] || activeWorkspaceMeta.overview;
 
   return (
-    <div className="mx-auto w-full max-w-[1600px] space-y-5 md:space-y-6 animate-fade-in">
-      <div className="rounded-3xl border border-green-200/60 dark:border-green-900/40 bg-gradient-to-br from-green-500/12 via-white to-white dark:from-green-500/18 dark:via-slate-900 dark:to-slate-900 p-4 md:p-6 shadow-[0_20px_45px_-32px_rgba(22,163,74,0.6)] animate-fade-in [animation-delay:40ms] [animation-fill-mode:both]">
+    <div className="dashboard-page dash-section-stack mx-auto w-full max-w-[1600px] px-1 animate-fade-in">
+      <div className="dash-hero-panel animate-fade-in [animation-delay:40ms] [animation-fill-mode:both]">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-green-700/85 dark:text-green-300/85">Expert Review Studio</p>
-            <h2 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white">Expert Operations</h2>
-            <p className="text-sm text-slate-600 dark:text-slate-300">
-              Review recommendations, validate pest detections, and assist farms.
+            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-green-700/85 dark:text-green-300/85">{currentWorkspaceMeta.eyebrow}</p>
+            <h2 className="text-[2rem] md:text-[2.55rem] font-extrabold tracking-tight text-slate-900 dark:text-white">{currentWorkspaceMeta.title}</h2>
+            <p className="mt-2 text-[15px] text-slate-500 dark:text-slate-400">
+              {currentWorkspaceMeta.description}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline">Window: {activityHours}h</Badge>
-            <Badge variant="outline">Activity: {activityType}</Badge>
-          </div>
-        </div>
-
-        <div className="mt-4 grid grid-cols-2 lg:grid-cols-4 gap-3">
-          {expertQuickStats.map((stat, index) => (
-            <div
-              key={stat.label}
-              className="rounded-2xl border border-green-100/80 dark:border-green-900/45 bg-white/85 dark:bg-slate-900/75 px-3 py-2.5 shadow-[0_14px_30px_-26px_rgba(22,163,74,0.65)] animate-fade-in [animation-fill-mode:both]"
-              style={{ animationDelay: `${80 + index * 50}ms` }}
-            >
-              <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{stat.label}</p>
-              <p className="mt-1 text-xl font-black text-slate-900 dark:text-white">{stat.value}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="rounded-2xl border border-green-100/80 dark:border-green-900/45 bg-white/85 dark:bg-slate-900/75 px-3 md:px-4 py-3 lg:py-3.5 animate-fade-in [animation-delay:95ms] [animation-fill-mode:both]">
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <div className="flex flex-wrap items-center gap-2 md:gap-3">
-            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.14em] bg-green-100 text-green-800 dark:bg-green-900/35 dark:text-green-300">
-              Focus Farm: {selectedFarm?.name || 'All farms'}
-            </span>
-            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.14em] bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-              Recommendation Type: {recommendationTypeFilter}
-            </span>
-            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.14em] bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-              Review Severity: {reviewSeverityFilter}
-            </span>
-            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.14em] bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-              Issue Status: {issueStatusFilter}
-            </span>
-            {normalizedSearch && (
-              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.14em] bg-green-100 text-green-800 dark:bg-green-900/35 dark:text-green-300">
-                Filter: "{searchQuery.trim()}"
-              </span>
+            {showExpertWorkspaceChrome && (
+              <Badge variant="outline">Focus Farm: {selectedFarm?.name || 'All farms'}</Badge>
             )}
+            {isReviewLanesTab && <Badge variant="outline">Recommendation Type: {recommendationTypeFilter}</Badge>}
+            {isReviewLanesTab && <Badge variant="outline">Review Severity: {reviewSeverityFilter}</Badge>}
+            {isIssueOversightTab && <Badge variant="outline">Issue Status: {issueStatusFilter}</Badge>}
+            {isExpertGuidanceTab && <Badge variant="outline">Window: {activityHours}h</Badge>}
+            {isExpertGuidanceTab && <Badge variant="outline">Activity: {activityType}</Badge>}
           </div>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-8 rounded-lg self-start md:self-auto"
-            onClick={() => {
-              setRecommendationTypeFilter('all');
-              setReviewSeverityFilter('all');
-              setIssueStatusFilter('all');
-            }}
-          >
-            Clear Filters
-          </Button>
         </div>
+
+        {showExpertWorkspaceChrome && (
+          <div className="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {expertQuickStats.map((stat, index) => (
+              <div
+                key={stat.label}
+                className={`${index === 0 ? 'dash-kpi-card dash-kpi-card-accent' : 'dash-kpi-card'} animate-fade-in [animation-fill-mode:both]`}
+                style={{ animationDelay: `${80 + index * 50}ms` }}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className={`text-[13px] font-semibold ${index === 0 ? 'text-white/88' : 'text-slate-600 dark:text-slate-300'}`}>
+                    {stat.label}
+                  </span>
+                  <div className={`flex items-center justify-center w-10 h-10 rounded-full ${index === 0 ? 'bg-white text-[#1D6042]' : 'border border-[hsl(var(--border))] bg-[#F7F8F2] dark:bg-slate-800 text-slate-700 dark:text-slate-200'}`}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17l9.2-9.2M17 17V7H7"/></svg>
+                  </div>
+                </div>
+                <div className="flex flex-col mt-6">
+                  <span className={`text-[2.55rem] font-extrabold tracking-tight ${index === 0 ? 'text-white' : 'text-slate-900 dark:text-white'}`}>
+                    {stat.value}
+                  </span>
+                  <div className="mt-4 flex items-center gap-2">
+                    <div className={`flex items-center justify-center px-2 py-1 rounded-full text-[10px] font-bold ${index === 0 ? 'bg-[#2D7A54] text-white' : 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'}`}>
+                      {stat.badge}
+                    </div>
+                    <span className={`text-[11px] font-medium ${index === 0 ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>{stat.helper}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
-      <div className="flex items-center gap-3 px-1">
-        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">Overview Workspace</p>
-        <div className="h-px flex-1 bg-gradient-to-r from-green-200/70 to-transparent dark:from-green-900/50" />
-      </div>
+      {showExpertWorkspaceChrome && (
+        <div className="dash-filter-bar animate-fade-in [animation-delay:95ms] [animation-fill-mode:both]">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:gap-4">
+              <label className="flex flex-col gap-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                <span className="uppercase tracking-[0.14em]">Focus Farm</span>
+                <select
+                  className={`${controlClass} min-w-[220px] font-medium`}
+                  value={selectedFarmId}
+                  onChange={(event) => setSelectedFarmId(event.target.value)}
+                >
+                  <option value="">All farms</option>
+                  {filteredFarms.map((farm) => (
+                    <option key={farm.id} value={farm.id}>
+                      {farm.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="flex flex-wrap items-center gap-2 md:gap-3">
+                <span className="dash-pill bg-green-100 text-green-800 dark:bg-green-900/35 dark:text-green-300">
+                  Focus Farm: {selectedFarm?.name || 'All farms'}
+                </span>
+                {isReviewLanesTab && (
+                  <>
+                    <span className="dash-pill bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                      Recommendation Type: {recommendationTypeFilter}
+                    </span>
+                    <span className="dash-pill bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                      Review Severity: {reviewSeverityFilter}
+                    </span>
+                  </>
+                )}
+                {isIssueOversightTab && (
+                  <span className="dash-pill bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                    Issue Status: {issueStatusFilter}
+                  </span>
+                )}
+                {isExpertGuidanceTab && (
+                  <>
+                    <span className="dash-pill bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                      Window: {activityHours}h
+                    </span>
+                    <span className="dash-pill bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                      Activity: {activityType}
+                    </span>
+                  </>
+                )}
+                {normalizedSearch && (
+                  <span className="dash-pill bg-green-100 text-green-800 dark:bg-green-900/35 dark:text-green-300">
+                    Filter: "{searchQuery.trim()}"
+                  </span>
+                )}
+                {normalizedSearch && <SearchScopePills items={expertSearchScopeItems} />}
+              </div>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-9 rounded-full self-start xl:self-auto"
+              onClick={() => {
+                setRecommendationTypeFilter('all');
+                setReviewSeverityFilter('all');
+                setIssueStatusFilter('all');
+              }}
+            >
+              Clear Filters
+            </Button>
+          </div>
+        </div>
+      )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 lg:gap-4 animate-fade-in [animation-delay:115ms] [animation-fill-mode:both]">
+      {isSnapshotTab && (
+      <section className={sectionShellClass}>
+      {renderSectionIntro(
+        'Overview Workspace',
+        'Expert Snapshot',
+        'Review your live workload, current farm focus, and fast expert actions from one opening section.'
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-5 animate-fade-in [animation-delay:115ms] [animation-fill-mode:both]">
         <div className={workspaceMainClass}>
-        <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
-        <Card className="h-full min-h-[230px] border-green-100/80 dark:border-green-900/45 bg-gradient-to-br from-green-50/80 to-white dark:from-green-950/20 dark:to-slate-900 shadow-[0_18px_34px_-30px_rgba(22,163,74,0.85)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_42px_-28px_rgba(22,163,74,1)] animate-fade-in [animation-delay:130ms] [animation-fill-mode:both]">
-          <CardContent className="p-4 lg:p-5 h-full flex flex-col">
+        <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
+        <Card className="dash-mini-action-card h-full min-h-[230px] animate-fade-in [animation-delay:130ms] [animation-fill-mode:both]">
+          <CardContent className="p-5 h-full flex flex-col pt-5">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-green-700 dark:text-green-300">Review Queue</p>
-                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Pending pest reviews waiting for expert confirmation.</p>
+                <p className="text-[13px] font-bold text-slate-800 dark:text-slate-200">Review Queue</p>
+                <p className="mt-1.5 text-[13px] text-slate-500 dark:text-slate-400">Pending pest reviews waiting for expert confirmation.</p>
               </div>
-              <Bug size={16} className="text-green-700 dark:text-green-300" />
+              <div className="dash-icon-box">
+                <Bug size={18} className="text-slate-600 dark:text-slate-300" />
+              </div>
             </div>
-            <p className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Triage lane - Confirm severity</p>
-            <p className="mt-4 text-2xl font-black text-slate-900 dark:text-white">{pendingReviewCount}</p>
-            <Button variant="outline" className="mt-auto h-9 w-full rounded-xl focus-visible:ring-2 focus-visible:ring-green-500/70 focus-visible:ring-offset-2" onClick={() => setReviewSeverityFilter('all')}>
+            <p className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Triage lane - Confirm severity</p>
+            <p className="mt-6 text-3xl font-black text-slate-900 dark:text-white">{pendingReviewCount}</p>
+            <Button variant="outline" className="mt-auto h-11 w-full rounded-full" onClick={() => setReviewSeverityFilter('all')}>
               Reset Severity Filter
             </Button>
           </CardContent>
         </Card>
 
-        <Card className="h-full min-h-[230px] border-green-100/80 dark:border-green-900/45 bg-gradient-to-br from-sky-50/80 to-white dark:from-sky-950/20 dark:to-slate-900 shadow-[0_18px_34px_-30px_rgba(2,132,199,0.8)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_42px_-28px_rgba(2,132,199,0.95)] animate-fade-in [animation-delay:190ms] [animation-fill-mode:both]">
-          <CardContent className="p-4 lg:p-5 h-full flex flex-col">
+        <Card className="dash-mini-action-card h-full min-h-[230px] animate-fade-in [animation-delay:190ms] [animation-fill-mode:both]">
+          <CardContent className="p-5 h-full flex flex-col pt-5">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-sky-700 dark:text-sky-300">Recommendation Sprint</p>
-                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Create targeted advice for the current farm focus.</p>
+                <p className="text-[13px] font-bold text-slate-800 dark:text-slate-200">Recommendation Sprint</p>
+                <p className="mt-1.5 text-[13px] text-slate-500 dark:text-slate-400">Create targeted advice for the current farm focus.</p>
               </div>
-              <Bot size={16} className="text-sky-700 dark:text-sky-300" />
+              <div className="dash-icon-box">
+                <Bot size={18} className="text-slate-600 dark:text-slate-300" />
+              </div>
             </div>
-            <p className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Execution lane - Push advice</p>
-            <p className="mt-4 text-2xl font-black text-slate-900 dark:text-white">{pendingRecommendationCount}</p>
+            <p className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Execution lane - Push advice</p>
+            <p className="mt-6 text-3xl font-black text-slate-900 dark:text-white">{pendingRecommendationCount}</p>
             <Button
-              className="mt-auto h-9 w-full rounded-xl focus-visible:ring-2 focus-visible:ring-sky-500/70 focus-visible:ring-offset-2"
+              className="mt-auto h-11 w-full rounded-full"
               onClick={handleGenerateForFarm}
               disabled={!selectedFarmId || generateRecommendations.isPending}
             >
@@ -881,18 +1172,20 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
           </CardContent>
         </Card>
 
-        <Card className="h-full min-h-[230px] border-green-100/80 dark:border-green-900/45 bg-gradient-to-br from-emerald-50/80 to-white dark:from-emerald-950/20 dark:to-slate-900 shadow-[0_18px_34px_-30px_rgba(5,150,105,0.8)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_42px_-28px_rgba(5,150,105,0.95)] animate-fade-in [animation-delay:250ms] [animation-fill-mode:both]">
-          <CardContent className="p-4 lg:p-5 h-full flex flex-col">
+        <Card className="dash-mini-action-card h-full min-h-[230px] animate-fade-in [animation-delay:250ms] [animation-fill-mode:both]">
+          <CardContent className="p-5 h-full flex flex-col pt-5">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-300">Farmer Response</p>
-                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Watch adoption signals and reopen stale interventions.</p>
+                <p className="text-[13px] font-bold text-slate-800 dark:text-slate-200">Farmer Response</p>
+                <p className="mt-1.5 text-[13px] text-slate-500 dark:text-slate-400">Watch adoption signals and reopen stale interventions.</p>
               </div>
-              <CheckCircle2 size={16} className="text-emerald-700 dark:text-emerald-300" />
+              <div className="dash-icon-box">
+                <CheckCircle2 size={18} className="text-slate-600 dark:text-slate-300" />
+              </div>
             </div>
-            <p className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Feedback lane - Track adoption</p>
-            <p className="mt-4 text-2xl font-black text-slate-900 dark:text-white">{responseHistory?.stats?.byStatus?.responded ?? 0}</p>
-            <Button variant="outline" className="mt-auto h-9 w-full rounded-xl focus-visible:ring-2 focus-visible:ring-emerald-500/70 focus-visible:ring-offset-2" onClick={handleRefreshAll}>
+            <p className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Feedback lane - Track adoption</p>
+            <p className="mt-6 text-3xl font-black text-slate-900 dark:text-white">{responseHistory?.stats?.byStatus?.responded ?? 0}</p>
+            <Button variant="outline" className="mt-auto h-11 w-full rounded-full" onClick={handleRefreshAll}>
               Sync Signals
             </Button>
           </CardContent>
@@ -900,19 +1193,19 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
         </div>
         </div>
 
-        <Card className="lg:col-span-4 lg:sticky lg:top-24 self-start h-fit border-green-100/80 dark:border-green-900/45 bg-white/90 dark:bg-slate-900/80 shadow-[0_18px_34px_-30px_rgba(15,23,42,0.5)]">
+        <Card className="lg:col-span-4 lg:sticky lg:top-24 self-start h-fit dash-panel">
           <CardHeader className="pb-2">
             <CardTitle className={sectionTitleClass}>Quick Actions</CardTitle>
             <CardDescription className={sectionDescriptionClass}>Run frequent expert operations with one click</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2.5 lg:space-y-3">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-2.5">
-              <Button variant="outline" className="h-9 lg:h-10 w-full justify-start rounded-xl" onClick={handleRefreshAll}>
+              <Button variant="outline" className="h-10 w-full justify-start rounded-full" onClick={handleRefreshAll}>
                 <RefreshCw size={14} className="mr-2" />
                 Refresh All Data
               </Button>
               <Button
-                className="h-9 lg:h-10 w-full justify-start rounded-xl"
+                className="h-10 w-full justify-start rounded-full"
                 onClick={handleGenerateForFarm}
                 disabled={!selectedFarmId || generateRecommendations.isPending}
               >
@@ -920,7 +1213,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
               </Button>
               <Button
                 variant="outline"
-                className="h-9 lg:h-10 w-full justify-start rounded-xl sm:col-span-2 lg:col-span-1"
+                className="h-10 w-full justify-start rounded-full sm:col-span-2 lg:col-span-1"
                 onClick={() => {
                   setRecommendationTypeFilter('all');
                   setReviewSeverityFilter('all');
@@ -933,15 +1226,24 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
           </CardContent>
         </Card>
       </div>
+      </section>
+      )}
 
-      <div className="flex items-center gap-3 px-1">
-        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">Operational Context</p>
-        <div className="h-px flex-1 bg-gradient-to-r from-green-200/70 to-transparent dark:from-green-900/50" />
-      </div>
+      {isFarmCoordinationTab && (
+      <section className={sectionShellClass}>
+      {renderSectionIntro(
+        'Operational Context',
+        'Farm Coordination',
+        'Use these sections to choose a farm, inspect response signals, monitor devices, and review recent farm history.'
+      )}
 
       <div className={`${workspaceGridClass} animate-fade-in [animation-delay:140ms] [animation-fill-mode:both]`}>
+      {renderSubsectionIntro(
+        'Farm Focus',
+        'Select the farm you want to support first, then review how that farmer is responding to current recommendations.'
+      )}
       <div className={workspaceRailClass}>
-      <Card className="border-green-100/80 dark:border-green-900/45">
+      <Card className="dash-panel">
         <CardHeader className="pb-3">
           <CardTitle className={sectionTitleClass}>Farm Queue</CardTitle>
           <CardDescription className={sectionDescriptionClass}>Select a farm to focus recommendation and pest review tasks</CardDescription>
@@ -949,7 +1251,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
         <CardContent>
           {filteredFarms.length ? (
             <div className="space-y-3">
-              <div className="flex gap-2 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible">
+              <div className="dash-tab-strip pb-1 lg:pb-0">
                 <Button
                   variant={selectedFarmId ? 'outline' : 'default'}
                   size="sm"
@@ -973,16 +1275,16 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
                 Showing {Math.min(filteredFarms.length, 10)} of {filteredFarms.length} farms.
               </p>
 
-              <div className="space-y-2 lg:max-h-[430px] lg:overflow-y-auto lg:pr-1">
+              <div className="space-y-2 lg:max-h-[430px] lg:overflow-y-auto lg:pr-1 custom-scrollbar">
                 {filteredFarms.slice(0, 10).map((farm) => (
-                  <div key={farm.id} className="flex items-center justify-between rounded-lg border p-3 lg:p-3.5">
+                  <div key={farm.id} className={`${outlineBlockClass} flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between lg:p-3.5`}>
                     <div>
                       <p className="font-semibold">{farm.name}</p>
                       <p className="text-xs text-muted-foreground">
                         {farm.locationName || farm.district?.name || 'Unknown location'}
                       </p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center justify-end gap-2 text-right">
                       <p className="text-xs text-muted-foreground">{farm.currentGrowthStage || 'unknown stage'}</p>
                       <Button
                         size="sm"
@@ -1012,8 +1314,8 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
       </div>
 
       <div className={workspaceMainClass}>
-      <Card>
-        <CardHeader>
+      <Card className="dash-panel">
+        <CardHeader className="pb-3">
           <CardTitle className={sectionTitleClass}>Farmer Response Signals</CardTitle>
           <CardDescription className={sectionDescriptionClass}>
             {selectedFarm
@@ -1032,11 +1334,11 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
           ) : (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                <div className="rounded-lg border p-3">
+                <div className={metricTileClass}>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Recommendations</p>
                   <p className="text-2xl font-bold">{responseHistory?.stats?.total ?? 0}</p>
                 </div>
-                <div className="rounded-lg border p-3">
+                <div className={metricTileClass}>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">Response Rate</p>
                   <p className="text-2xl font-bold">
                     {typeof responseHistory?.stats?.responseRate === 'number'
@@ -1044,7 +1346,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
                       : '0%'}
                   </p>
                 </div>
-                <div className="rounded-lg border p-3">
+                <div className={metricTileClass}>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">Avg Response Time</p>
                   <p className="text-2xl font-bold">
                     {typeof responseHistory?.stats?.averageResponseTime === 'number'
@@ -1052,7 +1354,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
                       : 'N/A'}
                   </p>
                 </div>
-                <div className="rounded-lg border p-3">
+                <div className={metricTileClass}>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">Executed</p>
                   <p className="text-2xl font-bold">{responseHistory?.stats?.byStatus?.executed ?? 0}</p>
                 </div>
@@ -1084,7 +1386,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
                       .sort((left, right) => new Date(right.respondedAt || 0).getTime() - new Date(left.respondedAt || 0).getTime())
                       .slice(0, 3)
                       .map((item) => (
-                        <div key={item.id} className="rounded-lg border p-3">
+                        <div key={item.id} className={outlineBlockClass}>
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <p className="font-medium text-sm">{item.title || 'Recommendation'}</p>
@@ -1110,9 +1412,14 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
       </Card>
       </div>
 
-      <div className="lg:col-span-7">
-      <Card>
-        <CardHeader>
+      {renderSubsectionIntro(
+        'Monitoring & History',
+        'Review device health and recent recommendation history as a separate expert monitoring section.',
+        'lg:col-span-12 pt-1'
+      )}
+      <div className="lg:col-span-7 min-w-0">
+      <Card className="dash-panel">
+        <CardHeader className="pb-3">
           <CardTitle className={sectionTitleClass}>Sensor Health Watch</CardTitle>
           <CardDescription className={sectionDescriptionClass}>
             {selectedFarm
@@ -1132,23 +1439,23 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
           ) : (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-                <div className="rounded-lg border p-3">
+                <div className={metricTileClass}>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">Total</p>
                   <p className="text-2xl font-bold">{sensorHealth?.total ?? 0}</p>
                 </div>
-                <div className="rounded-lg border p-3">
+                <div className={metricTileClass}>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">Healthy</p>
                   <p className="text-2xl font-bold">{sensorHealth?.healthy ?? 0}</p>
                 </div>
-                <div className="rounded-lg border p-3">
+                <div className={metricTileClass}>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">Warning</p>
                   <p className="text-2xl font-bold">{sensorHealth?.warning ?? 0}</p>
                 </div>
-                <div className="rounded-lg border p-3">
+                <div className={metricTileClass}>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">Critical</p>
                   <p className="text-2xl font-bold">{sensorHealth?.critical ?? 0}</p>
                 </div>
-                <div className="rounded-lg border p-3">
+                <div className={metricTileClass}>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">Offline</p>
                   <p className="text-2xl font-bold">{sensorHealth?.offline ?? 0}</p>
                 </div>
@@ -1159,7 +1466,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
                   <p className="text-sm font-medium">Recent sensor status</p>
                   <div className="space-y-2">
                     {sensorHealth.sensors.slice(0, 6).map((sensor) => (
-                      <div key={sensor.id} className="rounded-lg border p-3">
+                      <div key={sensor.id} className={outlineBlockClass}>
                         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                           <div>
                             <p className="font-medium text-sm">{sensor.name || sensor.id}</p>
@@ -1196,11 +1503,11 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
       </Card>
       </div>
 
-      <div className="lg:col-span-5">
-      <Card>
-        <CardHeader>
-          <CardTitle>Recommendation History Feed</CardTitle>
-          <CardDescription>
+      <div className="lg:col-span-5 min-w-0">
+      <Card className="dash-panel">
+        <CardHeader className="pb-3">
+          <CardTitle className={sectionTitleClass}>Recommendation History Feed</CardTitle>
+          <CardDescription className={sectionDescriptionClass}>
             {selectedFarm
               ? `Recent recommendation history for ${selectedFarm.name} from the backend history route`
               : 'Recent recommendation history from the backend history route across accessible farms'}
@@ -1209,10 +1516,10 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
         <CardContent>
           {recommendationHistoryFeedLoading ? (
             <LoadingState text="Loading recommendation history..." size="sm" />
-          ) : recommendationHistoryFeed?.data?.length ? (
+          ) : filteredRecommendationHistoryFeed.length ? (
             <div className="space-y-2">
-              {recommendationHistoryFeed.data.slice(0, 5).map((item) => (
-                <div key={item.id} className="rounded-lg border p-3">
+              {filteredRecommendationHistoryFeed.slice(0, 5).map((item) => (
+                <div key={item.id} className={outlineBlockClass}>
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="font-medium text-sm">{item.title || 'Recommendation'}</p>
@@ -1230,21 +1537,42 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
             </div>
           ) : (
             <EmptyState
-              title="No recommendation history"
-              message="No recommendation records were returned from the backend history route for the current scope."
+              title={normalizedSearch ? 'No matching recommendation history' : 'No recommendation history'}
+              message={
+                normalizedSearch
+                  ? `No recommendation history matches "${searchQuery}".`
+                  : 'No recommendation records were returned from the backend history route for the current scope.'
+              }
             />
           )}
         </CardContent>
       </Card>
       </div>
+      </div>
+      </section>
+      )}
+
+      {isFieldSupportTab && (
+      <section className={sectionShellClass}>
+      <div className="lg:col-span-12">
+        <div className="space-y-2 px-1">
+          <div className="flex items-center gap-3">
+            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">Field Support</p>
+            <div className="h-px flex-1 bg-gradient-to-r from-green-200/70 to-transparent dark:from-green-900/50" />
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Track field execution and farm follow-through separately from the recommendation and review queues.
+          </p>
+        </div>
+      </div>
 
       <div className="lg:col-span-12">
-      <Card>
-        <CardHeader>
+      <Card className="dash-panel">
+        <CardHeader className="pb-3">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
-              <CardTitle>Pest Control Follow-Through</CardTitle>
-              <CardDescription>
+              <CardTitle className={sectionTitleClass}>Pest Control Follow-Through</CardTitle>
+              <CardDescription className={sectionDescriptionClass}>
                 {selectedFarm
                   ? `Track whether ${selectedFarm.name} has scheduled and completed the recommended pest-control work`
                   : 'Select a farm to monitor scheduled and executed pest-control actions'}
@@ -1291,29 +1619,29 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
           ) : (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                <div className="rounded-lg border p-3">
+                <div className={metricTileClass}>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">Scheduled Actions</p>
                   <p className="text-2xl font-bold">{pestControlSchedules.length}</p>
                 </div>
-                <div className="rounded-lg border p-3">
+                <div className={metricTileClass}>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">Pending Execution</p>
-                  <p className="text-2xl font-bold">{pendingPestControlSchedules.length}</p>
+                  <p className="text-2xl font-bold">{filteredPendingPestControlSchedules.length}</p>
                 </div>
-                <div className="rounded-lg border p-3">
+                <div className={metricTileClass}>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">Completed Actions</p>
-                  <p className="text-2xl font-bold">{completedPestControlSchedules.length}</p>
+                  <p className="text-2xl font-bold">{filteredCompletedPestControlSchedules.length}</p>
                 </div>
-                <div className="rounded-lg border p-3">
+                <div className={metricTileClass}>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">Logged Activity</p>
-                  <p className="text-2xl font-bold">{pestControlActivity.length}</p>
+                  <p className="text-2xl font-bold">{filteredPestControlActivity.length}</p>
                 </div>
               </div>
 
-              {pendingPestControlSchedules.length > 0 ? (
+              {filteredPendingPestControlSchedules.length > 0 ? (
                 <div className="space-y-2">
                   <p className="text-sm font-medium">Pending field work</p>
-                  {pendingPestControlSchedules.slice(0, 3).map((schedule) => (
-                    <div key={schedule.id} className="rounded-lg border p-3">
+                  {filteredPendingPestControlSchedules.slice(0, 3).map((schedule) => (
+                    <div key={schedule.id} className={outlineBlockClass}>
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="font-medium text-sm">{schedule.controlMethod}</p>
@@ -1331,16 +1659,18 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
                   ))}
                 </div>
               ) : (
-                <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                  No pending pest-control actions are currently scheduled for this farm.
+                <div className={`${dashedBlockClass} p-4 text-sm text-muted-foreground`}>
+                  {normalizedSearch
+                    ? `No pending pest-control actions match "${searchQuery}".`
+                    : 'No pending pest-control actions are currently scheduled for this farm.'}
                 </div>
               )}
 
-              {pestControlActivity.length > 0 && (
+              {filteredPestControlActivity.length > 0 && (
                 <div className="space-y-2">
                   <p className="text-sm font-medium">Recent pest-control activity</p>
-                  {pestControlActivity.slice(0, 4).map((item) => (
-                    <div key={item.id} className="rounded-lg border p-3">
+                  {filteredPestControlActivity.slice(0, 4).map((item) => (
+                    <div key={item.id} className={outlineBlockClass}>
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <div className="flex flex-wrap items-center gap-2">
@@ -1365,33 +1695,42 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
         </CardContent>
       </Card>
       </div>
-      </div>
+      </section>
+      )}
 
-      <div className="flex items-center gap-3 px-1">
-        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">Execution Workbench</p>
-        <div className="h-px flex-1 bg-gradient-to-r from-green-200/70 to-transparent dark:from-green-900/50" />
-      </div>
+      {isExpertGuidanceTab && (
+      <section className={sectionShellClass}>
+      {renderSectionIntro(
+        'Execution Workbench',
+        'Expert Guidance',
+        'Create recommendations and watch recent multi-farm activity while you work the current farm focus.'
+      )}
 
       <div className={workspaceGridClass}>
       <div className="lg:col-span-12 grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="rounded-xl border bg-muted/25 p-3">
+        <div className="dash-subtile">
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Visible Recommendations</p>
           <p className="mt-1 text-xl font-black">{filteredRecommendations.length}</p>
         </div>
-        <div className="rounded-xl border bg-muted/25 p-3">
+        <div className="dash-subtile">
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Visible Pest Reviews</p>
           <p className="mt-1 text-xl font-black">{filteredPendingReviews.length}</p>
         </div>
-        <div className="rounded-xl border bg-muted/25 p-3">
+        <div className="dash-subtile">
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Visible Farm Issues</p>
           <p className="mt-1 text-xl font-black">{filteredFarmIssues.length}</p>
         </div>
       </div>
 
-      <Card className="lg:col-span-8">
-        <CardHeader>
-          <CardTitle>Expert Recommendation Builder</CardTitle>
-          <CardDescription>
+      {renderSubsectionIntro(
+        'Guidance Composer',
+        'Draft and send direct expert recommendations with the current farm context.',
+        'lg:col-span-12'
+      )}
+      <Card className="lg:col-span-8 min-w-0 dash-panel">
+        <CardHeader className="pb-3">
+          <CardTitle className={sectionTitleClass}>Expert Recommendation Builder</CardTitle>
+          <CardDescription className={sectionDescriptionClass}>
             {selectedFarm
               ? `Send a tailored recommendation directly to ${selectedFarm.name}`
               : 'Select a farm to create an expert recommendation for that farmer'}
@@ -1409,7 +1748,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
                 <label className="space-y-2">
                   <span className="text-sm font-medium">Recommendation type</span>
                   <select
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    className={controlClass}
                     value={manualRecommendationType}
                     onChange={(event) =>
                       setManualRecommendationType(
@@ -1427,7 +1766,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
                 <label className="space-y-2">
                   <span className="text-sm font-medium">Priority</span>
                   <select
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    className={controlClass}
                     value={manualRecommendationPriority}
                     onChange={(event) =>
                       setManualRecommendationPriority(event.target.value as 'low' | 'medium' | 'high' | 'critical')
@@ -1444,7 +1783,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
               <label className="space-y-2 block">
                 <span className="text-sm font-medium">Title</span>
                 <input
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  className={controlClass}
                   value={manualRecommendationTitle}
                   onChange={(event) => setManualRecommendationTitle(event.target.value)}
                   placeholder="Example: Inspect signs of early nitrogen stress"
@@ -1454,7 +1793,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
               <label className="space-y-2 block">
                 <span className="text-sm font-medium">Recommendation details</span>
                 <textarea
-                  className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  className={textAreaClass}
                   value={manualRecommendationDescription}
                   onChange={(event) => setManualRecommendationDescription(event.target.value)}
                   placeholder="Explain what the farmer should watch for and why this recommendation matters."
@@ -1465,7 +1804,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
                 <label className="space-y-2 block">
                   <span className="text-sm font-medium">Action required</span>
                   <textarea
-                    className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    className={textAreaClass}
                     value={manualRecommendationAction}
                     onChange={(event) => setManualRecommendationAction(event.target.value)}
                     placeholder="Example: Check 10 plants in each row and send photos of any yellow striping."
@@ -1475,7 +1814,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
                   <span className="text-sm font-medium">Valid until</span>
                   <input
                     type="datetime-local"
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    className={controlClass}
                     value={manualRecommendationValidUntil}
                     onChange={(event) => setManualRecommendationValidUntil(event.target.value)}
                   />
@@ -1485,11 +1824,11 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
                 </label>
               </div>
 
-              <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed p-3">
+              <div className={`${dashedBlockClass} flex flex-col gap-3 md:flex-row md:items-center md:justify-between`}>
                 <p className="text-sm text-muted-foreground">
                   The recommendation will be attached to {selectedFarm.name} and delivered through the normal farmer recommendation flow.
                 </p>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center justify-end gap-2">
                   <Button
                     type="button"
                     variant="outline"
@@ -1516,16 +1855,21 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
         </CardContent>
       </Card>
 
-      <Card className="lg:col-span-4 lg:sticky lg:top-24 self-start border-green-100/80 dark:border-green-900/45">
-        <CardHeader>
+      {renderSubsectionIntro(
+        'System Activity Watch',
+        'Track recent cross-farm events and exports as a distinct monitoring stream.',
+        'lg:col-span-12'
+      )}
+      <Card className="lg:col-span-4 min-w-0 lg:sticky lg:top-24 self-start dash-panel">
+        <CardHeader className="pb-3">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
-              <CardTitle>Recent System Activity</CardTitle>
-              <CardDescription>What changed across farms in the selected activity window.</CardDescription>
+              <CardTitle className={sectionTitleClass}>Recent System Activity</CardTitle>
+              <CardDescription className={sectionDescriptionClass}>What changed across farms in the selected activity window.</CardDescription>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:flex sm:flex-wrap">
+            <div className="flex w-full flex-wrap gap-2 md:w-auto md:justify-end">
               <select
-                className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                className={`${compactControlClass} min-w-[145px]`}
                 value={activityHours}
                 onChange={(event) => setActivityHours(Number(event.target.value) as 6 | 24 | 168)}
               >
@@ -1534,7 +1878,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
                 <option value={168}>Last 7 days</option>
               </select>
               <select
-                className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                className={`${compactControlClass} min-w-[180px]`}
                 value={activityType}
                 onChange={(event) =>
                   setActivityType(
@@ -1550,51 +1894,51 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
                 <option value="pest_control">Pest Control</option>
                 <option value="sensor_reading">Sensor Readings</option>
               </select>
-              <Button size="sm" variant="outline" className="w-full sm:w-auto" disabled={exportRecentActivity.isPending} onClick={() => handleExportRecentActivity('csv')}>
+              <Button size="sm" variant="outline" className="min-w-[120px]" disabled={exportRecentActivity.isPending} onClick={() => handleExportRecentActivity('csv')}>
                 Export CSV
               </Button>
-              <Button size="sm" variant="outline" className="w-full sm:w-auto" disabled={exportRecentActivity.isPending} onClick={() => handleExportRecentActivity('json')}>
+              <Button size="sm" variant="outline" className="min-w-[120px]" disabled={exportRecentActivity.isPending} onClick={() => handleExportRecentActivity('json')}>
                 Export JSON
               </Button>
             </div>
           </div>
         </CardHeader>
-        <CardContent className="lg:max-h-[760px] lg:overflow-y-auto lg:pr-1">
+        <CardContent className="lg:max-h-[760px] lg:overflow-y-auto lg:pr-1 custom-scrollbar">
           {recentActivityLoading ? (
             <LoadingState text="Loading recent activity..." size="sm" />
           ) : (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3 md:grid-cols-3 2xl:grid-cols-6">
-                <div className="rounded-lg border p-3">
+                <div className={metricTileClass}>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">Users</p>
                   <p className="text-2xl font-bold">{recentActivity?.summary?.newUsers ?? 0}</p>
                 </div>
-                <div className="rounded-lg border p-3">
+                <div className={metricTileClass}>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">Farms</p>
                   <p className="text-2xl font-bold">{recentActivity?.summary?.newFarms ?? 0}</p>
                 </div>
-                <div className="rounded-lg border p-3">
+                <div className={metricTileClass}>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">Readings</p>
                   <p className="text-2xl font-bold">{recentActivity?.summary?.sensorReadings ?? 0}</p>
                 </div>
-                <div className="rounded-lg border p-3">
+                <div className={metricTileClass}>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">Recommendations</p>
                   <p className="text-2xl font-bold">{recentActivity?.summary?.recommendations ?? 0}</p>
                 </div>
-                <div className="rounded-lg border p-3">
+                <div className={metricTileClass}>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">Pest Events</p>
                   <p className="text-2xl font-bold">{recentActivity?.summary?.pestDetections ?? 0}</p>
                 </div>
-                <div className="rounded-lg border p-3">
+                <div className={metricTileClass}>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">Pest Control</p>
                   <p className="text-2xl font-bold">{recentActivity?.summary?.pestControlActions ?? 0}</p>
                 </div>
               </div>
 
-              {Array.isArray(recentActivity?.activities) && recentActivity.activities.length > 0 ? (
+              {filteredRecentActivityItems.length > 0 ? (
                 <div className="space-y-2">
-                  {recentActivity.activities.map((item) => (
-                    <div key={item.id} className="rounded-lg border p-3">
+                  {filteredRecentActivityItems.map((item) => (
+                    <div key={item.id} className={outlineBlockClass}>
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <div className="flex flex-wrap items-center gap-2">
@@ -1615,20 +1959,41 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
                 </div>
               ) : (
                 <EmptyState
-                  title="No recent activity"
-                  message="New user, farm, recommendation, and pest events will appear here."
+                  title={normalizedSearch ? 'No matching recent activity' : 'No recent activity'}
+                  message={
+                    normalizedSearch
+                      ? `No recent system activity matches "${searchQuery}".`
+                      : 'New user, farm, recommendation, and pest events will appear here.'
+                  }
                 />
               )}
             </div>
           )}
         </CardContent>
       </Card>
+      </div>
+      </section>
+      )}
 
-      <Card className="lg:col-span-8">
-        <CardHeader>
-          <div className="flex items-center justify-between gap-3">
-            <CardTitle>Reported Farm Issues</CardTitle>
-            <div className="flex items-center gap-2">
+      {isIssueOversightTab && (
+      <section className={sectionShellClass}>
+      <div className="lg:col-span-12">
+        <div className="space-y-2 px-1">
+          <div className="flex items-center gap-3">
+            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">Issue Oversight</p>
+            <div className="h-px flex-1 bg-gradient-to-r from-green-200/70 to-transparent dark:from-green-900/50" />
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Review farmer-reported issues in their own lane so support work stays distinct from recommendation and pest decisions.
+          </p>
+        </div>
+      </div>
+
+      <Card className="lg:col-span-8 min-w-0 dash-panel">
+        <CardHeader className="pb-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <CardTitle className={sectionTitleClass}>Reported Farm Issues</CardTitle>
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 size="sm"
                 variant="outline"
@@ -1639,7 +2004,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
               </Button>
             </div>
           </div>
-          <CardDescription>
+          <CardDescription className={sectionDescriptionClass}>
             {selectedFarm
               ? `Triage farmer-reported issues for ${selectedFarm.name}`
               : 'Select a farm to review the reported issue queue'}
@@ -1653,12 +2018,12 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
             />
           ) : (
             <>
-              <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="text-sm text-muted-foreground">
                   {farmIssuesResponse?.pagination?.total || filteredFarmIssues.length} tracked issue(s)
                 </div>
                 <select
-                  className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                  className={compactControlClass}
                   value={issueStatusFilter}
                   onChange={(event) => setIssueStatusFilter(event.target.value)}
                 >
@@ -1684,7 +2049,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
               ) : (
                 <div className="space-y-3">
                   {filteredFarmIssues.map((issue) => (
-                    <div key={issue.id} className="rounded-lg border p-4">
+                    <div key={issue.id} className="dash-detail-card">
                       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                         <div className="space-y-1">
                           <div className="flex flex-wrap items-center gap-2">
@@ -1786,17 +2151,31 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
           )}
         </CardContent>
       </Card>
+      </section>
+      )}
 
+      {isReviewLanesTab && (
+      <section className={sectionShellClass}>
       <div className="lg:col-span-12">
-        <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-green-700/80 dark:text-green-300/80">Review Lanes</p>
-        <p className="text-sm text-muted-foreground">Process recommendation decisions and pest adjudications with a dedicated split workspace.</p>
+        <div className="space-y-2 px-1">
+          <div className="flex items-center gap-3">
+            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">Review Lanes</p>
+            <div className="h-px flex-1 bg-gradient-to-r from-green-200/70 to-transparent dark:from-green-900/50" />
+          </div>
+          <p className="text-sm text-muted-foreground">Process recommendation decisions and pest adjudications in separate review queues with their own detail views.</p>
+        </div>
       </div>
 
-      <Card className="lg:col-span-8 h-full border-green-100/80 dark:border-green-900/45">
-        <CardHeader>
+      {renderSubsectionIntro(
+        'Recommendation Decisions',
+        'Handle pending recommendation responses, exports, and single-record inspection here.',
+        'lg:col-span-12'
+      )}
+      <Card className="lg:col-span-8 min-w-0 h-full dash-panel">
+        <CardHeader className="pb-3">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-2">
-              <CardTitle>Pending Recommendations</CardTitle>
+              <CardTitle className={sectionTitleClass}>Pending Recommendations</CardTitle>
               <Badge variant="outline">{filteredRecommendations.length}</Badge>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 w-full md:w-auto">
@@ -1829,14 +2208,14 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
               </Button>
             </div>
           </div>
-          <CardDescription>
+          <CardDescription className={sectionDescriptionClass}>
             {selectedFarm ? `Showing recommendations for ${selectedFarm.name}` : 'Showing recommendations for all farms'}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="mb-3 flex items-center justify-end">
             <select
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+              className={compactControlClass}
               value={recommendationTypeFilter}
               onChange={(event) => setRecommendationTypeFilter(event.target.value)}
             >
@@ -1850,8 +2229,8 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
           </div>
 
           {selectedRecommendationId && (
-            <div className="mb-4 rounded-lg border border-dashed p-4">
-              <div className="flex items-center justify-between gap-3">
+            <div className={`mb-4 ${dashedBlockClass} p-4`}>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-sm font-medium">Selected Recommendation Detail</p>
                   <p className="text-xs text-muted-foreground">Loaded from the single recommendation backend route</p>
@@ -1876,11 +2255,11 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
                     </div>
                     <p className="text-sm text-muted-foreground">{selectedRecommendation.description}</p>
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                      <div className="rounded-lg bg-muted/30 p-3">
+                      <div className={softBlockClass}>
                         <p className="text-xs text-muted-foreground uppercase">Farm</p>
                         <p className="font-medium">{selectedRecommendation.farm?.name || selectedRecommendation.farmId || 'N/A'}</p>
                       </div>
-                      <div className="rounded-lg bg-muted/30 p-3">
+                      <div className={softBlockClass}>
                         <p className="text-xs text-muted-foreground uppercase">Action Deadline</p>
                         <p className="font-medium">
                           {selectedRecommendation.actionDeadline
@@ -1888,11 +2267,11 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
                             : 'No deadline'}
                         </p>
                       </div>
-                      <div className="rounded-lg bg-muted/30 p-3">
+                      <div className={softBlockClass}>
                         <p className="text-xs text-muted-foreground uppercase">Recommended Action</p>
                         <p className="font-medium">{selectedRecommendation.recommendedAction || 'N/A'}</p>
                       </div>
-                      <div className="rounded-lg bg-muted/30 p-3">
+                      <div className={softBlockClass}>
                         <p className="text-xs text-muted-foreground uppercase">Created</p>
                         <p className="font-medium">{new Date(selectedRecommendation.createdAt).toLocaleString()}</p>
                       </div>
@@ -1917,15 +2296,15 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
               }
             />
           ) : (
-            <div className="space-y-3 lg:max-h-[700px] lg:overflow-y-auto lg:pr-2">
+            <div className="space-y-3 lg:max-h-[700px] lg:overflow-y-auto lg:pr-2 custom-scrollbar">
               {filteredRecommendations.map((recommendation) => (
-                <div key={recommendation.id} className="rounded-lg border p-4">
+                <div key={recommendation.id} className="dash-detail-card">
                   <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                     <div>
                       <p className="font-semibold">{recommendation.title}</p>
                       <p className="text-xs text-muted-foreground mt-0.5">{recommendation.description}</p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <Badge className={recommendationPriorityClass[recommendation.priority] || ''}>
                         {recommendation.priority}
                       </Badge>
@@ -1936,7 +2315,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
                     <p className="text-xs text-muted-foreground">
                       Farm: {recommendation.farm?.name || recommendation.farmId}
                     </p>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2 md:justify-end">
                       <Button
                         size="sm"
                         variant="outline"
@@ -1982,11 +2361,16 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
         </CardContent>
       </Card>
 
-      <Card className={`${workspaceRailClass} h-fit border-green-100/80 dark:border-green-900/45`}>
-        <CardHeader>
+      {renderSubsectionIntro(
+        'Pest Adjudication',
+        'Validate detections, refresh AI detail, and update treatment strategy in a separate review lane.',
+        'lg:col-span-12'
+      )}
+      <Card className={`${workspaceRailClass} min-w-0 h-fit dash-panel`}>
+        <CardHeader className="pb-3">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-2">
-              <CardTitle>Pending Pest Reviews</CardTitle>
+              <CardTitle className={sectionTitleClass}>Pending Pest Reviews</CardTitle>
               <Badge variant="outline">{filteredPendingReviews.length}</Badge>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-1 gap-2 w-full md:w-auto lg:w-full">
@@ -2019,12 +2403,12 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
               </Button>
             </div>
           </div>
-          <CardDescription>Validate AI detections and complete expert adjudication</CardDescription>
+          <CardDescription className={sectionDescriptionClass}>Validate AI detections and complete expert adjudication</CardDescription>
         </CardHeader>
-        <CardContent className="lg:max-h-[760px] lg:overflow-y-auto lg:pr-1">
+        <CardContent className="lg:max-h-[760px] lg:overflow-y-auto lg:pr-1 custom-scrollbar">
           <div className="mb-3 flex items-center justify-end">
             <select
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+              className={compactControlClass}
               value={reviewSeverityFilter}
               onChange={(event) => setReviewSeverityFilter(event.target.value)}
             >
@@ -2038,13 +2422,13 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
           </div>
 
           {selectedReviewId && (
-            <div className="mb-4 rounded-lg border border-dashed p-4">
-              <div className="flex items-center justify-between gap-3">
+            <div className={`mb-4 ${dashedBlockClass} p-4`}>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-sm font-medium">Selected Detection Detail</p>
                   <p className="text-xs text-muted-foreground">Loaded from the single pest-detection backend route</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Button size="sm" variant="outline" onClick={() => refetchSelectedReview()} disabled={!selectedReviewId}>
                     Refresh Detail
                   </Button>
@@ -2076,23 +2460,23 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
                       <p className="text-sm text-muted-foreground">{selectedReview.locationDescription}</p>
                     )}
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                      <div className="rounded-lg bg-muted/30 p-3">
+                      <div className={softBlockClass}>
                         <p className="text-xs text-muted-foreground uppercase">Created</p>
                         <p className="font-medium">{new Date(selectedReview.createdAt).toLocaleString()}</p>
                       </div>
-                      <div className="rounded-lg bg-muted/30 p-3">
+                      <div className={softBlockClass}>
                         <p className="text-xs text-muted-foreground uppercase">Review State</p>
                         <p className="font-medium">{selectedReview.isConfirmed ? 'Expert confirmed' : 'Awaiting expert confirmation'}</p>
                       </div>
                     </div>
                     {selectedReview.expertNotes && (
-                      <div className="rounded-lg bg-muted/30 p-3">
+                      <div className={softBlockClass}>
                         <p className="text-xs text-muted-foreground uppercase">Expert Notes</p>
                         <p className="font-medium">{selectedReview.expertNotes}</p>
                       </div>
                     )}
                     {Array.isArray(selectedReview.treatmentRecommendations) && selectedReview.treatmentRecommendations.length > 0 && (
-                      <div className="rounded-lg bg-muted/30 p-3">
+                      <div className={softBlockClass}>
                         <p className="text-xs text-muted-foreground uppercase">Treatment Recommendations</p>
                         <ul className="mt-2 list-disc space-y-1 pl-4 text-sm">
                           {selectedReview.treatmentRecommendations.map((item: string, index: number) => (
@@ -2123,7 +2507,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
           ) : (
             <div className="space-y-3">
               {filteredPendingReviews.map((review) => (
-                <div key={review.id} className="rounded-lg border p-4">
+                <div key={review.id} className="dash-detail-card">
                   <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                     <div>
                       <p className="font-semibold">{review.pestType || 'Unclassified detection'}</p>
@@ -2154,7 +2538,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
                         </a>
                       )}
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <Button
                         size="sm"
                         variant="outline"
@@ -2202,12 +2586,12 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
                     </div>
                   </div>
                   {editingReviewId === review.id && (
-                    <div className="mt-4 rounded-lg border border-dashed p-4 space-y-3">
+                    <div className={`mt-4 ${dashedBlockClass} p-4 space-y-3`}>
                       <div className="grid gap-3 md:grid-cols-2">
                         <div className="space-y-2">
                           <p className="text-sm font-medium">Expert notes</p>
                           <textarea
-                            className="min-h-28 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                            className={textAreaClass}
                             value={reviewStrategyDrafts[review.id]?.expertNotes || ''}
                             onChange={(event) =>
                               updateReviewStrategyDraft(review.id, 'expertNotes', event.target.value)
@@ -2218,7 +2602,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
                         <div className="space-y-2">
                           <p className="text-sm font-medium">Treatment strategy</p>
                           <textarea
-                            className="min-h-28 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                            className={textAreaClass}
                             value={reviewStrategyDrafts[review.id]?.treatmentText || ''}
                             onChange={(event) =>
                               updateReviewStrategyDraft(review.id, 'treatmentText', event.target.value)
@@ -2226,7 +2610,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
                             placeholder="One action per line. Example: Spray the affected block at dawn."
                           />
                           {getAiTreatmentSuggestions(review).length > 0 && (
-                            <div className="rounded-md bg-muted/40 p-3 text-xs text-muted-foreground">
+                            <div className={`${softBlockClass} text-xs text-muted-foreground`}>
                               <p className="font-medium text-foreground">AI suggestions</p>
                               <ul className="mt-1 list-disc pl-4 space-y-1">
                                 {getAiTreatmentSuggestions(review).map((item, index) => (
@@ -2275,15 +2659,16 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
           )}
         </CardContent>
       </Card>
-      </div>
+      </section>
+      )}
 
       {/* ===== District Analytics Tab ===== */}
-      {activeTab === 'district-analytics' && (
+      {isDistrictAnalyticsTab && (
         <DistrictAnalyticsPanel />
       )}
 
       {/* ===== AI Advice Tab ===== */}
-      {activeTab === 'ai-advice' && (
+      {isAiAdviceTab && (
         <ExpertAiAdvicePanel />
       )}
     </div>
@@ -2297,6 +2682,11 @@ function DistrictAnalyticsPanel() {
   const [lookupLatInput, setLookupLatInput] = useState('');
   const [lookupLonInput, setLookupLonInput] = useState('');
   const [submittedCoords, setSubmittedCoords] = useState<{ lat: number; lon: number } | null>(null);
+  const panelClass = 'dash-panel';
+  const sectionTitleClass = 'text-lg flex items-center gap-2 font-extrabold tracking-tight';
+  const sectionDescriptionClass = 'text-sm text-muted-foreground/95';
+  const centeredMetricTileClass = 'dash-metric-tile text-center';
+  const outlineBlockClass = 'dash-outline-block';
   const districtList = Array.isArray(districts) ? districts : [];
 
   useEffect(() => {
@@ -2334,20 +2724,20 @@ function DistrictAnalyticsPanel() {
   };
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
+    <div className="dash-section-stack">
+      <Card className={panelClass}>
+        <CardHeader className="pb-3">
+          <CardTitle className={sectionTitleClass}>
             <BarChart2 size={20} className="text-primary" />
             District Analytics
           </CardTitle>
-          <CardDescription>Aggregated farm and sensor data by district</CardDescription>
+          <CardDescription className={sectionDescriptionClass}>Aggregated farm and sensor data by district</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <select
             value={selectedDistrict}
             onChange={(e) => setSelectedDistrict(e.target.value)}
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+            className={compactControlClass}
           >
             {districtList.map((dist: any) => (
               <option key={dist.district} value={dist.district}>{dist.district}</option>
@@ -2364,7 +2754,7 @@ function DistrictAnalyticsPanel() {
                 { label: 'Avg Moisture', value: d.avgSoilMoisture != null ? `${Number(d.avgSoilMoisture).toFixed(1)}%` : '--' },
                 { label: 'Active Alerts', value: d.alertCount ?? '--' },
               ].map((stat) => (
-                <div key={stat.label} className="rounded-lg border p-3 text-center">
+                <div key={stat.label} className={centeredMetricTileClass}>
                   <p className="text-xl font-bold">{String(stat.value)}</p>
                   <p className="text-xs text-muted-foreground">{stat.label}</p>
                 </div>
@@ -2376,13 +2766,13 @@ function DistrictAnalyticsPanel() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
+      <Card className={panelClass}>
+        <CardHeader className="pb-3">
+          <CardTitle className={sectionTitleClass}>
             <AlertTriangle size={20} className="text-primary" />
             Pest Outbreak Watch
           </CardTitle>
-          <CardDescription>District outbreak signals from the backend outbreak-map route</CardDescription>
+          <CardDescription className={sectionDescriptionClass}>District outbreak signals from the backend outbreak-map route</CardDescription>
         </CardHeader>
         <CardContent>
           {outbreakMapLoading ? (
@@ -2390,19 +2780,19 @@ function DistrictAnalyticsPanel() {
           ) : outbreakMap ? (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-                <div className="rounded-lg border p-3 text-center">
+                <div className={centeredMetricTileClass}>
                   <p className="text-xl font-bold">{outbreakMap.detections?.length ?? 0}</p>
                   <p className="text-xs text-muted-foreground">Detections in Window</p>
                 </div>
-                <div className="rounded-lg border p-3 text-center">
+                <div className={centeredMetricTileClass}>
                   <p className="text-xl font-bold">{outbreakMap.byDistrict?.length ?? 0}</p>
                   <p className="text-xs text-muted-foreground">Districts Affected</p>
                 </div>
-                <div className="rounded-lg border p-3 text-center">
+                <div className={centeredMetricTileClass}>
                   <p className="text-xl font-bold">{selectedDistrictOutbreak?.count ?? 0}</p>
                   <p className="text-xs text-muted-foreground">Selected District Cases</p>
                 </div>
-                <div className="rounded-lg border p-3 text-center">
+                <div className={centeredMetricTileClass}>
                   <p className="text-xl font-bold">{districtSevereSignals}</p>
                   <p className="text-xs text-muted-foreground">High + Severe Signals</p>
                 </div>
@@ -2411,7 +2801,7 @@ function DistrictAnalyticsPanel() {
               {outbreakMap.byDistrict?.length ? (
                 <div className="space-y-2">
                   {outbreakMap.byDistrict.slice(0, 5).map((district) => (
-                    <div key={district.district} className="flex items-center justify-between rounded-lg border p-3">
+                    <div key={district.district} className={`${outlineBlockClass} flex items-center justify-between gap-3`}>
                       <div>
                         <p className="font-medium">{district.district}</p>
                         <p className="text-xs text-muted-foreground">
@@ -2438,13 +2828,13 @@ function DistrictAnalyticsPanel() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
+      <Card className={panelClass}>
+        <CardHeader className="pb-3">
+          <CardTitle className={sectionTitleClass}>
             <Cloud size={20} className="text-primary" />
             District Weather Snapshot
           </CardTitle>
-          <CardDescription>Live district weather from the backend district weather endpoint</CardDescription>
+          <CardDescription className={sectionDescriptionClass}>Live district weather from the backend district weather endpoint</CardDescription>
         </CardHeader>
         <CardContent>
           {districtWeatherLoading ? (
@@ -2457,7 +2847,7 @@ function DistrictAnalyticsPanel() {
                 { label: 'Condition', value: districtWeatherData.condition || '--' },
                 { label: 'Wind', value: districtWeatherData.windSpeed != null ? `${districtWeatherData.windSpeed} m/s` : '--' },
               ].map((stat) => (
-                <div key={stat.label} className="rounded-lg border p-3 text-center">
+                <div key={stat.label} className={centeredMetricTileClass}>
                   <p className="text-xl font-bold">{String(stat.value)}</p>
                   <p className="text-xs text-muted-foreground">{stat.label}</p>
                 </div>
@@ -2469,20 +2859,20 @@ function DistrictAnalyticsPanel() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
+      <Card className={panelClass}>
+        <CardHeader className="pb-3">
+          <CardTitle className={sectionTitleClass}>
             <Cloud size={20} className="text-primary" />
             Coordinate Weather Lookup
           </CardTitle>
-          <CardDescription>Look up live weather for any coordinate using the backend location endpoint</CardDescription>
+          <CardDescription className={sectionDescriptionClass}>Look up live weather for any coordinate using the backend location endpoint</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <form className="grid grid-cols-1 gap-3 md:grid-cols-3" onSubmit={handleCoordinateLookup}>
             <input
               type="number"
               step="any"
-              className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              className={controlClass}
               placeholder="Latitude"
               value={lookupLatInput}
               onChange={(event) => setLookupLatInput(event.target.value)}
@@ -2490,7 +2880,7 @@ function DistrictAnalyticsPanel() {
             <input
               type="number"
               step="any"
-              className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              className={controlClass}
               placeholder="Longitude"
               value={lookupLonInput}
               onChange={(event) => setLookupLonInput(event.target.value)}
@@ -2507,7 +2897,7 @@ function DistrictAnalyticsPanel() {
             <LoadingState text="Looking up coordinate weather..." size="sm" />
           ) : coordinateWeatherData ? (
             <div className="space-y-3">
-              <div className="flex flex-col gap-2 rounded-lg border p-3 md:flex-row md:items-center md:justify-between">
+              <div className={`${outlineBlockClass} flex flex-col gap-2 md:flex-row md:items-center md:justify-between`}>
                 <div>
                   <p className="font-medium">
                     {submittedCoords.lat.toFixed(4)}, {submittedCoords.lon.toFixed(4)}
@@ -2546,7 +2936,7 @@ function DistrictAnalyticsPanel() {
                       : '--',
                   },
                 ].map((stat) => (
-                  <div key={stat.label} className="rounded-lg border p-3 text-center">
+                  <div key={stat.label} className={centeredMetricTileClass}>
                     <p className="text-xl font-bold">{String(stat.value)}</p>
                     <p className="text-xs text-muted-foreground">{stat.label}</p>
                   </div>
@@ -2580,28 +2970,28 @@ function ExpertAiAdvicePanel() {
   };
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
+    <div className="dash-section-stack">
+      <Card className="dash-panel">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg flex items-center gap-2 font-extrabold tracking-tight">
             <Bot size={20} className="text-primary" />
             AI Agricultural Advice
           </CardTitle>
-          <CardDescription>Ask the AI expert system for agricultural guidance</CardDescription>
+          <CardDescription className="text-sm text-muted-foreground/95">Ask the AI expert system for agricultural guidance</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <textarea
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             placeholder="e.g. What are the best practices for late blight management in maize?"
-            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[120px]"
+            className={textAreaClass}
           />
           <Button onClick={handleSubmit} disabled={adviceMutation.isPending || !question.trim()} className="w-full">
             {adviceMutation.isPending ? 'Getting advice...' : 'Get Expert AI Advice'}
           </Button>
 
           {adviceMutation.data && (
-            <div className="rounded-lg border p-4 space-y-3 bg-muted/30">
+            <div className="dash-soft-block space-y-3">
               <p className="font-semibold">AI Response</p>
               <FormattedAiResponse content={adviceMutation.data.answer} />
               {adviceMutation.data.suggestions?.length > 0 && (
@@ -2615,7 +3005,7 @@ function ExpertAiAdvicePanel() {
               {adviceMutation.data.relatedTopics?.length > 0 && (
                 <div className="flex flex-wrap gap-2">
                   {adviceMutation.data.relatedTopics.map((t: string, i: number) => (
-                    <span key={i} className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">{t}</span>
+                    <Badge key={i} variant="outline">{t}</Badge>
                   ))}
                 </div>
               )}
@@ -2628,4 +3018,3 @@ function ExpertAiAdvicePanel() {
 }
 
 export default ConnectedExpertDashboard;
-

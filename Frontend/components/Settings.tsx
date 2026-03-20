@@ -98,6 +98,11 @@ function formatStatusLabel(status?: string | null) {
   return status.replace(/_/g, ' ');
 }
 
+function isOnlineStatus(status?: string | null) {
+  if (typeof status !== 'string') return false;
+  return ['active', 'online', 'standby'].includes(status.toLowerCase());
+}
+
 function formatDateTime(value?: string | null) {
   if (!value) return 'No recent check-in';
 
@@ -211,8 +216,8 @@ export const Settings: React.FC<SettingsProps> = ({ language = 'en', setLanguage
       return (adminDevices?.data || []).map((device) => ({
         id: device.id,
         deviceId: device.deviceId,
-        displayName: device.deviceId,
-        status: device.status,
+        displayName: device.deviceId || 'Unknown device',
+        status: device.status || 'unknown',
         lastSeen: device.lastSeen,
         location: device.farmName,
       }));
@@ -221,17 +226,15 @@ export const Settings: React.FC<SettingsProps> = ({ language = 'en', setLanguage
     return (farmSensors || []).map((sensor) => ({
       id: sensor.id,
       deviceId: sensor.deviceId,
-      displayName: sensor.name || sensor.sensorType.replace(/_/g, ' '),
-      status: sensor.status,
+      displayName: sensor.name || formatStatusLabel(sensor.sensorType || 'sensor'),
+      status: sensor.status || 'unknown',
       batteryLevel: sensor.batteryLevel,
       lastSeen: sensor.updatedAt,
       location: sensor.locationDescription,
     }));
   }, [adminDevices, farmSensors, isAdmin]);
 
-  const onlineDeviceCount = deviceItems.filter((device) =>
-    ['active', 'online', 'standby'].includes(device.status.toLowerCase())
-  ).length;
+  const onlineDeviceCount = deviceItems.filter((device) => isOnlineStatus(device.status)).length;
 
   const profileDisplayName =
     [profile?.firstName, profile?.lastName].filter(Boolean).join(' ') ||
@@ -682,7 +685,7 @@ export const Settings: React.FC<SettingsProps> = ({ language = 'en', setLanguage
                     <div className="flex items-center gap-4 min-w-0">
                       <div
                         className={`w-3 h-3 rounded-full ${
-                          ['active', 'online', 'standby'].includes(device.status.toLowerCase())
+                          isOnlineStatus(device.status)
                             ? 'bg-emerald-500'
                             : 'bg-red-500'
                         }`}

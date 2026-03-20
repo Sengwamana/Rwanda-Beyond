@@ -3,8 +3,9 @@
 // =====================================================
 
 import React, { useState } from 'react';
-import { Menu, X, Sprout, Sun, Moon } from 'lucide-react';
+import { Menu, X, Sun, Moon } from 'lucide-react';
 import { Button } from './ui/Button';
+import { BrandLogo } from './ui/BrandLogo';
 import { translations, Language } from '../utils/translations';
 
 interface NavbarProps {
@@ -49,11 +50,8 @@ export function Navbar({
       <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
         
         {/* Logo */}
-        <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate('landing')}>
-          <div className="bg-primary p-1.5 rounded-lg">
-            <Sprout className="text-primary-foreground fill-current" size={20} />
-          </div>
-          <span className="text-lg font-bold tracking-tight text-primary">RwandaBeyond</span>
+        <div className="cursor-pointer" onClick={() => navigate('landing')}>
+          <BrandLogo variant="navbar" />
         </div>
 
         {/* Desktop Nav - Centered */}

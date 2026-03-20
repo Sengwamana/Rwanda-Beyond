@@ -111,6 +111,27 @@ function normalizeChatResponse(payload: unknown): ChatResponse {
   };
 }
 
+function normalizeHealthStatus(payload: unknown): AIHealthStatus {
+  const response = (payload ?? {}) as Partial<AIHealthStatus>;
+
+  return {
+    status:
+      response.status === 'healthy' || response.status === 'degraded' || response.status === 'unhealthy'
+        ? response.status
+        : 'unhealthy',
+    provider: typeof response.provider === 'string' && response.provider.trim().length > 0 ? response.provider : 'unknown',
+    model: typeof response.model === 'string' ? response.model : undefined,
+    lastChecked:
+      typeof response.lastChecked === 'string'
+        ? response.lastChecked
+        : typeof response.lastChecked === 'number'
+          ? new Date(response.lastChecked).toISOString()
+        : new Date().toISOString(),
+    details: response.details,
+    error: typeof response.error === 'string' ? response.error : undefined,
+  };
+}
+
 export interface AICapabilities {
   provider: string;
   model: string;
@@ -187,7 +208,7 @@ export const getCapabilities = async (): Promise<AICapabilities> => {
  */
 export const checkHealth = async (): Promise<AIHealthStatus> => {
   const response: AxiosResponse<ApiResponse<AIHealthStatus>> = await apiClient.get('/ai/health');
-  return response.data.data;
+  return normalizeHealthStatus(getResponsePayload(response));
 };
 
 /**

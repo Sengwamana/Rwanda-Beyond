@@ -1,4 +1,4 @@
-﻿// =====================================================
+// =====================================================
 // Connected Farmer Dashboard - Smart Maize Farming System
 // With real API integration and actionable frontend interactions
 // =====================================================
@@ -107,6 +107,13 @@ interface ConnectedFarmerDashboardProps {
   activeTab?: string;
 }
 
+const DASH_CONTROL_CLASS = 'dash-control';
+const DASH_CONTROL_COMPACT_CLASS = 'dash-control-compact';
+const DASH_TEXTAREA_CLASS = 'dash-textarea';
+const controlClass = DASH_CONTROL_CLASS;
+const compactControlClass = DASH_CONTROL_COMPACT_CLASS;
+const textAreaClass = DASH_TEXTAREA_CLASS;
+
 const localeByLanguage: Record<Language, string> = {
   en: 'en-US',
   rw: 'rw-RW',
@@ -124,6 +131,47 @@ const formatTime = (dateString: string, locale: string) =>
     hour: '2-digit',
     minute: '2-digit',
   });
+
+const matchesSearchTerm = (term: string, values: Array<unknown>) => {
+  if (!term) return true;
+  return values
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+    .includes(term);
+};
+
+type SearchScopeItem = {
+  label: string;
+  value: number;
+  total?: number;
+};
+
+function SearchScopePills({
+  items,
+  accent = 'emerald',
+}: {
+  items: SearchScopeItem[];
+  accent?: 'emerald' | 'green';
+}) {
+  if (!items.length) return null;
+
+  const accentClass =
+    accent === 'green'
+      ? 'bg-green-100 text-green-800 dark:bg-green-900/35 dark:text-green-300'
+      : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/35 dark:text-emerald-300';
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {items.map((item) => (
+        <span key={item.label} className={`dash-pill ${accentClass}`}>
+          {item.label}: {item.value}
+          {typeof item.total === 'number' ? `/${item.total}` : ''}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 const priorityColors: Record<RecommendationPriority, string> = {
   critical: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
@@ -185,18 +233,18 @@ function SensorCard({
   const TrendIcon = trend === 'up' ? TrendingUp : trend === 'down' ? TrendingDown : null;
 
   return (
-    <Card className="hover:shadow-md transition-shadow">
-      <CardContent className="p-4">
+    <Card className="dash-stat-card">
+      <CardContent className="p-5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg bg-primary/10 ${statusColors[status]}`}>
+            <div className={`dash-icon-box ${statusColors[status]}`}>
               <Icon size={20} />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">{label}</p>
-              <p className="text-xl font-bold">
+              <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
+              <p className="text-[1.85rem] font-extrabold tracking-tight">
                 {value}
-                <span className="text-sm font-normal text-muted-foreground ml-1">{unit}</span>
+                <span className="text-sm font-medium text-muted-foreground ml-1">{unit}</span>
               </p>
             </div>
           </div>
@@ -255,10 +303,10 @@ function RecommendationCard({
   const canMarkComplete = recommendation.status === 'accepted' && !hasLinkedIrrigationSchedule;
 
   return (
-    <Card className="border-l-4 border-l-primary">
-      <CardContent className="p-4">
+    <Card className="dash-panel">
+      <CardContent className="p-5">
         <div className="flex items-start gap-3">
-          <div className="p-2 rounded-lg bg-primary/10">
+          <div className="dash-icon-box">
             <Icon size={18} className="text-primary" />
           </div>
           <div className="flex-1">
@@ -276,7 +324,7 @@ function RecommendationCard({
               </p>
             )}
             {hasLinkedIrrigationSchedule && (
-              <div className="mt-2 rounded-md bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
+              <div className="mt-2 rounded-2xl bg-primary/5 px-3 py-2.5 text-xs text-muted-foreground border border-primary/10">
                 Approved irrigation is scheduled for{' '}
                 {new Date(linkedIrrigationSchedule.scheduledDate).toLocaleDateString()}
                 {linkedIrrigationSchedule.scheduledTime ? ` at ${linkedIrrigationSchedule.scheduledTime}` : ''}.
@@ -340,7 +388,7 @@ function WeatherCard({
 }) {
   if (!weather) {
     return (
-      <Card>
+      <Card className="dash-panel">
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
             <Cloud size={20} />
@@ -364,7 +412,7 @@ function WeatherCard({
   const WeatherIcon = getWeatherIcon(weather.condition);
 
   return (
-    <Card>
+    <Card className="dash-panel">
       <CardHeader>
         <CardTitle className="text-lg flex items-center gap-2">
           <WeatherIcon size={20} className="text-primary" />
@@ -416,7 +464,7 @@ function WeatherAlertsCard({
   alerts?: WeatherAlert[];
 }) {
   return (
-    <Card>
+    <Card className="dash-panel">
       <CardHeader>
         <CardTitle className="text-lg flex items-center gap-2">
           <AlertTriangle size={20} className="text-primary" />
@@ -432,7 +480,7 @@ function WeatherAlertsCard({
         ) : (
           <div className="space-y-3">
             {alerts.slice(0, 3).map((alert, index) => (
-              <div key={`${alert.title}-${index}`} className="rounded-lg border p-3 space-y-2">
+              <div key={`${alert.title}-${index}`} className="dash-outline-block space-y-2">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-medium text-sm">{alert.title}</p>
@@ -467,7 +515,7 @@ function IrrigationWindowCard({
   const nextWindow = data?.nextBestWindow || null;
 
   return (
-    <Card>
+    <Card className="dash-panel">
       <CardHeader>
         <CardTitle className="text-lg flex items-center gap-2">
           <Droplets size={20} className="text-primary" />
@@ -482,7 +530,7 @@ function IrrigationWindowCard({
           <EmptyState title="No clear window yet" message="The forecast does not currently show a preferred irrigation slot." />
         ) : (
           <div className="space-y-3">
-            <div className="rounded-lg border p-3">
+            <div className="dash-outline-block">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="font-medium">{new Date(nextWindow.date).toLocaleDateString()}</p>
@@ -492,15 +540,15 @@ function IrrigationWindowCard({
               </div>
             </div>
             <div className="grid grid-cols-3 gap-3 text-sm">
-              <div className="rounded-lg bg-muted/40 p-3">
+              <div className="dash-soft-block">
                 <p className="text-muted-foreground">Temp</p>
                 <p className="font-semibold">{nextWindow.conditions.temperature ?? '--'} C</p>
               </div>
-              <div className="rounded-lg bg-muted/40 p-3">
+              <div className="dash-soft-block">
                 <p className="text-muted-foreground">Humidity</p>
                 <p className="font-semibold">{nextWindow.conditions.humidity ?? '--'}%</p>
               </div>
-              <div className="rounded-lg bg-muted/40 p-3">
+              <div className="dash-soft-block">
                 <p className="text-muted-foreground">Weather</p>
                 <p className="font-semibold">{nextWindow.conditions.weather || '--'}</p>
               </div>
@@ -530,7 +578,7 @@ function WeatherHistoryCard({
   const totalRain = historyRows.reduce((sum, row) => sum + (row.rainMm || 0), 0);
 
   return (
-    <Card>
+    <Card className="dash-panel">
       <CardHeader>
         <CardTitle className="text-lg flex items-center gap-2">
           <Calendar size={20} className="text-primary" />
@@ -546,18 +594,18 @@ function WeatherHistoryCard({
         ) : (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-lg bg-muted/40 p-3">
+              <div className="dash-soft-block">
                 <p className="text-sm text-muted-foreground">Average temperature</p>
                 <p className="font-semibold">{avgTemperature !== null ? `${avgTemperature.toFixed(1)} C` : '--'}</p>
               </div>
-              <div className="rounded-lg bg-muted/40 p-3">
+              <div className="dash-soft-block">
                 <p className="text-sm text-muted-foreground">Total rainfall</p>
                 <p className="font-semibold">{totalRain.toFixed(1)} mm</p>
               </div>
             </div>
             <div className="space-y-2">
               {historyRows.slice(-4).reverse().map((row, index) => (
-                <div key={`${row.forecastDate}-${row.forecastTime || index}`} className="flex items-center justify-between rounded-lg border p-3 text-sm">
+                <div key={`${row.forecastDate}-${row.forecastTime || index}`} className="dash-outline-block flex items-center justify-between text-sm">
                   <div>
                     <p className="font-medium">{new Date(row.forecastDate).toLocaleDateString()}</p>
                     <p className="text-muted-foreground">{row.weatherCondition || 'Weather snapshot'}</p>
@@ -595,7 +643,7 @@ function FarmSelector({
 }) {
   if (farms.length === 0) {
     return (
-      <Card className="border-dashed">
+      <Card className="dash-panel">
         <CardContent className="p-6 text-center">
           <Sprout className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
           <h3 className="font-semibold mb-2">{emptyTitle}</h3>
@@ -621,10 +669,10 @@ function FarmSelector({
         <button
           key={farm.id}
           onClick={() => onSelect(farm)}
-          className={`flex-shrink-0 px-4 py-2 rounded-lg border transition-colors ${
+          className={`flex-shrink-0 rounded-[1.2rem] border px-4 py-3 text-left transition-all ${
             selectedFarm?.id === farm.id
-              ? 'bg-primary text-primary-foreground border-primary'
-              : 'bg-card hover:bg-muted border-border'
+              ? 'border-primary bg-primary text-primary-foreground shadow-[0_18px_34px_-24px_rgba(15,81,50,0.65)]'
+              : 'border-[hsl(var(--border))] bg-white dark:bg-slate-900 hover:border-primary/30 hover:bg-[hsl(var(--secondary))]'
           }`}
         >
           <div className="flex items-center gap-2">
@@ -659,7 +707,7 @@ export function ConnectedFarmerDashboard({
   const [showAddFarmForm, setShowAddFarmForm] = useState(false);
   const [showIrrigationPlanner, setShowIrrigationPlanner] = useState(false);
   const [farmNameInput, setFarmNameInput] = useState('');
-  const [farmCropInput, setFarmCropInput] = useState('Maize');
+  const [farmCropInput, setFarmCropInput] = useState('');
   const [farmLocationInput, setFarmLocationInput] = useState('');
   const [farmSizeInput, setFarmSizeInput] = useState('');
   const [irrigationDateInput, setIrrigationDateInput] = useState(() => new Date().toISOString().slice(0, 10));
@@ -830,20 +878,44 @@ export function ConnectedFarmerDashboard({
     if (!normalizedSearch) return recommendations;
 
     return recommendations.filter((recommendation) => {
-      const haystack = [
+      return matchesSearchTerm(normalizedSearch, [
         recommendation.title,
         recommendation.description,
         recommendation.type,
         recommendation.priority,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-      return haystack.includes(normalizedSearch);
+      ]);
     });
   }, [recommendations, normalizedSearch]);
 
   const farmIssues = farmIssuesResponse?.data || [];
+  const filteredFarmIssues = useMemo(() => {
+    if (!normalizedSearch) return farmIssues;
+    return farmIssues.filter((issue) =>
+      matchesSearchTerm(normalizedSearch, [
+        issue.title,
+        issue.description,
+        issue.category,
+        issue.severity,
+        issue.status,
+        issue.expertNotes,
+        issue.resolutionNotes,
+      ])
+    );
+  }, [farmIssues, normalizedSearch]);
+  const filteredWeatherAlerts = useMemo(() => {
+    const alerts = weatherAlerts?.alerts || [];
+    if (!normalizedSearch) return alerts;
+    return alerts.filter((alert: any) =>
+      matchesSearchTerm(normalizedSearch, [
+        alert.title,
+        alert.type,
+        alert.severity,
+        alert.message,
+        alert.description,
+        alert.recommendation,
+      ])
+    );
+  }, [normalizedSearch, weatherAlerts?.alerts]);
   const farmPortfolioStages = useMemo(
     () => Object.entries(farmStats?.byGrowthStage || {}).sort((left, right) => right[1] - left[1]).slice(0, 3),
     [farmStats]
@@ -857,11 +929,7 @@ export function ConnectedFarmerDashboard({
     if (!normalizedSearch) return farms;
 
     return farms.filter((farm) => {
-      const haystack = [farm.name, farm.locationName, farm.district?.name, farm.cropVariety]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-      return haystack.includes(normalizedSearch);
+      return matchesSearchTerm(normalizedSearch, [farm.name, farm.locationName, farm.district?.name, farm.cropVariety]);
     });
   }, [farms, normalizedSearch]);
 
@@ -869,16 +937,12 @@ export function ConnectedFarmerDashboard({
     if (!normalizedSearch) return upcomingSchedules;
 
     return upcomingSchedules.filter((schedule) => {
-      const haystack = [
+      return matchesSearchTerm(normalizedSearch, [
         schedule.triggerSource,
         schedule.notes,
         schedule.scheduledDate,
         schedule.scheduledTime,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-      return haystack.includes(normalizedSearch);
+      ]);
     });
   }, [upcomingSchedules, normalizedSearch]);
 
@@ -1003,7 +1067,7 @@ export function ConnectedFarmerDashboard({
     try {
       const response = await createFarmMutation.mutateAsync({
         name: farmNameInput.trim(),
-        cropVariety: farmCropInput.trim() || 'Maize',
+        ...(farmCropInput.trim() ? { cropVariety: farmCropInput.trim() } : {}),
         locationName: farmLocationInput.trim() || undefined,
         sizeHectares: typeof parsedSize === 'number' && !Number.isNaN(parsedSize) ? parsedSize : undefined,
       });
@@ -1013,7 +1077,7 @@ export function ConnectedFarmerDashboard({
         setSelectedFarm(response.data);
         setShowAddFarmForm(false);
         setFarmNameInput('');
-        setFarmCropInput('Maize');
+        setFarmCropInput('');
         setFarmLocationInput('');
         setFarmSizeInput('');
       }
@@ -1314,20 +1378,67 @@ export function ConnectedFarmerDashboard({
       : undefined;
   const isOverviewTab = activeTab === 'overview';
   const activeTabCopy = farmerTabCopy[activeTab] || farmerTabCopy.overview;
-  const farmerQuickStats: Array<{ label: string; value: string | number }> = [
-    { label: 'Tracked Farms', value: filteredFarms.length },
-    { label: 'Active Advice', value: recommendations?.length || 0 },
-    { label: 'Weather Alerts', value: weatherAlerts?.alerts?.length || 0 },
-    { label: 'Open Irrigation', value: irrigationSchedules?.length || 0 },
+  const farmerQuickStats: Array<{ label: string; value: string | number; badge: string; helper: string }> = [
+    {
+      label: 'Tracked Farms',
+      value: filteredFarms.length,
+      badge: `${farmStats?.activeFarms ?? filteredFarms.length} active`,
+      helper: `${typeof farmStats?.totalAreaHectares === 'number' ? farmStats.totalAreaHectares.toFixed(1) : '0.0'} ha recorded`,
+    },
+    {
+      label: 'Active Advice',
+      value: recommendations?.length || 0,
+      badge: `${filteredRecommendations.length} visible`,
+      helper: `${farmSummary?.activeRecommendations?.length ?? recommendations?.length ?? 0} linked to this farm`,
+    },
+    {
+      label: 'Weather Alerts',
+      value: filteredWeatherAlerts.length,
+      badge: `${weatherHistory?.data?.length ?? 0} history rows`,
+      helper: selectedFarm ? 'Live records for the selected farm' : 'Live weather alert records',
+    },
+    {
+      label: 'Open Irrigation',
+      value: normalizedSearch ? filteredSchedules.length : irrigationSchedules?.length || 0,
+      badge: `${dueSchedules.length} due`,
+      helper: `${irrigationSchedules?.filter((schedule) => schedule.isExecuted).length ?? 0} completed`,
+    },
   ];
+  const farmerSearchScopeItems = useMemo<SearchScopeItem[]>(() => {
+    if (!normalizedSearch) return [];
+
+    return [
+      { label: 'Farms', value: filteredFarms.length, total: farms.length },
+      { label: 'Advice', value: filteredRecommendations.length, total: recommendations?.length || 0 },
+      { label: 'Alerts', value: filteredWeatherAlerts.length, total: weatherAlerts?.alerts?.length || 0 },
+      { label: 'Issues', value: filteredFarmIssues.length, total: farmIssues.length },
+      { label: 'Irrigation', value: filteredSchedules.length, total: upcomingSchedules.length },
+    ];
+  }, [
+    farmIssues.length,
+    farms.length,
+    filteredFarmIssues.length,
+    filteredFarms.length,
+    filteredRecommendations.length,
+    filteredSchedules.length,
+    filteredWeatherAlerts.length,
+    normalizedSearch,
+    recommendations?.length,
+    upcomingSchedules.length,
+    weatherAlerts?.alerts?.length,
+  ]);
   const sectionTitleClass = 'text-base md:text-lg font-extrabold tracking-tight';
   const sectionDescriptionClass = 'text-xs md:text-sm text-muted-foreground/90';
-  const workspaceGridClass = 'grid grid-cols-1 xl:grid-cols-12 gap-4 md:gap-6';
-  const workspaceMainClass = 'xl:col-span-8';
-  const workspaceRailClass = 'xl:col-span-4 space-y-4 xl:sticky xl:top-24 self-start';
+  const workspaceGridClass = 'dash-workspace-grid-xl';
+  const workspaceMainClass = 'dash-workspace-main-xl';
+  const workspaceRailClass = 'dash-workspace-rail-xl';
+  const sectionShellClass = 'dash-workspace-section';
+  const controlClass = DASH_CONTROL_CLASS;
+  const compactControlClass = DASH_CONTROL_COMPACT_CLASS;
+  const textAreaClass = DASH_TEXTAREA_CLASS;
 
   return (
-    <div className="mx-auto w-full max-w-[1500px] p-3 sm:p-4 md:p-6 lg:p-7 space-y-5 md:space-y-6 bg-background min-h-screen animate-fade-in">
+    <div className="dashboard-page dash-section-stack mx-auto w-full max-w-[1600px] px-1 pb-2 pt-0 animate-fade-in">
       <input
         ref={pestFileInputRef}
         type="file"
@@ -1336,21 +1447,21 @@ export function ConnectedFarmerDashboard({
         onChange={handlePestImageSelected}
       />
 
-      <div className="rounded-3xl border border-emerald-200/50 dark:border-emerald-900/30 bg-gradient-to-br from-emerald-500/10 via-white to-white dark:from-emerald-500/15 dark:via-slate-900 dark:to-slate-900 p-4 md:p-6 shadow-[0_20px_45px_-32px_rgba(5,150,105,0.65)] animate-fade-in [animation-delay:40ms] [animation-fill-mode:both]">
+      <div className="dash-hero-panel animate-fade-in [animation-delay:40ms] [animation-fill-mode:both]">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-emerald-700/80 dark:text-emerald-300/80">Farmer Command Center</p>
-            <h1 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white">
+            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-700/80 dark:text-emerald-300/80">Farmer Command Center</p>
+            <h1 className="text-[2rem] md:text-[2.55rem] font-extrabold tracking-tight text-slate-900 dark:text-white">
               {isOverviewTab && user?.firstName ? `Hello, ${user.firstName}!` : activeTabCopy.title}
             </h1>
-            <p className="text-slate-600 dark:text-slate-300">{activeTabCopy.description}</p>
+            <p className="mt-2 max-w-2xl text-[15px] text-slate-500 dark:text-slate-400">{activeTabCopy.description}</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <Button variant="outline" size="sm" className="h-9 rounded-xl" onClick={() => refetchFarms()}>
+            <Button variant="outline" size="sm" className="h-10 rounded-full px-4" onClick={() => refetchFarms()}>
               <RefreshCw size={14} className="mr-2" />
               Refresh
             </Button>
-            <Button variant="outline" size="sm" className="h-9 rounded-xl" onClick={handleRefreshAll}>
+            <Button variant="outline" size="sm" className="h-10 rounded-full px-4" onClick={handleRefreshAll}>
               <RefreshCw size={14} className="mr-2" />
               Refresh All
             </Button>
@@ -1358,7 +1469,7 @@ export function ConnectedFarmerDashboard({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-9 rounded-xl"
+                className="h-10 rounded-full px-4"
                 onClick={handleExportSensorCsv}
                 disabled={!sensorData || sensorData.length === 0}
               >
@@ -1368,7 +1479,7 @@ export function ConnectedFarmerDashboard({
             {(isOverviewTab || activeTab === 'pest-history') && (
               <Button
                 size="sm"
-                className="h-9 rounded-xl"
+                className="h-10 rounded-full px-4"
                 onClick={handlePestScanClick}
                 disabled={!selectedFarm || analyzePestMutation.isPending}
               >
@@ -1385,74 +1496,96 @@ export function ConnectedFarmerDashboard({
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
           {farmerQuickStats.map((stat, index) => (
             <div
               key={stat.label}
-              className="rounded-2xl border border-emerald-100/70 dark:border-emerald-900/40 bg-white/85 dark:bg-slate-900/75 px-3 py-2.5 shadow-[0_14px_30px_-26px_rgba(5,150,105,0.6)] animate-fade-in [animation-fill-mode:both]"
+              className={`${index === 0 ? 'dash-kpi-card dash-kpi-card-accent' : 'dash-kpi-card'} animate-fade-in [animation-fill-mode:both]`}
               style={{ animationDelay: `${80 + index * 50}ms` }}
             >
-              <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{stat.label}</p>
-              <p className="mt-1 text-xl font-black text-slate-900 dark:text-white">{stat.value}</p>
+              <div className="flex items-center justify-between mb-2">
+                <span className={`text-[13px] font-semibold ${index === 0 ? 'text-white/88' : 'text-slate-600 dark:text-slate-300'}`}>
+                  {stat.label}
+                </span>
+                <div className={`flex items-center justify-center w-10 h-10 rounded-full ${index === 0 ? 'bg-white text-[#1D6042]' : 'border border-[hsl(var(--border))] bg-[#F7F8F2] dark:bg-slate-800 text-slate-700 dark:text-slate-200'}`}>
+                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17l9.2-9.2M17 17V7H7"/></svg>
+                </div>
+              </div>
+              <div className="flex flex-col mt-6">
+                <span className={`text-[2.55rem] font-extrabold tracking-tight ${index === 0 ? 'text-white' : 'text-slate-900 dark:text-white'}`}>
+                  {stat.value}
+                </span>
+                <div className="mt-4 flex items-center gap-2">
+                  <div className={`flex items-center justify-center px-2 py-1 rounded-full text-[10px] font-bold ${index === 0 ? 'bg-[#2D7A54] text-white' : 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'}`}>
+                    {stat.badge}
+                  </div>
+                  <span className={`text-[11px] font-medium ${index === 0 ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>{stat.helper}</span>
+                </div>
+              </div>
             </div>
           ))}
         </div>
       </div>
 
-      <div className="rounded-2xl border border-emerald-100/80 dark:border-emerald-900/45 bg-white/85 dark:bg-slate-900/75 px-3 md:px-4 py-3 flex flex-wrap items-center gap-2 md:gap-3 animate-fade-in [animation-delay:90ms] [animation-fill-mode:both]">
-        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.14em] bg-emerald-100 text-emerald-800 dark:bg-emerald-900/35 dark:text-emerald-300">
+      <div className="dash-filter-bar animate-fade-in [animation-delay:90ms] [animation-fill-mode:both]">
+        <span className="dash-pill bg-emerald-100 text-emerald-800 dark:bg-emerald-900/35 dark:text-emerald-300">
           Active View: {activeTabCopy.title}
         </span>
-        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.14em] bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+        <span className="dash-pill bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
           Farm: {selectedFarm?.name || 'Not selected'}
         </span>
-        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.14em] bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+        <span className="dash-pill bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
           Weather Alerts: {weatherAlerts?.alerts?.length || 0}
         </span>
         {normalizedSearch && (
-          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.14em] bg-green-100 text-green-800 dark:bg-green-900/35 dark:text-green-300">
+          <span className="dash-pill bg-green-100 text-green-800 dark:bg-green-900/35 dark:text-green-300">
             Filter: "{searchQuery.trim()}"
           </span>
         )}
+        {normalizedSearch && <SearchScopePills items={farmerSearchScopeItems} accent="green" />}
       </div>
 
       {isOverviewTab && (
-        <>
+        <section className={sectionShellClass}>
           <div className="animate-fade-in [animation-delay:102ms] [animation-fill-mode:both]">
             <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-emerald-700/80 dark:text-emerald-300/80">Daily Start Sequence</p>
             <p className="text-sm text-muted-foreground">Run core morning tasks in order before moving to detailed operations.</p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 animate-fade-in [animation-delay:105ms] [animation-fill-mode:both]">
-          <Card className="border-emerald-100/80 dark:border-emerald-900/45 bg-gradient-to-br from-emerald-50/80 to-white dark:from-emerald-950/20 dark:to-slate-900 shadow-[0_18px_34px_-30px_rgba(5,150,105,0.8)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_40px_-28px_rgba(5,150,105,0.95)] animate-fade-in [animation-delay:120ms] [animation-fill-mode:both]">
-            <CardContent className="p-4 h-full flex flex-col">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 animate-fade-in [animation-delay:105ms] [animation-fill-mode:both]">
+          <Card className="dash-mini-action-card animate-fade-in [animation-delay:120ms] [animation-fill-mode:both]">
+            <CardContent className="p-5 h-full flex flex-col pt-5">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-300">Field Sync</p>
-                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Refresh sensors, weather, and recommendations in one action.</p>
+                  <p className="text-[13px] font-bold text-slate-800 dark:text-slate-200">Field Sync</p>
+                  <p className="mt-1.5 text-[13px] text-slate-500 dark:text-slate-400">Refresh sensors, weather, and recommendations in one action.</p>
                 </div>
-                <RefreshCw size={16} className="text-emerald-700 dark:text-emerald-300" />
+                <div className="dash-icon-box">
+                  <RefreshCw size={18} className="text-slate-600 dark:text-slate-300" />
+                </div>
               </div>
-              <p className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Step 1 of daily start - Data sync</p>
-              <Button className="mt-auto h-9 w-full rounded-xl focus-visible:ring-2 focus-visible:ring-emerald-500/70 focus-visible:ring-offset-2" onClick={handleRefreshAll}>
+              <p className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Step 1 of daily start - Data sync</p>
+              <Button className="mt-5 h-11 w-full rounded-full" onClick={handleRefreshAll}>
                 Refresh All Sources
               </Button>
             </CardContent>
           </Card>
 
-          <Card className="border-emerald-100/80 dark:border-emerald-900/45 bg-gradient-to-br from-cyan-50/80 to-white dark:from-cyan-950/20 dark:to-slate-900 shadow-[0_18px_34px_-30px_rgba(8,145,178,0.8)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_40px_-28px_rgba(8,145,178,0.95)] animate-fade-in [animation-delay:180ms] [animation-fill-mode:both]">
-            <CardContent className="p-4 h-full flex flex-col">
+          <Card className="dash-mini-action-card animate-fade-in [animation-delay:180ms] [animation-fill-mode:both]">
+            <CardContent className="p-5 h-full flex flex-col pt-5">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-cyan-700 dark:text-cyan-300">Water Planning</p>
-                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Open the irrigation planner and schedule field-ready runs.</p>
+                  <p className="text-[13px] font-bold text-slate-800 dark:text-slate-200">Water Planning</p>
+                  <p className="mt-1.5 text-[13px] text-slate-500 dark:text-slate-400">Open the irrigation planner and schedule field-ready runs.</p>
                 </div>
-                <Droplets size={16} className="text-cyan-700 dark:text-cyan-300" />
+                <div className="dash-icon-box">
+                  <Droplets size={18} className="text-slate-600 dark:text-slate-300" />
+                </div>
               </div>
-              <p className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Step 2 of daily start - Water plan</p>
+              <p className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Step 2 of daily start - Water plan</p>
               <Button
                 variant="outline"
-                className="mt-auto h-9 w-full rounded-xl focus-visible:ring-2 focus-visible:ring-cyan-500/70 focus-visible:ring-offset-2"
+                className="mt-5 h-11 w-full rounded-full"
                 onClick={() => setShowIrrigationPlanner((previous) => !previous)}
               >
                 {showIrrigationPlanner ? 'Hide Planner' : 'Open Planner'}
@@ -1460,19 +1593,21 @@ export function ConnectedFarmerDashboard({
             </CardContent>
           </Card>
 
-          <Card className="border-emerald-100/80 dark:border-emerald-900/45 bg-gradient-to-br from-green-50/80 to-white dark:from-green-950/20 dark:to-slate-900 shadow-[0_18px_34px_-30px_rgba(22,163,74,0.8)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_40px_-28px_rgba(22,163,74,0.95)] animate-fade-in [animation-delay:240ms] [animation-fill-mode:both]">
-            <CardContent className="p-4 h-full flex flex-col">
+          <Card className="dash-mini-action-card animate-fade-in [animation-delay:240ms] [animation-fill-mode:both]">
+            <CardContent className="p-5 h-full flex flex-col pt-5">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-green-700 dark:text-green-300">Pest Triage</p>
-                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Capture a fresh image and trigger instant detection guidance.</p>
+                  <p className="text-[13px] font-bold text-slate-800 dark:text-slate-200">Pest Triage</p>
+                  <p className="mt-1.5 text-[13px] text-slate-500 dark:text-slate-400">Capture a fresh image and trigger instant detection guidance.</p>
                 </div>
-                <Camera size={16} className="text-green-700 dark:text-green-300" />
+                <div className="dash-icon-box">
+                  <Camera size={18} className="text-slate-600 dark:text-slate-300" />
+                </div>
               </div>
-              <p className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Step 3 of daily start - Risk scan</p>
+              <p className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Step 3 of daily start - Risk scan</p>
               <Button
                 variant="outline"
-                className="mt-auto h-9 w-full rounded-xl focus-visible:ring-2 focus-visible:ring-green-500/70 focus-visible:ring-offset-2"
+                className="mt-5 h-11 w-full rounded-full"
                 onClick={handlePestScanClick}
                 disabled={!selectedFarm || analyzePestMutation.isPending}
               >
@@ -1481,7 +1616,7 @@ export function ConnectedFarmerDashboard({
             </CardContent>
           </Card>
           </div>
-        </>
+        </section>
       )}
 
       {isOverviewTab ? (
@@ -1502,7 +1637,7 @@ export function ConnectedFarmerDashboard({
             />
           </div>
 
-          <Card className="xl:col-span-5 self-start">
+          <Card className="xl:col-span-5 self-start dash-panel">
             <CardHeader className="pb-3">
               <CardTitle className={sectionTitleClass}>Farm Portfolio</CardTitle>
               <CardDescription className={sectionDescriptionClass}>Backend farm statistics for your registered farms</CardDescription>
@@ -1513,30 +1648,53 @@ export function ConnectedFarmerDashboard({
               ) : (
                 <>
                   <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-2 2xl:grid-cols-4">
-                    <div className="rounded-lg border p-3 sm:p-4 text-center">
-                      <p className="text-2xl font-bold">{farmStats.totalFarms ?? 0}</p>
-                      <p className="text-xs text-muted-foreground mt-1">Registered Farms</p>
+                    <div className="dash-metric-tile dash-metric-tile-accent relative flex min-h-[130px] flex-col justify-between p-4 sm:p-5">
+                      <div className="flex justify-between items-start">
+                        <p className="text-[15px] font-medium text-white/90">Registered Farms</p>
+                        <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shrink-0 -mt-1 -mr-1 cursor-pointer transition-transform hover:scale-105">
+                          <TrendingUp size={16} className="text-[#0F5132]" />
+                        </div>
+                      </div>
+                      <p className="text-4xl font-bold mt-3 tracking-tight">{farmStats.totalFarms ?? 0}</p>
                     </div>
-                    <div className="rounded-lg border p-3 sm:p-4 text-center">
-                      <p className="text-2xl font-bold">{farmStats.activeFarms ?? 0}</p>
-                      <p className="text-xs text-muted-foreground mt-1">Active Farms</p>
+
+                    <div className="dash-metric-tile relative flex min-h-[130px] flex-col justify-between p-4 sm:p-5">
+                      <div className="flex justify-between items-start">
+                        <p className="text-[15px] font-medium text-slate-800 dark:text-slate-200">Active Farms</p>
+                        <div className="w-8 h-8 rounded-full border border-slate-200 dark:border-slate-700 flex items-center justify-center shrink-0 -mt-1 -mr-1 cursor-pointer transition-transform hover:scale-105">
+                          <TrendingUp size={16} className="text-slate-600 dark:text-slate-400" />
+                        </div>
+                      </div>
+                      <p className="text-4xl font-bold mt-3 tracking-tight text-slate-900 dark:text-white">{farmStats.activeFarms ?? 0}</p>
                     </div>
-                    <div className="rounded-lg border p-3 sm:p-4 text-center">
-                      <p className="text-2xl font-bold">
+
+                    <div className="dash-metric-tile relative flex min-h-[130px] flex-col justify-between p-4 sm:p-5">
+                      <div className="flex justify-between items-start">
+                        <p className="text-[15px] font-medium text-slate-800 dark:text-slate-200">Total Area (ha)</p>
+                        <div className="w-8 h-8 rounded-full border border-slate-200 dark:border-slate-700 flex items-center justify-center shrink-0 -mt-1 -mr-1 cursor-pointer transition-transform hover:scale-105">
+                          <TrendingUp size={16} className="text-slate-600 dark:text-slate-400" />
+                        </div>
+                      </div>
+                      <p className="text-4xl font-bold mt-3 tracking-tight text-slate-900 dark:text-white">
                         {typeof farmStats.totalAreaHectares === 'number' ? farmStats.totalAreaHectares.toFixed(1) : '0.0'}
                       </p>
-                      <p className="text-xs text-muted-foreground mt-1">Total Area (ha)</p>
                     </div>
-                    <div className="rounded-lg border p-3 sm:p-4 text-center">
-                      <p className="text-2xl font-bold">
+
+                    <div className="dash-metric-tile relative flex min-h-[130px] flex-col justify-between p-4 sm:p-5">
+                      <div className="flex justify-between items-start">
+                        <p className="text-[15px] font-medium text-slate-800 dark:text-slate-200">Average Size (ha)</p>
+                        <div className="w-8 h-8 rounded-full border border-slate-200 dark:border-slate-700 flex items-center justify-center shrink-0 -mt-1 -mr-1 cursor-pointer transition-transform hover:scale-105">
+                          <TrendingUp size={16} className="text-slate-600 dark:text-slate-400" />
+                        </div>
+                      </div>
+                      <p className="text-4xl font-bold mt-3 tracking-tight text-slate-900 dark:text-white">
                         {typeof farmStats.avgSizeHectares === 'number' ? farmStats.avgSizeHectares.toFixed(1) : '0.0'}
                       </p>
-                      <p className="text-xs text-muted-foreground mt-1">Average Size (ha)</p>
                     </div>
                   </div>
 
                   <div className="grid gap-4 md:grid-cols-2">
-                    <div className="rounded-lg border p-4 h-full">
+                    <div className="dash-detail-card h-full">
                       <p className="font-medium">Top Growth Stages</p>
                       <div className="mt-3 flex flex-wrap gap-2">
                         {farmPortfolioStages.length > 0 ? (
@@ -1550,7 +1708,7 @@ export function ConnectedFarmerDashboard({
                         )}
                       </div>
                     </div>
-                    <div className="rounded-lg border p-4 h-full">
+                    <div className="dash-detail-card h-full">
                       <p className="font-medium">Crop Varieties</p>
                       <div className="mt-3 flex flex-wrap gap-2">
                         {farmPortfolioCrops.length > 0 ? (
@@ -1571,7 +1729,7 @@ export function ConnectedFarmerDashboard({
           </Card>
         </div>
       ) : (
-        <>
+        <section className={sectionShellClass}>
           <div className="animate-fade-in [animation-delay:120ms] [animation-fill-mode:both]">
             <FarmSelector
               farms={filteredFarms}
@@ -1588,7 +1746,7 @@ export function ConnectedFarmerDashboard({
             />
           </div>
 
-          <Card className="border-l-4 border-l-primary/50">
+          <Card className="dash-panel">
             <CardContent className="p-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="font-semibold">{activeTabCopy.title}</p>
@@ -1600,16 +1758,16 @@ export function ConnectedFarmerDashboard({
               </div>
               {selectedFarm && (
                 <Badge variant="outline">
-                  {selectedFarm.cropVariety || 'Maize'}
+                  {selectedFarm.cropVariety || 'Not set'}
                 </Badge>
               )}
             </CardContent>
           </Card>
-        </>
+        </section>
       )}
 
       {isOverviewTab && latestPestAnalysis?.detection && (
-        <Card className="border-l-4 border-l-green-500">
+        <Card className="dash-panel">
           <CardHeader>
             <CardTitle className={`${sectionTitleClass} flex items-center gap-2`}>
               <Camera size={20} className="text-green-600" />
@@ -1648,7 +1806,7 @@ export function ConnectedFarmerDashboard({
             </div>
 
             {!latestPestAnalysis.detection.isConfirmed && (
-              <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-900">
+              <div className="dash-dashed-block text-sm text-green-900 dark:text-green-200">
                 This result is a preliminary AI screening. Confirm with an agricultural expert before treatment decisions.
                 {latestPestAnalysis.detection.severity === 'severe'
                   ? ' Severe findings are held for expert confirmation before alerts are issued.'
@@ -1688,7 +1846,7 @@ export function ConnectedFarmerDashboard({
       )}
 
       {showAddFarmForm && (
-        <Card>
+        <Card className="dash-panel">
           <CardHeader>
             <CardTitle className="text-lg">Add Farm</CardTitle>
             <CardDescription>Create a farm profile to start monitoring and recommendations</CardDescription>
@@ -1699,26 +1857,26 @@ export function ConnectedFarmerDashboard({
                 value={farmNameInput}
                 onChange={(event) => setFarmNameInput(event.target.value)}
                 placeholder="Farm name"
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm md:col-span-2"
+                className={`${controlClass} md:col-span-2`}
                 required
               />
               <input
                 value={farmCropInput}
                 onChange={(event) => setFarmCropInput(event.target.value)}
                 placeholder="Crop variety"
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                className={controlClass}
               />
               <input
                 value={farmLocationInput}
                 onChange={(event) => setFarmLocationInput(event.target.value)}
                 placeholder="Location"
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                className={controlClass}
               />
               <input
                 value={farmSizeInput}
                 onChange={(event) => setFarmSizeInput(event.target.value)}
                 placeholder="Size (ha)"
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                className={controlClass}
                 inputMode="decimal"
               />
               <div className="md:col-span-5 flex items-center justify-end gap-2">
@@ -1740,9 +1898,9 @@ export function ConnectedFarmerDashboard({
       )}
 
       {activeTab === 'overview' && selectedFarm && (
-        <>
+        <section className={sectionShellClass}>
           {showIrrigationPlanner && (
-            <Card>
+            <Card className="dash-panel">
               <CardHeader>
                 <CardTitle className="text-lg">Plan Irrigation</CardTitle>
                 <CardDescription>Create a scheduled irrigation task with custom timing and volume</CardDescription>
@@ -1753,14 +1911,14 @@ export function ConnectedFarmerDashboard({
                     type="date"
                     value={irrigationDateInput}
                     onChange={(event) => setIrrigationDateInput(event.target.value)}
-                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                    className={controlClass}
                     required
                   />
                   <input
                     type="time"
                     value={irrigationTimeInput}
                     onChange={(event) => setIrrigationTimeInput(event.target.value)}
-                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                    className={controlClass}
                     required
                   />
                   <input
@@ -1768,7 +1926,7 @@ export function ConnectedFarmerDashboard({
                     min={1}
                     value={irrigationDurationInput}
                     onChange={(event) => setIrrigationDurationInput(event.target.value)}
-                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                    className={controlClass}
                     placeholder="Duration (min)"
                     required
                   />
@@ -1777,7 +1935,7 @@ export function ConnectedFarmerDashboard({
                     min={0}
                     value={irrigationVolumeInput}
                     onChange={(event) => setIrrigationVolumeInput(event.target.value)}
-                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                    className={controlClass}
                     placeholder="Water (L, optional)"
                   />
                   <div className="flex items-center justify-end gap-2">
@@ -1803,7 +1961,7 @@ export function ConnectedFarmerDashboard({
               <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-emerald-700/80 dark:text-emerald-300/80">Field Configuration</p>
               <p className="text-sm text-muted-foreground">Manage farm profile, verify backend summary, and prepare daily operations.</p>
             </div>
-            <Card className={workspaceMainClass}>
+            <Card className={`${workspaceMainClass} dash-panel`}>
               <CardHeader>
                 <CardTitle className="text-lg">Farm Profile</CardTitle>
                 <CardDescription>Update core farm details and growth stage</CardDescription>
@@ -1814,13 +1972,13 @@ export function ConnectedFarmerDashboard({
                   value={farmEditName}
                   onChange={(event) => setFarmEditName(event.target.value)}
                   placeholder="Farm name"
-                  className="h-10 rounded-md border border-input bg-background px-3 text-sm md:col-span-2"
+                  className={`${controlClass} md:col-span-2`}
                   required
                 />
                 <select
                   value={farmEditStage}
                   onChange={(event) => setFarmEditStage(event.target.value as GrowthStage)}
-                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  className={controlClass}
                 >
                   {growthStages.map((stage) => (
                     <option key={stage} value={stage}>
@@ -1832,7 +1990,7 @@ export function ConnectedFarmerDashboard({
                   value={farmEditSize}
                   onChange={(event) => setFarmEditSize(event.target.value)}
                   placeholder="Size (ha)"
-                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  className={controlClass}
                   inputMode="decimal"
                 />
                 <div className="md:col-span-4 flex items-center justify-end gap-2">
@@ -1862,7 +2020,7 @@ export function ConnectedFarmerDashboard({
               </CardContent>
             </Card>
 
-          <Card className="xl:col-span-4 xl:sticky xl:top-24 self-start">
+          <Card className="xl:col-span-4 xl:sticky xl:top-24 self-start dash-panel">
             <CardHeader>
               <CardTitle className="text-lg">Selected Farm Detail</CardTitle>
               <CardDescription>Route-backed detail loaded from the single farm backend endpoint</CardDescription>
@@ -1872,27 +2030,27 @@ export function ConnectedFarmerDashboard({
                 <LoadingState text="Loading farm detail..." size="sm" />
               ) : selectedFarmDetail ? (
                 <div className="grid grid-cols-1 gap-3 xl:max-h-[520px] xl:overflow-y-auto xl:pr-1">
-                  <div className="rounded-lg bg-muted/30 p-3">
+                  <div className="dash-soft-block">
                     <p className="text-xs text-muted-foreground uppercase">Farm Name</p>
                     <p className="font-medium">{selectedFarmDetail.name || 'N/A'}</p>
                   </div>
-                  <div className="rounded-lg bg-muted/30 p-3">
+                  <div className="dash-soft-block">
                     <p className="text-xs text-muted-foreground uppercase">District</p>
                     <p className="font-medium">{selectedFarmDetail.district?.name || 'N/A'}</p>
                   </div>
-                  <div className="rounded-lg bg-muted/30 p-3">
+                  <div className="dash-soft-block">
                     <p className="text-xs text-muted-foreground uppercase">Location</p>
                     <p className="font-medium">{selectedFarmDetail.locationName || 'N/A'}</p>
                   </div>
-                  <div className="rounded-lg bg-muted/30 p-3">
+                  <div className="dash-soft-block">
                     <p className="text-xs text-muted-foreground uppercase">Crop Variety</p>
                     <p className="font-medium">{selectedFarmDetail.cropVariety || 'N/A'}</p>
                   </div>
-                  <div className="rounded-lg bg-muted/30 p-3">
+                  <div className="dash-soft-block">
                     <p className="text-xs text-muted-foreground uppercase">Growth Stage</p>
                     <p className="font-medium">{selectedFarmDetail.currentGrowthStage || 'N/A'}</p>
                   </div>
-                  <div className="rounded-lg bg-muted/30 p-3">
+                  <div className="dash-soft-block">
                     <p className="text-xs text-muted-foreground uppercase">Size</p>
                     <p className="font-medium">
                       {typeof selectedFarmDetail.sizeHectares === 'number'
@@ -1900,7 +2058,7 @@ export function ConnectedFarmerDashboard({
                         : 'N/A'}
                     </p>
                   </div>
-                  <div className="rounded-lg bg-muted/30 p-3">
+                  <div className="dash-soft-block">
                     <p className="text-xs text-muted-foreground uppercase">Planting Date</p>
                     <p className="font-medium">
                       {selectedFarmDetail.plantingDate
@@ -1908,7 +2066,7 @@ export function ConnectedFarmerDashboard({
                         : 'N/A'}
                     </p>
                   </div>
-                  <div className="rounded-lg bg-muted/30 p-3">
+                  <div className="dash-soft-block">
                     <p className="text-xs text-muted-foreground uppercase">Expected Harvest</p>
                     <p className="font-medium">
                       {selectedFarmDetail.expectedHarvestDate
@@ -1926,7 +2084,7 @@ export function ConnectedFarmerDashboard({
             </CardContent>
           </Card>
 
-          <Card className={workspaceMainClass}>
+          <Card className={`${workspaceMainClass} dash-panel`}>
             <CardHeader>
               <CardTitle className="text-lg">Farm Summary</CardTitle>
               <CardDescription>Route-backed overview loaded from the farm summary backend endpoint</CardDescription>
@@ -1936,15 +2094,15 @@ export function ConnectedFarmerDashboard({
                 <LoadingState text="Loading farm summary..." size="sm" />
               ) : farmSummary ? (
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  <div className="rounded-lg bg-muted/30 p-3">
+                  <div className="dash-soft-block">
                     <p className="text-xs text-muted-foreground uppercase">Summary Farm</p>
                     <p className="font-medium">{farmSummary.farm?.name || selectedFarm?.name || 'N/A'}</p>
                   </div>
-                  <div className="rounded-lg bg-muted/30 p-3">
+                  <div className="dash-soft-block">
                     <p className="text-xs text-muted-foreground uppercase">Latest Sensor Packets</p>
                     <p className="font-medium">{farmSummary.latestSensorData?.length ?? 0}</p>
                   </div>
-                  <div className="rounded-lg bg-muted/30 p-3">
+                  <div className="dash-soft-block">
                     <p className="text-xs text-muted-foreground uppercase">Latest Reading Time</p>
                     <p className="font-medium">
                       {farmSummary.latestSensorData?.[0]?.readingTimestamp
@@ -1952,19 +2110,19 @@ export function ConnectedFarmerDashboard({
                         : 'No recent reading'}
                     </p>
                   </div>
-                  <div className="rounded-lg bg-muted/30 p-3">
+                  <div className="dash-soft-block">
                     <p className="text-xs text-muted-foreground uppercase">Active Recommendations</p>
                     <p className="font-medium">{farmSummary.activeRecommendations?.length ?? 0}</p>
                   </div>
-                  <div className="rounded-lg bg-muted/30 p-3">
+                  <div className="dash-soft-block">
                     <p className="text-xs text-muted-foreground uppercase">Recent Alerts</p>
                     <p className="font-medium">{farmSummary.recentAlerts?.length ?? 0}</p>
                   </div>
-                  <div className="rounded-lg bg-muted/30 p-3">
+                  <div className="dash-soft-block">
                     <p className="text-xs text-muted-foreground uppercase">Upcoming Irrigation</p>
                     <p className="font-medium">{farmSummary.irrigationSchedule?.length ?? 0}</p>
                   </div>
-                  <div className="rounded-lg bg-muted/30 p-3 md:col-span-2 xl:col-span-3">
+                  <div className="dash-soft-block md:col-span-2 xl:col-span-3">
                     <p className="text-xs text-muted-foreground uppercase">Recent Pest Detections</p>
                     <p className="font-medium">{farmSummary.recentPestDetections?.length ?? 0}</p>
                     <p className="mt-1 text-sm text-muted-foreground">
@@ -1983,20 +2141,20 @@ export function ConnectedFarmerDashboard({
             </CardContent>
           </Card>
 
-          <Card className="xl:col-span-4 self-start xl:sticky xl:top-24">
+          <Card className="xl:col-span-4 self-start xl:sticky xl:top-24 dash-panel">
             <CardHeader>
               <CardTitle className="text-lg">Operational Snapshot</CardTitle>
               <CardDescription>Quick pulse checks before executing field actions</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-lg bg-muted/30 p-3">
+                <div className="dash-soft-block">
                   <p className="text-xs text-muted-foreground uppercase">Soil Moisture</p>
                   <p className="font-semibold">
                     {typeof latestReading?.soilMoisture === 'number' ? `${latestReading.soilMoisture.toFixed(1)}%` : '--'}
                   </p>
                 </div>
-                <div className="rounded-lg bg-muted/30 p-3">
+                <div className="dash-soft-block">
                   <p className="text-xs text-muted-foreground uppercase">Temperature</p>
                   <p className="font-semibold">
                     {typeof latestReading?.airTemperature === 'number'
@@ -2006,20 +2164,20 @@ export function ConnectedFarmerDashboard({
                         : '--'}
                   </p>
                 </div>
-                <div className="rounded-lg bg-muted/30 p-3">
+                <div className="dash-soft-block">
                   <p className="text-xs text-muted-foreground uppercase">Open Issues</p>
-                  <p className="font-semibold">{farmIssues.length}</p>
+                  <p className="font-semibold">{filteredFarmIssues.length}</p>
                 </div>
-                <div className="rounded-lg bg-muted/30 p-3">
+                <div className="dash-soft-block">
                   <p className="text-xs text-muted-foreground uppercase">Due Irrigation</p>
                   <p className="font-semibold">{dueSchedules.length}</p>
                 </div>
               </div>
-              <div className="rounded-lg border p-3 flex items-center justify-between gap-2">
+              <div className="dash-outline-block flex items-center justify-between gap-2">
                 <p className="text-sm text-muted-foreground">Weather alerts</p>
-                <Badge variant="outline">{weatherAlerts?.alerts?.length || 0}</Badge>
+                <Badge variant="outline">{filteredWeatherAlerts.length}</Badge>
               </div>
-              <div className="rounded-lg border p-3 flex items-center justify-between gap-2">
+              <div className="dash-outline-block flex items-center justify-between gap-2">
                 <p className="text-sm text-muted-foreground">Active recommendations</p>
                 <Badge variant="outline">{filteredRecommendations.length}</Badge>
               </div>
@@ -2044,7 +2202,7 @@ export function ConnectedFarmerDashboard({
             <p className="text-sm text-muted-foreground">Audit recommendation and pest-detection history from backend routes.</p>
           </div>
 
-          <Card className="xl:col-span-8">
+          <Card className="xl:col-span-8 dash-panel">
             <CardHeader>
               <CardTitle className="text-lg">Farm Recommendation Ledger</CardTitle>
               <CardDescription>Loaded from the primary farm recommendations backend route</CardDescription>
@@ -2060,7 +2218,7 @@ export function ConnectedFarmerDashboard({
               ) : (
                 <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
                   {farmRecommendationLedger.map((recommendation: Recommendation) => (
-                    <div key={recommendation.id} className="rounded-lg border p-3">
+                    <div key={recommendation.id} className="dash-outline-block">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="font-semibold text-sm">{recommendation.title}</p>
@@ -2087,7 +2245,7 @@ export function ConnectedFarmerDashboard({
             </CardContent>
           </Card>
 
-          <Card className="xl:col-span-4 self-start">
+          <Card className="xl:col-span-4 self-start dash-panel">
             <CardHeader>
               <CardTitle className="text-lg">Farm Pest Detection Ledger</CardTitle>
               <CardDescription>Loaded from the primary farm pest-detection backend route</CardDescription>
@@ -2103,7 +2261,7 @@ export function ConnectedFarmerDashboard({
               ) : (
                 <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
                   {farmPestLedger.map((detection: PestDetection) => (
-                    <div key={detection.id} className="rounded-lg border p-3">
+                    <div key={detection.id} className="dash-outline-block">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="font-semibold text-sm">{detection.pestType || 'Unknown pest'}</p>
@@ -2269,7 +2427,7 @@ export function ConnectedFarmerDashboard({
           </Card>
 
           <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-6 xl:col-span-7">
-            <WeatherAlertsCard alerts={weatherAlerts?.alerts} />
+            <WeatherAlertsCard alerts={filteredWeatherAlerts} />
             <IrrigationWindowCard data={irrigationWindow} />
             <WeatherHistoryCard rows={weatherHistory?.data} />
           </div>
@@ -2280,22 +2438,22 @@ export function ConnectedFarmerDashboard({
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 xl:col-span-12">
-            <div className="rounded-xl border bg-muted/25 p-3">
+            <div className="dash-subtile">
               <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Pending Advice</p>
               <p className="mt-1 text-xl font-black">{filteredRecommendations.length}</p>
             </div>
-            <div className="rounded-xl border bg-muted/25 p-3">
+            <div className="dash-subtile">
               <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Open Issues</p>
-              <p className="mt-1 text-xl font-black">{farmIssues.length}</p>
+              <p className="mt-1 text-xl font-black">{filteredFarmIssues.length}</p>
             </div>
-            <div className="rounded-xl border bg-muted/25 p-3">
+            <div className="dash-subtile">
               <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Irrigation Due</p>
               <p className="mt-1 text-xl font-black">{dueSchedules.length}</p>
             </div>
           </div>
 
           <div className={workspaceMainClass}>
-            <Card>
+            <Card className="dash-panel">
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
                   <AlertTriangle size={20} className="text-primary" />
@@ -2352,7 +2510,7 @@ export function ConnectedFarmerDashboard({
           </div>
 
           <div className={workspaceRailClass}>
-            <Card>
+            <Card className="dash-panel">
               <CardHeader>
                 <CardTitle className="text-lg">Report a Farm Issue</CardTitle>
                 <CardDescription>
@@ -2365,7 +2523,7 @@ export function ConnectedFarmerDashboard({
                   <select
                     value={issueCategoryInput}
                     onChange={(event) => setIssueCategoryInput(event.target.value as typeof issueCategoryInput)}
-                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                    className={controlClass}
                   >
                     <option value="general">General issue</option>
                     <option value="irrigation">Irrigation</option>
@@ -2377,7 +2535,7 @@ export function ConnectedFarmerDashboard({
                   <select
                     value={issueSeverityInput}
                     onChange={(event) => setIssueSeverityInput(event.target.value as typeof issueSeverityInput)}
-                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                    className={controlClass}
                   >
                     <option value="low">Low severity</option>
                     <option value="medium">Medium severity</option>
@@ -2389,14 +2547,14 @@ export function ConnectedFarmerDashboard({
                   value={issueTitleInput}
                   onChange={(event) => setIssueTitleInput(event.target.value)}
                   placeholder="Short issue title"
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  className={controlClass}
                   required
                 />
                 <textarea
                   value={issueDescriptionInput}
                   onChange={(event) => setIssueDescriptionInput(event.target.value)}
                   placeholder="Describe what happened, where it happened, and what you observed."
-                  className="min-h-[110px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  className={textAreaClass}
                   required
                 />
                 <div className="flex justify-end">
@@ -2422,10 +2580,10 @@ export function ConnectedFarmerDashboard({
                 </div>
                 {farmIssuesLoading ? (
                   <LoadingState text="Loading farm issues..." size="sm" />
-                ) : farmIssues.length > 0 ? (
+                ) : filteredFarmIssues.length > 0 ? (
                   <div className="space-y-3 max-h-[340px] overflow-y-auto pr-1">
-                    {farmIssues.map((issue) => (
-                      <div key={issue.id} className="rounded-lg border p-3">
+                    {filteredFarmIssues.map((issue) => (
+                      <div key={issue.id} className="dash-outline-block">
                         <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                           <div>
                             <p className="font-medium">{issue.title}</p>
@@ -2457,7 +2615,7 @@ export function ConnectedFarmerDashboard({
               </CardContent>
             </Card>
 
-          <Card>
+          <Card className="dash-panel">
             <CardHeader className="pb-3">
               <CardTitle className="text-lg">Quick Actions</CardTitle>
               <CardDescription>Run the most common farmer tasks from a single control panel</CardDescription>
@@ -2514,7 +2672,7 @@ export function ConnectedFarmerDashboard({
           </div>
 
           {showSchedule && (
-            <Card className="xl:col-span-12">
+            <Card className="xl:col-span-12 dash-panel">
               <CardHeader>
                 <div className="flex items-center justify-between gap-3">
                   <CardTitle className="text-lg flex items-center gap-2">
@@ -2545,7 +2703,7 @@ export function ConnectedFarmerDashboard({
                 ) : (
                   <div className="space-y-3">
                     {filteredSchedules.map((schedule) => (
-                      <div key={schedule.id} className="rounded-lg border p-3">
+                      <div key={schedule.id} className="dash-outline-block">
                         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                           <div>
                             <p className="font-semibold">
@@ -2591,20 +2749,20 @@ export function ConnectedFarmerDashboard({
                           </div>
                         )}
                         {!schedule.isExecuted && postponeScheduleId === schedule.id && (
-                          <div className="mt-3 rounded-md border bg-muted/20 p-3 space-y-3">
+                          <div className="mt-3 dash-soft-block space-y-3">
                             <p className="text-sm font-medium">Postpone irrigation</p>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                               <input
                                 type="date"
                                 value={postponeDateInput}
                                 onChange={(event) => setPostponeDateInput(event.target.value)}
-                                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                                className={controlClass}
                               />
                               <input
                                 type="time"
                                 value={postponeTimeInput}
                                 onChange={(event) => setPostponeTimeInput(event.target.value)}
-                                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                                className={controlClass}
                               />
                             </div>
                             <div className="flex justify-end gap-2">
@@ -2638,14 +2796,15 @@ export function ConnectedFarmerDashboard({
             </Card>
           )}
           </div>
-        </>
+        </section>
       )}
 
       {/* ===== Sensors Tab ===== */}
       {activeTab === 'sensors' && selectedFarmId && (
+        <section className={sectionShellClass}>
         <div className={workspaceGridClass}>
           <div className={workspaceMainClass}>
-            <Card>
+            <Card className="dash-panel">
               <CardHeader>
                 <CardTitle className="text-lg">Sensor Management</CardTitle>
                 <CardDescription>All sensors registered for this farm</CardDescription>
@@ -2657,13 +2816,13 @@ export function ConnectedFarmerDashboard({
           </div>
 
           <div className={workspaceRailClass}>
-            <Card>
+            <Card className="dash-panel">
               <CardHeader className="pb-3">
                 <CardTitle className={sectionTitleClass}>Field Context</CardTitle>
                 <CardDescription className={sectionDescriptionClass}>Live summary for the selected farm workspace</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="rounded-lg border p-3">
+                <div className="dash-outline-block">
                   <p className="text-xs text-muted-foreground uppercase">Selected farm</p>
                   <p className="font-semibold">{selectedFarm?.name || 'N/A'}</p>
                   <p className="text-xs text-muted-foreground mt-1">
@@ -2672,7 +2831,7 @@ export function ConnectedFarmerDashboard({
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   {farmerQuickStats.slice(0, 4).map((stat) => (
-                    <div key={`sensor-${stat.label}`} className="rounded-lg border p-3">
+                    <div key={`sensor-${stat.label}`} className="dash-outline-block">
                       <p className="text-xs text-muted-foreground uppercase">{stat.label}</p>
                       <p className="text-lg font-semibold">{stat.value}</p>
                     </div>
@@ -2682,17 +2841,21 @@ export function ConnectedFarmerDashboard({
             </Card>
           </div>
         </div>
+        </section>
       )}
 
       {activeTab === 'sensors' && !selectedFarmId && (
-        <EmptyState title="No farm selected" message="Select a farm to view its sensors and latest readings." />
+        <section className={sectionShellClass}>
+          <EmptyState title="No farm selected" message="Select a farm to view its sensors and latest readings." />
+        </section>
       )}
 
       {/* ===== Fertilization Tab ===== */}
       {activeTab === 'fertilization' && selectedFarmId && (
+        <section className={sectionShellClass}>
         <div className={workspaceGridClass}>
           <div className={workspaceMainClass}>
-            <Card>
+            <Card className="dash-panel">
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
                   <Droplets size={20} className="text-primary" />
@@ -2707,21 +2870,21 @@ export function ConnectedFarmerDashboard({
           </div>
 
           <div className={workspaceRailClass}>
-            <Card>
+            <Card className="dash-panel">
               <CardHeader className="pb-3">
                 <CardTitle className={sectionTitleClass}>Nutrition Context</CardTitle>
                 <CardDescription className={sectionDescriptionClass}>Keep fertilization aligned with field status</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="rounded-lg border p-3">
+                <div className="dash-outline-block">
                   <p className="text-xs text-muted-foreground uppercase">Farm</p>
                   <p className="font-semibold">{selectedFarm?.name || 'N/A'}</p>
                 </div>
-                <div className="rounded-lg border p-3">
+                <div className="dash-outline-block">
                   <p className="text-xs text-muted-foreground uppercase">Growth stage</p>
                   <p className="font-semibold capitalize">{selectedFarm?.currentGrowthStage?.replace(/_/g, ' ') || 'Not set'}</p>
                 </div>
-                <div className="rounded-lg border p-3">
+                <div className="dash-outline-block">
                   <p className="text-xs text-muted-foreground uppercase">Open irrigation plans</p>
                   <p className="text-lg font-semibold">{upcomingSchedules.length}</p>
                 </div>
@@ -2729,17 +2892,21 @@ export function ConnectedFarmerDashboard({
             </Card>
           </div>
         </div>
+        </section>
       )}
 
       {activeTab === 'fertilization' && !selectedFarmId && (
-        <EmptyState title="No farm selected" message="Select a farm to view fertilization schedules." />
+        <section className={sectionShellClass}>
+          <EmptyState title="No farm selected" message="Select a farm to view fertilization schedules." />
+        </section>
       )}
 
       {/* ===== Pest History Tab ===== */}
       {activeTab === 'pest-history' && selectedFarmId && (
+        <section className={sectionShellClass}>
         <div className={workspaceGridClass}>
           <div className={workspaceMainClass}>
-            <Card>
+            <Card className="dash-panel">
               <CardHeader>
                 <CardTitle className="text-lg">Pest Detection History</CardTitle>
                 <CardDescription>All past scans and detection results for this farm</CardDescription>
@@ -2751,19 +2918,19 @@ export function ConnectedFarmerDashboard({
           </div>
 
           <div className={workspaceRailClass}>
-            <Card>
+            <Card className="dash-panel">
               <CardHeader className="pb-3">
                 <CardTitle className={sectionTitleClass}>Pest Watch</CardTitle>
                 <CardDescription className={sectionDescriptionClass}>Track scan outputs and pending issues</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="rounded-lg border p-3">
+                <div className="dash-outline-block">
                   <p className="text-xs text-muted-foreground uppercase">Recent pest records</p>
                   <p className="text-lg font-semibold">{farmPestLedger.length}</p>
                 </div>
-                <div className="rounded-lg border p-3">
+                <div className="dash-outline-block">
                   <p className="text-xs text-muted-foreground uppercase">Open farm issues</p>
-                  <p className="text-lg font-semibold">{farmIssues.length}</p>
+                  <p className="text-lg font-semibold">{filteredFarmIssues.length}</p>
                 </div>
                 <Button
                   variant="outline"
@@ -2777,36 +2944,40 @@ export function ConnectedFarmerDashboard({
             </Card>
           </div>
         </div>
+        </section>
       )}
 
       {activeTab === 'pest-history' && !selectedFarmId && (
-        <EmptyState title="No farm selected" message="Select a farm to review previous pest detections." />
+        <section className={sectionShellClass}>
+          <EmptyState title="No farm selected" message="Select a farm to review previous pest detections." />
+        </section>
       )}
 
       {/* ===== Analytics Tab ===== */}
       {activeTab === 'analytics' && selectedFarmId && (
+        <section className={sectionShellClass}>
         <div className={workspaceGridClass}>
           <div className={workspaceMainClass}>
-            <AnalyticsPanel farmId={selectedFarmId} />
+            <AnalyticsPanel farmId={selectedFarmId} searchQuery={searchQuery} />
           </div>
 
           <div className={workspaceRailClass}>
-            <Card>
+            <Card className="dash-panel">
               <CardHeader className="pb-3">
                 <CardTitle className={sectionTitleClass}>Analytics Context</CardTitle>
                 <CardDescription className={sectionDescriptionClass}>Current farm and monitoring status at a glance</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="rounded-lg border p-3">
+                <div className="dash-outline-block">
                   <p className="text-xs text-muted-foreground uppercase">Farm</p>
                   <p className="font-semibold">{selectedFarm?.name || 'N/A'}</p>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-lg border p-3">
+                  <div className="dash-outline-block">
                     <p className="text-xs text-muted-foreground uppercase">Weather alerts</p>
-                    <p className="text-lg font-semibold">{weatherAlerts?.alerts?.length || 0}</p>
+                    <p className="text-lg font-semibold">{filteredWeatherAlerts.length}</p>
                   </div>
-                  <div className="rounded-lg border p-3">
+                  <div className="dash-outline-block">
                     <p className="text-xs text-muted-foreground uppercase">Advice items</p>
                     <p className="text-lg font-semibold">{recommendations?.length || 0}</p>
                   </div>
@@ -2815,35 +2986,39 @@ export function ConnectedFarmerDashboard({
             </Card>
           </div>
         </div>
+        </section>
       )}
 
       {activeTab === 'analytics' && !selectedFarmId && (
-        <EmptyState title="No farm selected" message="Select a farm to view analytics and trend summaries." />
+        <section className={sectionShellClass}>
+          <EmptyState title="No farm selected" message="Select a farm to view analytics and trend summaries." />
+        </section>
       )}
 
       {/* ===== AI Chat Tab ===== */}
       {activeTab === 'ai-chat' && (
+        <section className={sectionShellClass}>
         <div className={workspaceGridClass}>
           <div className={workspaceMainClass}>
-            <AiChatPanel farmId={selectedFarmId} />
+            <AiChatPanel farmId={selectedFarmId} cropType={selectedFarm?.cropVariety} />
           </div>
 
           <div className={workspaceRailClass}>
-            <Card>
+            <Card className="dash-panel">
               <CardHeader className="pb-3">
                 <CardTitle className={sectionTitleClass}>AI Session Context</CardTitle>
                 <CardDescription className={sectionDescriptionClass}>Use this context for better farm-specific guidance</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="rounded-lg border p-3">
+                <div className="dash-outline-block">
                   <p className="text-xs text-muted-foreground uppercase">Selected farm</p>
                   <p className="font-semibold">{selectedFarm?.name || 'No farm selected'}</p>
                 </div>
-                <div className="rounded-lg border p-3">
+                <div className="dash-outline-block">
                   <p className="text-xs text-muted-foreground uppercase">Crop variety</p>
                   <p className="font-semibold">{selectedFarm?.cropVariety || 'N/A'}</p>
                 </div>
-                <div className="rounded-lg border p-3">
+                <div className="dash-outline-block">
                   <p className="text-xs text-muted-foreground uppercase">Location</p>
                   <p className="font-semibold">{selectedFarm?.locationName || selectedFarm?.district?.name || 'N/A'}</p>
                 </div>
@@ -2851,6 +3026,7 @@ export function ConnectedFarmerDashboard({
             </Card>
           </div>
         </div>
+        </section>
       )}
     </div>
   );
@@ -2978,7 +3154,7 @@ function SensorManagementPanel({ farmId, locale }: { farmId: string; locale: str
   if (isLoading || readingsLoading) return <LoadingState text="Loading sensors..." size="sm" />;
 
   return (
-    <div className="space-y-4">
+    <div className="dash-section-stack">
       <div className="flex justify-end">
         <Button
           size="sm"
@@ -2996,21 +3172,21 @@ function SensorManagementPanel({ farmId, locale }: { farmId: string; locale: str
       </div>
 
       {(showCreateForm || editingSensorId) && (
-        <Card className="border-dashed">
+        <Card className="dash-panel">
           <CardContent className="pt-6">
             <form className="grid grid-cols-1 md:grid-cols-2 gap-3" onSubmit={handleSubmit}>
               <input
                 value={form.deviceId}
                 onChange={(event) => setForm((current) => ({ ...current, deviceId: event.target.value }))}
                 placeholder="Device ID"
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                className={controlClass}
                 disabled={!!editingSensorId}
                 required={!editingSensorId}
               />
               <select
                 value={form.sensorType}
                 onChange={(event) => setForm((current) => ({ ...current, sensorType: event.target.value }))}
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                className={controlClass}
                 disabled={!!editingSensorId}
               >
                 <option value="soil_moisture">Soil moisture</option>
@@ -3024,26 +3200,26 @@ function SensorManagementPanel({ farmId, locale }: { farmId: string; locale: str
                 value={form.name}
                 onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
                 placeholder="Display name"
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                className={controlClass}
               />
               <input
                 value={form.locationDescription}
                 onChange={(event) => setForm((current) => ({ ...current, locationDescription: event.target.value }))}
                 placeholder="Location description"
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                className={controlClass}
               />
               <input
                 value={form.latitude}
                 onChange={(event) => setForm((current) => ({ ...current, latitude: event.target.value }))}
                 placeholder="Latitude"
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                className={controlClass}
                 inputMode="decimal"
               />
               <input
                 value={form.longitude}
                 onChange={(event) => setForm((current) => ({ ...current, longitude: event.target.value }))}
                 placeholder="Longitude"
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                className={controlClass}
                 inputMode="decimal"
               />
               <div className="md:col-span-2 flex justify-end gap-2">
@@ -3060,11 +3236,11 @@ function SensorManagementPanel({ farmId, locale }: { farmId: string; locale: str
       )}
 
       {latestReadings.length > 0 && (
-        <div className="rounded-lg border p-3 bg-muted/20">
+        <div className="dash-soft-block">
           <p className="font-medium mb-2">Latest readings</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {latestReadings.slice(0, 6).map((reading: any) => (
-              <div key={reading.id} className="rounded-md border bg-background p-3">
+              <div key={reading.id} className="dash-outline-block">
                 <p className="text-sm font-medium">
                   {reading.sensorId ? `Sensor ${reading.sensorId.slice(0, 8)}` : 'Sensor reading'}
                 </p>
@@ -3084,7 +3260,7 @@ function SensorManagementPanel({ farmId, locale }: { farmId: string; locale: str
         </div>
       )}
 
-      <Card className="border-dashed">
+      <Card className="dash-panel">
         <CardHeader>
           <CardTitle className="text-base">Latest Sensor Snapshot</CardTitle>
           <CardDescription>Route-backed snapshot loaded from the dedicated farm latest-readings endpoint</CardDescription>
@@ -3110,7 +3286,7 @@ function SensorManagementPanel({ farmId, locale }: { farmId: string; locale: str
               </div>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 {latestSnapshotRows.map(([channel, reading]) => (
-                  <div key={channel} className="rounded-lg border p-3">
+                  <div key={channel} className="dash-outline-block">
                     <div className="flex items-center justify-between gap-3">
                       <p className="font-medium">{channel}</p>
                       <p className="text-xs text-muted-foreground">
@@ -3138,7 +3314,7 @@ function SensorManagementPanel({ farmId, locale }: { farmId: string; locale: str
       </Card>
 
       {selectedSensorId && (
-        <Card className="border-dashed">
+        <Card className="dash-panel">
           <CardHeader>
             <CardTitle className="text-base">Selected Sensor Detail</CardTitle>
             <CardDescription>Route-backed detail loaded from the single sensor backend endpoint</CardDescription>
@@ -3158,25 +3334,25 @@ function SensorManagementPanel({ farmId, locale }: { farmId: string; locale: str
                   </Button>
                 </div>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <div className="rounded-lg bg-muted/30 p-3">
+                  <div className="dash-soft-block">
                     <p className="text-xs text-muted-foreground uppercase">Sensor Type</p>
                     <p className="font-medium">{selectedSensor.sensorType || 'N/A'}</p>
                   </div>
-                  <div className="rounded-lg bg-muted/30 p-3">
+                  <div className="dash-soft-block">
                     <p className="text-xs text-muted-foreground uppercase">Status</p>
                     <p className="font-medium">{selectedSensor.status || 'N/A'}</p>
                   </div>
-                  <div className="rounded-lg bg-muted/30 p-3">
+                  <div className="dash-soft-block">
                     <p className="text-xs text-muted-foreground uppercase">Battery Level</p>
                     <p className="font-medium">
                       {typeof selectedSensor.batteryLevel === 'number' ? `${selectedSensor.batteryLevel}%` : 'N/A'}
                     </p>
                   </div>
-                  <div className="rounded-lg bg-muted/30 p-3">
+                  <div className="dash-soft-block">
                     <p className="text-xs text-muted-foreground uppercase">Firmware</p>
                     <p className="font-medium">{selectedSensor.firmwareVersion || 'N/A'}</p>
                   </div>
-                  <div className="rounded-lg bg-muted/30 p-3">
+                  <div className="dash-soft-block">
                     <p className="text-xs text-muted-foreground uppercase">Last Reading</p>
                     <p className="font-medium">
                       {selectedSensor.lastReadingAt
@@ -3184,7 +3360,7 @@ function SensorManagementPanel({ farmId, locale }: { farmId: string; locale: str
                         : 'N/A'}
                     </p>
                   </div>
-                  <div className="rounded-lg bg-muted/30 p-3">
+                  <div className="dash-soft-block">
                     <p className="text-xs text-muted-foreground uppercase">Calibration Date</p>
                     <p className="font-medium">
                       {selectedSensor.calibrationDate
@@ -3194,7 +3370,7 @@ function SensorManagementPanel({ farmId, locale }: { farmId: string; locale: str
                   </div>
                 </div>
                 {selectedSensor.locationDescription && (
-                  <div className="rounded-lg bg-muted/30 p-3">
+                  <div className="dash-soft-block">
                     <p className="text-xs text-muted-foreground uppercase">Location Description</p>
                     <p className="font-medium">{selectedSensor.locationDescription}</p>
                   </div>
@@ -3216,7 +3392,7 @@ function SensorManagementPanel({ farmId, locale }: { farmId: string; locale: str
         <>
           <p className="font-medium">Registered sensors</p>
           {list.map((sensor) => (
-            <div key={sensor.id} className="rounded-lg border p-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div key={sensor.id} className="dash-outline-block flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="font-medium">{sensor.name || sensor.sensorType}</p>
                 <p className="text-xs text-muted-foreground">
@@ -3365,7 +3541,7 @@ function FertilizationPanel({ farmId, locale }: { farmId: string; locale: string
   const isSubmitting = createFertilizationMutation.isPending || updateFertilizationMutation.isPending;
 
   return (
-    <div className="space-y-4">
+    <div className="dash-section-stack">
       <div className="flex justify-end">
         <Button
           size="sm"
@@ -3383,62 +3559,62 @@ function FertilizationPanel({ farmId, locale }: { farmId: string; locale: string
       </div>
 
       {(showCreateForm || editingScheduleId) && (
-        <Card className="border-dashed">
+        <Card className="dash-panel">
           <CardContent className="pt-6">
             <form className="grid grid-cols-1 md:grid-cols-2 gap-3" onSubmit={handleSubmit}>
               <input
                 type="date"
                 value={form.scheduledDate}
                 onChange={(event) => setForm((current) => ({ ...current, scheduledDate: event.target.value }))}
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                className={controlClass}
                 required
               />
               <input
                 value={form.fertilizerType}
                 onChange={(event) => setForm((current) => ({ ...current, fertilizerType: event.target.value }))}
                 placeholder="Fertilizer type"
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                className={controlClass}
                 required
               />
               <input
                 value={form.applicationMethod}
                 onChange={(event) => setForm((current) => ({ ...current, applicationMethod: event.target.value }))}
                 placeholder="Application method"
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                className={controlClass}
               />
               <input
                 value={form.totalQuantityKg}
                 onChange={(event) => setForm((current) => ({ ...current, totalQuantityKg: event.target.value }))}
                 placeholder="Total quantity (kg)"
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                className={controlClass}
                 inputMode="decimal"
               />
               <input
                 value={form.nitrogenKg}
                 onChange={(event) => setForm((current) => ({ ...current, nitrogenKg: event.target.value }))}
                 placeholder="Nitrogen (kg)"
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                className={controlClass}
                 inputMode="decimal"
               />
               <input
                 value={form.phosphorusKg}
                 onChange={(event) => setForm((current) => ({ ...current, phosphorusKg: event.target.value }))}
                 placeholder="Phosphorus (kg)"
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                className={controlClass}
                 inputMode="decimal"
               />
               <input
                 value={form.potassiumKg}
                 onChange={(event) => setForm((current) => ({ ...current, potassiumKg: event.target.value }))}
                 placeholder="Potassium (kg)"
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                className={controlClass}
                 inputMode="decimal"
               />
               <input
                 value={form.notes}
                 onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
                 placeholder="Notes"
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                className={controlClass}
               />
               <div className="md:col-span-2 flex justify-end gap-2">
                 <Button type="button" variant="outline" onClick={resetForm} disabled={isSubmitting}>
@@ -3457,7 +3633,7 @@ function FertilizationPanel({ farmId, locale }: { farmId: string; locale: string
         <EmptyState title="No schedules" message="No fertilization schedules found for this farm." />
       ) : (
         list.map((schedule) => (
-          <div key={schedule.id} className="rounded-lg border p-3 space-y-3">
+          <div key={schedule.id} className="dash-outline-block space-y-3">
             <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="font-medium">{schedule.fertilizerType || 'Fertilizer'}</p>
@@ -3535,7 +3711,7 @@ function PestHistoryPanel({ farmId }: { farmId: string }) {
   return (
     <div className="space-y-3">
       {items.map((d) => (
-        <div key={d.id} className="rounded-lg border p-3 space-y-3">
+        <div key={d.id} className="dash-outline-block space-y-3">
           <div className="flex items-start gap-3">
             {d.imageUrl && (
               <img src={d.imageUrl} alt="pest" className="w-16 h-16 rounded object-cover flex-shrink-0" />
@@ -3578,7 +3754,7 @@ function PestHistoryPanel({ farmId }: { farmId: string }) {
           </div>
           {expandedDetectionId === d.id && (
             <div className="space-y-3">
-              <div className="rounded-lg border border-dashed p-3 text-sm">
+              <div className="dash-dashed-block text-sm">
                 {selectedScanLoading ? (
                   <LoadingState text="Loading scan detail..." size="sm" />
                 ) : selectedScanError ? (
@@ -3592,11 +3768,11 @@ function PestHistoryPanel({ farmId }: { farmId: string }) {
                       Loaded from the dedicated pest scan detail route for this record.
                     </p>
                     <div className="grid gap-2 md:grid-cols-3">
-                      <div className="rounded-md bg-muted/40 p-3">
+                      <div className="dash-soft-block">
                         <p className="text-xs text-muted-foreground">Detected pest</p>
                         <p className="font-medium">{selectedScan?.pestType || 'Unknown pest'}</p>
                       </div>
-                      <div className="rounded-md bg-muted/40 p-3">
+                      <div className="dash-soft-block">
                         <p className="text-xs text-muted-foreground">Confidence</p>
                         <p className="font-medium">
                           {typeof selectedScan?.confidenceScore === 'number'
@@ -3604,7 +3780,7 @@ function PestHistoryPanel({ farmId }: { farmId: string }) {
                             : 'Not available'}
                         </p>
                       </div>
-                      <div className="rounded-md bg-muted/40 p-3">
+                      <div className="dash-soft-block">
                         <p className="text-xs text-muted-foreground">Affected area</p>
                         <p className="font-medium">
                           {typeof selectedScan?.affectedAreaPercentage === 'number'
@@ -3699,7 +3875,7 @@ function PestGuidancePanel({ detection }: { detection: PestDetection }) {
 
   if (isLoading) {
     return (
-      <div className="rounded-lg border border-dashed p-3">
+      <div className="dash-dashed-block">
         <LoadingState text="Loading control guidance..." size="sm" />
       </div>
     );
@@ -3707,7 +3883,7 @@ function PestGuidancePanel({ detection }: { detection: PestDetection }) {
 
   if (isError) {
     return (
-      <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+      <div className="dash-dashed-block text-sm text-muted-foreground">
         Unable to load detailed pest guidance right now.
       </div>
     );
@@ -3715,14 +3891,14 @@ function PestGuidancePanel({ detection }: { detection: PestDetection }) {
 
   if (!hasGuidance) {
     return (
-      <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+      <div className="dash-dashed-block text-sm text-muted-foreground">
         No detailed pest-control guidance is available for this scan yet.
       </div>
     );
   }
 
   return (
-    <div className="rounded-lg border bg-muted/20 p-3 space-y-3">
+    <div className="dash-soft-block space-y-3">
       <div className="flex flex-wrap gap-2">
         {expertTreatments.length > 0 && (
           <Badge variant="default">Expert-updated control plan</Badge>
@@ -3744,7 +3920,7 @@ function PestGuidancePanel({ detection }: { detection: PestDetection }) {
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Recommended Field Actions</p>
           <ul className="mt-2 space-y-1 text-sm">
             {expertTreatments.map((item, index) => (
-              <li key={`${detection.id}-expert-treatment-${index}`} className="flex gap-2">
+              <li key={`${detection.id}-expert-treatment-${index}`} className="flex items-start gap-2">
                 <span className="text-muted-foreground">-</span>
                 <span>{item}</span>
               </li>
@@ -3760,7 +3936,7 @@ function PestGuidancePanel({ detection }: { detection: PestDetection }) {
           </p>
           <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
             {aiRecommendations.map((item, index) => (
-              <li key={`${detection.id}-ai-guidance-${index}`} className="flex gap-2">
+              <li key={`${detection.id}-ai-guidance-${index}`} className="flex items-start gap-2">
                 <span>-</span>
                 <span>{item}</span>
               </li>
@@ -3769,7 +3945,7 @@ function PestGuidancePanel({ detection }: { detection: PestDetection }) {
         </div>
       )}
 
-      <div className="rounded-lg border border-dashed p-3 space-y-3">
+      <div className="dash-dashed-block space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Pest Control Action Plan</p>
@@ -3789,7 +3965,7 @@ function PestGuidancePanel({ detection }: { detection: PestDetection }) {
               type="date"
               value={scheduledDate}
               onChange={(event) => setScheduledDate(event.target.value)}
-              className="w-full rounded-md border bg-background px-3 py-2"
+              className={controlClass}
             />
           </label>
           <label className="text-sm space-y-1">
@@ -3798,7 +3974,7 @@ function PestGuidancePanel({ detection }: { detection: PestDetection }) {
               type="time"
               value={scheduledTime}
               onChange={(event) => setScheduledTime(event.target.value)}
-              className="w-full rounded-md border bg-background px-3 py-2"
+              className={controlClass}
             />
           </label>
         </div>
@@ -3809,7 +3985,7 @@ function PestGuidancePanel({ detection }: { detection: PestDetection }) {
             type="text"
             value={controlMethod}
             onChange={(event) => setControlMethod(event.target.value)}
-            className="w-full rounded-md border bg-background px-3 py-2"
+            className={controlClass}
             placeholder="Describe the planned pest control action"
           />
         </label>
@@ -3819,7 +3995,7 @@ function PestGuidancePanel({ detection }: { detection: PestDetection }) {
           <textarea
             value={scheduleNotes}
             onChange={(event) => setScheduleNotes(event.target.value)}
-            className="w-full min-h-[84px] rounded-md border bg-background px-3 py-2"
+            className={textAreaClass}
             placeholder="Add any field notes, product details, or follow-up reminders"
           />
         </label>
@@ -3839,7 +4015,7 @@ function PestGuidancePanel({ detection }: { detection: PestDetection }) {
               <div className="space-y-2">
                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Upcoming or Active Actions</p>
                 {pendingSchedules.map((schedule) => (
-                  <div key={schedule.id} className="rounded-md border bg-background p-3 flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                  <div key={schedule.id} className="dash-outline-block flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                     <div className="space-y-1">
                       <p className="font-medium text-sm">{schedule.controlMethod}</p>
                       <p className="text-xs text-muted-foreground">
@@ -3867,7 +4043,7 @@ function PestGuidancePanel({ detection }: { detection: PestDetection }) {
               <div className="space-y-2">
                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Completed Pest Control</p>
                 {completedSchedules.slice(0, 3).map((schedule) => (
-                  <div key={schedule.id} className="rounded-md border bg-background p-3">
+                  <div key={schedule.id} className="dash-outline-block">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="font-medium text-sm">{schedule.controlMethod}</p>
                       <Badge variant="default">Executed</Badge>
@@ -3891,7 +4067,7 @@ function PestGuidancePanel({ detection }: { detection: PestDetection }) {
   );
 }
 
-function AnalyticsPanel({ farmId }: { farmId: string }) {
+function AnalyticsPanel({ farmId, searchQuery = '' }: { farmId: string; searchQuery?: string }) {
   const { data: dash, isLoading: dashLoading } = useAnalyticsDashboard(farmId);
   const { data: trends, isLoading: trendsLoading } = useFarmSensorTrendsAnalytics(farmId, { interval: 'day' });
   const { data: recommendationHistory, isLoading: recommendationHistoryLoading } = useRecommendationHistoryAnalytics(farmId, { days: 30 });
@@ -3915,6 +4091,7 @@ function AnalyticsPanel({ farmId }: { farmId: string }) {
     soilMoisture: row.soilMoisture ?? row.avgSoilMoisture ?? row.avg_soil_moisture ?? 0,
   }));
   const recommendationStats = recommendationHistory?.stats;
+  const normalizedSearch = searchQuery.trim().toLowerCase();
   const recentResponses = Array.isArray(recommendationHistory?.history)
     ? recommendationHistory.history
         .filter((item) => item.respondedAt)
@@ -3929,6 +4106,33 @@ function AnalyticsPanel({ farmId }: { farmId: string }) {
       .join(' ');
   const activityTypeRows = Object.entries(farmActivity?.summary?.byType || {});
   const recentActivityItems = Array.isArray(farmActivity?.activity) ? farmActivity.activity : [];
+  const filteredRecentResponses = normalizedSearch
+    ? recentResponses.filter((item) =>
+        matchesSearchTerm(normalizedSearch, [
+          item.title,
+          item.status,
+          item.responseChannel,
+          item.responseNotes,
+        ])
+      )
+    : recentResponses;
+  const filteredRecentActivityItems = normalizedSearch
+    ? recentActivityItems.filter((item) =>
+        matchesSearchTerm(normalizedSearch, [
+          item.title,
+          item.description,
+          item.type,
+          item.action,
+          item.status,
+        ])
+      )
+    : recentActivityItems;
+  const analyticsSearchScopeItems: SearchScopeItem[] = normalizedSearch
+    ? [
+        { label: 'Responses', value: filteredRecentResponses.length, total: recentResponses.length },
+        { label: 'Activity', value: filteredRecentActivityItems.length, total: recentActivityItems.length },
+      ]
+    : [];
   const formatActivityLabel = (value: string) =>
     value
       .split('_')
@@ -3960,10 +4164,20 @@ function AnalyticsPanel({ farmId }: { farmId: string }) {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="dash-section-stack">
+      {normalizedSearch && (
+        <div className="dash-filter-bar">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="dash-pill bg-green-100 text-green-800 dark:bg-green-900/35 dark:text-green-300">
+              Analytics Filter: "{searchQuery.trim()}"
+            </span>
+            <SearchScopePills items={analyticsSearchScopeItems} accent="green" />
+          </div>
+        </div>
+      )}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {stats.map((stat) => (
-          <Card key={stat.label}>
+          <Card key={stat.label} className="dash-panel">
             <CardContent className="pt-4">
               <p className="text-2xl font-bold">{String(stat.value)}</p>
               <p className="text-xs text-muted-foreground">{stat.label}</p>
@@ -3974,7 +4188,7 @@ function AnalyticsPanel({ farmId }: { farmId: string }) {
       {trendsLoading ? (
         <LoadingState text="Loading sensor trends..." size="sm" />
       ) : (
-        <Card>
+        <Card className="dash-panel">
           <CardHeader>
             <CardTitle className="text-base">Daily Sensor Trends</CardTitle>
           </CardHeader>
@@ -4007,18 +4221,18 @@ function AnalyticsPanel({ farmId }: { farmId: string }) {
         <LoadingState text="Loading recommendation insights..." size="sm" />
       ) : (
         <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-          <Card>
+          <Card className="dash-panel">
             <CardHeader>
               <CardTitle className="text-base">Recommendation Response Insights</CardTitle>
               <CardDescription>How quickly you have been responding over the last 30 days.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                <div className="rounded-lg border bg-muted/30 p-3">
+                <div className="dash-soft-block">
                   <p className="text-xs text-muted-foreground">Total recommendations</p>
                   <p className="mt-1 text-2xl font-semibold">{recommendationStats?.total ?? 0}</p>
                 </div>
-                <div className="rounded-lg border bg-muted/30 p-3">
+                <div className="dash-soft-block">
                   <p className="text-xs text-muted-foreground">Response rate</p>
                   <p className="mt-1 text-2xl font-semibold">
                     {typeof recommendationStats?.responseRate === 'number'
@@ -4026,7 +4240,7 @@ function AnalyticsPanel({ farmId }: { farmId: string }) {
                       : '0%'}
                   </p>
                 </div>
-                <div className="rounded-lg border bg-muted/30 p-3">
+                <div className="dash-soft-block">
                   <p className="text-xs text-muted-foreground">Avg. response time</p>
                   <p className="mt-1 text-2xl font-semibold">
                     {typeof recommendationStats?.averageResponseTime === 'number'
@@ -4034,7 +4248,7 @@ function AnalyticsPanel({ farmId }: { farmId: string }) {
                       : 'N/A'}
                   </p>
                 </div>
-                <div className="rounded-lg border bg-muted/30 p-3">
+                <div className="dash-soft-block">
                   <p className="text-xs text-muted-foreground">Executed actions</p>
                   <p className="mt-1 text-2xl font-semibold">
                     {recommendationStats?.byStatus?.executed ?? 0}
@@ -4061,16 +4275,16 @@ function AnalyticsPanel({ farmId }: { farmId: string }) {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="dash-panel">
             <CardHeader>
               <CardTitle className="text-base">Recent Recommendation Responses</CardTitle>
               <CardDescription>Latest recorded farmer decisions and their response channel.</CardDescription>
             </CardHeader>
             <CardContent>
-              {recentResponses.length > 0 ? (
+              {filteredRecentResponses.length > 0 ? (
                 <div className="space-y-3">
-                  {recentResponses.map((item) => (
-                    <div key={item.id} className="rounded-lg border p-3">
+                  {filteredRecentResponses.map((item) => (
+                    <div key={item.id} className="dash-outline-block">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="font-medium text-sm">{item.title || 'Recommendation'}</p>
@@ -4089,8 +4303,12 @@ function AnalyticsPanel({ farmId }: { farmId: string }) {
                 </div>
               ) : (
                 <EmptyState
-                  title="No responses yet"
-                  message="Accepted, rejected, or deferred recommendations will appear here once you act on them."
+                  title={normalizedSearch ? 'No matching responses' : 'No responses yet'}
+                  message={
+                    normalizedSearch
+                      ? `No recommendation responses match "${searchQuery}".`
+                      : 'Accepted, rejected, or deferred recommendations will appear here once you act on them.'
+                  }
                 />
               )}
             </CardContent>
@@ -4100,14 +4318,14 @@ function AnalyticsPanel({ farmId }: { farmId: string }) {
       {farmActivityLoading ? (
         <LoadingState text="Loading farm activity..." size="sm" />
       ) : (
-        <Card>
+        <Card className="dash-panel">
           <CardHeader>
             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
               <div>
                 <CardTitle className="text-base">Farm Activity Log</CardTitle>
                 <CardDescription>Recent logged actions across recommendations, schedules, pest scans, and issue follow-up.</CardDescription>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button
                   size="sm"
                   variant="outline"
@@ -4140,10 +4358,10 @@ function AnalyticsPanel({ farmId }: { farmId: string }) {
               )}
             </div>
 
-            {recentActivityItems.length > 0 ? (
+            {filteredRecentActivityItems.length > 0 ? (
               <div className="space-y-3">
-                {recentActivityItems.map((item) => (
-                  <div key={item.id} className="rounded-lg border p-3">
+                {filteredRecentActivityItems.map((item) => (
+                  <div key={item.id} className="dash-outline-block">
                     <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                       <div className="space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
@@ -4164,8 +4382,12 @@ function AnalyticsPanel({ farmId }: { farmId: string }) {
               </div>
             ) : (
               <EmptyState
-                title="No activity yet"
-                message="Completed actions, logged issue updates, and expert-reviewed events will appear here."
+                title={normalizedSearch ? 'No matching activity' : 'No activity yet'}
+                message={
+                  normalizedSearch
+                    ? `No farm activity matches "${searchQuery}".`
+                    : 'Completed actions, logged issue updates, and expert-reviewed events will appear here.'
+                }
               />
             )}
           </CardContent>
@@ -4175,7 +4397,7 @@ function AnalyticsPanel({ farmId }: { farmId: string }) {
   );
 }
 
-function AiChatPanel({ farmId }: { farmId?: string | null }) {
+function AiChatPanel({ farmId, cropType }: { farmId?: string | null; cropType?: string | null }) {
   const [messages, setMessages] = React.useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
   const [input, setInput] = React.useState('');
   const [adviceQ, setAdviceQ] = React.useState('');
@@ -4244,7 +4466,7 @@ function AiChatPanel({ farmId }: { farmId?: string | null }) {
     await imageAnalysisMutation.mutateAsync({
       imageUrl: analysisImageUrl.trim(),
       context: {
-        cropType: 'Maize',
+        cropType: cropType || undefined,
       },
     });
   };
@@ -4269,15 +4491,15 @@ function AiChatPanel({ farmId }: { farmId?: string | null }) {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="dash-section-stack">
       <div className="grid md:grid-cols-2 gap-6">
-        <Card className="flex flex-col">
+        <Card className="dash-panel flex flex-col">
           <CardHeader>
             <CardTitle className="text-base">AI Chat Assistant</CardTitle>
             <CardDescription>Ask anything about your farm, crops, or practices</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col flex-1 gap-3">
-            <div className="flex-1 overflow-y-auto max-h-72 space-y-2 rounded-lg border p-3 bg-muted/30">
+            <div className="flex-1 overflow-y-auto max-h-72 space-y-2 dash-soft-block">
               {messages.length === 0 && (
                 <p className="text-sm text-muted-foreground text-center pt-6">Start a conversation with the AI assistant.</p>
               )}
@@ -4292,22 +4514,22 @@ function AiChatPanel({ farmId }: { farmId?: string | null }) {
               ))}
               <div ref={bottomRef} />
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row">
               <input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
                 placeholder="Type a message..."
-                className="flex-1 h-9 rounded-md border border-input bg-background px-3 text-sm"
+                className={`flex-1 ${compactControlClass}`}
               />
-              <Button size="sm" onClick={handleSend} disabled={chatMutation.isPending || !input.trim()}>
+              <Button size="sm" onClick={handleSend} disabled={chatMutation.isPending || !input.trim()} className="sm:self-auto">
                 {chatMutation.isPending ? <Spinner size="sm" /> : 'Send'}
               </Button>
             </div>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="dash-panel">
           <CardHeader>
             <CardTitle className="text-base">Agricultural Advice</CardTitle>
             <CardDescription>Get AI-powered crop & farm advice</CardDescription>
@@ -4317,13 +4539,13 @@ function AiChatPanel({ farmId }: { farmId?: string | null }) {
               value={adviceQ}
               onChange={(e) => setAdviceQ(e.target.value)}
               placeholder="e.g. How do I manage soil moisture for maize during dry season?"
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[100px]"
+              className={textAreaClass}
             />
             <Button onClick={handleAdvice} disabled={adviceMutation.isPending || !adviceQ.trim()} className="w-full">
               {adviceMutation.isPending ? <Spinner size="sm" /> : 'Get Advice'}
             </Button>
             {adviceMutation.data && (
-              <div className="rounded-lg border p-3 bg-muted/30 text-sm space-y-2">
+              <div className="dash-soft-block text-sm space-y-2">
                 <p className="font-medium">Answer</p>
                 <FormattedAiResponse content={adviceMutation.data.answer} />
                 {adviceMutation.data.suggestions?.length > 0 && (
@@ -4338,7 +4560,7 @@ function AiChatPanel({ farmId }: { farmId?: string | null }) {
       </div>
 
       <div className="grid xl:grid-cols-3 gap-6">
-        <Card>
+        <Card className="dash-panel">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <Camera size={18} className="text-primary" />
@@ -4351,7 +4573,7 @@ function AiChatPanel({ farmId }: { farmId?: string | null }) {
               value={analysisImageUrl}
               onChange={(e) => setAnalysisImageUrl(e.target.value)}
               placeholder="Paste an image URL"
-              className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+              className={compactControlClass}
             />
             <Button
               onClick={handleImageAnalysis}
@@ -4374,7 +4596,7 @@ function AiChatPanel({ farmId }: { farmId?: string | null }) {
               </p>
             )}
             {imageAnalysisMutation.data && (
-              <div className="rounded-lg border p-3 bg-muted/30 space-y-2 text-sm">
+              <div className="dash-soft-block space-y-2 text-sm">
                 <p><span className="font-medium">Overall health:</span> {imageAnalysisMutation.data.overallHealth}</p>
                 <p><span className="font-medium">Growth stage:</span> {imageAnalysisMutation.data.growthStageEstimate || 'Unknown'}</p>
                 {imageAnalysisMutation.data.recommendations?.length > 0 && (
@@ -4387,7 +4609,7 @@ function AiChatPanel({ farmId }: { farmId?: string | null }) {
               </div>
             )}
             {saveFarmImageMutation.data && (
-              <div className="rounded-lg border p-3 bg-muted/30 space-y-1 text-sm">
+              <div className="dash-soft-block space-y-1 text-sm">
                 <p className="font-medium">Farm image saved</p>
                 <p>Total stored farm images: {saveFarmImageMutation.data.data.totalImages}</p>
                 <p className="text-muted-foreground break-all">{saveFarmImageMutation.data.data.image.url}</p>
@@ -4396,7 +4618,7 @@ function AiChatPanel({ farmId }: { farmId?: string | null }) {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="dash-panel">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <RefreshCw size={18} className="text-primary" />
@@ -4409,23 +4631,23 @@ function AiChatPanel({ farmId }: { farmId?: string | null }) {
               value={translationText}
               onChange={(e) => setTranslationText(e.target.value)}
               placeholder="Type text to translate..."
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[100px]"
+              className={textAreaClass}
             />
-            <div className="flex gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row">
               <select
                 value={translationTarget}
                 onChange={(e) => setTranslationTarget(e.target.value as 'en' | 'rw')}
-                className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                className={compactControlClass}
               >
                 <option value="rw">Translate to Kinyarwanda</option>
                 <option value="en">Translate to English</option>
               </select>
-              <Button onClick={handleTranslate} disabled={translationMutation.isPending || !translationText.trim()} className="flex-1">
+              <Button onClick={handleTranslate} disabled={translationMutation.isPending || !translationText.trim()} className="w-full sm:flex-1">
                 {translationMutation.isPending ? <Spinner size="sm" /> : 'Translate'}
               </Button>
             </div>
             {translationMutation.data && (
-              <div className="rounded-lg border p-3 bg-muted/30 text-sm space-y-2">
+              <div className="dash-soft-block text-sm space-y-2">
                 <p className="font-medium">Translation</p>
                 <p>{translationMutation.data.translated}</p>
               </div>
@@ -4433,7 +4655,7 @@ function AiChatPanel({ farmId }: { farmId?: string | null }) {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="dash-panel">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <Sprout size={18} className="text-primary" />
@@ -4446,14 +4668,14 @@ function AiChatPanel({ farmId }: { farmId?: string | null }) {
               <LoadingState text="Loading AI capabilities..." size="sm" />
             ) : capabilitiesQuery.data ? (
               <>
-                <div className="rounded-lg border p-3 bg-muted/30 text-sm">
+                <div className="dash-soft-block text-sm">
                   <p><span className="font-medium">Provider:</span> {capabilitiesQuery.data.provider}</p>
                   <p><span className="font-medium">Model:</span> {capabilitiesQuery.data.model}</p>
                   <p><span className="font-medium">Languages:</span> {capabilitiesQuery.data.supportedLanguages.join(', ')}</p>
                 </div>
                 <div className="space-y-2">
                   {capabilitiesQuery.data.features.slice(0, 5).map((feature) => (
-                    <div key={feature.name} className="rounded-lg border p-3 text-sm">
+                    <div key={feature.name} className="dash-outline-block text-sm">
                       <p className="font-medium">{feature.name}</p>
                       <p className="text-muted-foreground">{feature.description}</p>
                     </div>
@@ -4471,4 +4693,3 @@ function AiChatPanel({ farmId }: { farmId?: string | null }) {
 }
 
 export default ConnectedFarmerDashboard;
-

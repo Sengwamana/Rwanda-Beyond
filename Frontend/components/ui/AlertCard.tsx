@@ -1,4 +1,4 @@
-﻿// =====================================================
+// =====================================================
 // Alert Card Component - Smart Maize Farming System
 // Display alerts, notifications, and status messages
 // =====================================================
@@ -96,7 +96,7 @@ export const AlertCard: React.FC<AlertCardProps> = ({
     <div className={`
       ${config.bgColor} 
       ${config.borderColor}
-      border rounded-xl p-4 
+      border rounded-[1.25rem] p-4 
       animate-fade-in
       ${className}
     `}>
@@ -104,7 +104,7 @@ export const AlertCard: React.FC<AlertCardProps> = ({
         {/* Icon */}
         <div className={`
           ${config.iconBgColor}
-          w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0
+          w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0
         `}>
           <AlertIcon className={config.iconColor} size={20} />
         </div>
@@ -155,7 +155,7 @@ export const AlertCard: React.FC<AlertCardProps> = ({
                   hover:underline
                 `}
               >
-                {action.label} ->
+                {action.label} {'→'}
               </button>
             )}
           </div>

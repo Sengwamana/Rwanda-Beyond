@@ -74,7 +74,6 @@ describe('recommendation statistics aggregation', () => {
 
     expect(mockDb.recommendations.getStats).toHaveBeenCalledWith({
       farmId: 'farm-1',
-      userId: undefined,
       since: Date.parse('2025-03-09T00:00:00.000Z'),
       until: Date.parse('2025-03-11T00:00:00.000Z'),
     });

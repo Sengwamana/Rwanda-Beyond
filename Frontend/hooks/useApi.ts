@@ -33,7 +33,7 @@ import {
   FertilizationSchedule,
   FarmDashboardData
 } from '../types';
-import { useNotificationStore } from '../store';
+import { useAuthStore, useNotificationStore } from '../store';
 
 // Query keys for cache management
 export const queryKeys = {
@@ -102,6 +102,7 @@ export const queryKeys = {
   adminConfigs: ['adminConfigs'] as const,
   adminDevices: ['adminDevices'] as const,
   adminSensorHealth: ['adminSensorHealth'] as const,
+  notificationQueue: (params?: unknown) => ['notificationQueue', params] as const,
   systemHealth: ['systemHealth'] as const,
   systemMetrics: ['systemMetrics'] as const,
   alertStatistics: ['alertStatistics'] as const,
@@ -158,13 +159,15 @@ export function useUpdateProfile() {
 }
 
 export function useMyMessages(params?: Parameters<typeof messageService.getMine>[0], enabled = true) {
+  const currentUserId = useAuthStore((state) => state.user?.id || null);
+
   return useQuery({
-    queryKey: queryKeys.myMessages(params),
+    queryKey: [...queryKeys.myMessages(params), currentUserId],
     queryFn: async () => {
       const response = await messageService.getMine(params);
       return response.data;
     },
-    enabled,
+    enabled: enabled && !!currentUserId,
     staleTime: 60 * 1000,
   });
 }
@@ -1558,21 +1561,61 @@ export function useRevokeDeviceToken() {
 }
 
 export function useSendBroadcast() {
-  const { addNotification } = useNotificationStore();
-
-  return useMutation({
-    mutationFn: adminService.sendBroadcast,
+    const queryClient = useQueryClient();
+    const { addNotification } = useNotificationStore();
+  
+    return useMutation({
+      mutationFn: adminService.sendBroadcast,
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notificationQueue'] });
       addNotification({ type: 'success', title: 'Broadcast queued successfully' });
     },
     onError: (error) => {
       addNotification({ type: 'error', title: 'Failed to send broadcast', message: handleApiError(error) });
+      },
+    });
+  }
+
+export function useProcessNotificationQueue() {
+  const queryClient = useQueryClient();
+  const { addNotification } = useNotificationStore();
+
+  return useMutation({
+    mutationFn: adminService.processNotificationQueue,
+    onSuccess: (response) => {
+      const result = response.data;
+      queryClient.invalidateQueries({ queryKey: ['notificationQueue'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.systemMetrics });
+      queryClient.invalidateQueries({ queryKey: queryKeys.systemOverview });
+      addNotification({
+        type: 'success',
+        title: 'Notification queue processed',
+        message: `Processed ${result?.processed ?? 0}, sent ${result?.sent ?? 0}, failed ${result?.failed ?? 0}, retried ${result?.retried ?? 0}.`,
+      });
+    },
+    onError: (error) => {
+      addNotification({ type: 'error', title: 'Failed to process notification queue', message: handleApiError(error) });
     },
   });
 }
 
+export function useNotificationQueueSnapshot(
+  params?: Parameters<typeof adminService.getNotificationQueueSnapshot>[0],
+  enabled = true
+) {
+  return useQuery({
+    queryKey: queryKeys.notificationQueue(params),
+    queryFn: async () => {
+      const response = await adminService.getNotificationQueueSnapshot(params);
+      return response.data;
+    },
+    enabled,
+    staleTime: 30 * 1000,
+  });
+}
+
 export function useGenerateAdminReport() {
-  const { addNotification } = useNotificationStore();
+    const { addNotification } = useNotificationStore();
 
   return useMutation({
     mutationFn: adminService.generateReport,
@@ -1809,7 +1852,15 @@ export function useAiCapabilities() {
 export function useAiHealth() {
   return useQuery({
     queryKey: queryKeys.aiHealth,
-    queryFn: () => aiService.checkHealth(),
+    queryFn: async () => {
+      const health = await aiService.checkHealth();
+      return health ?? {
+        status: 'unhealthy',
+        provider: 'unknown',
+        lastChecked: new Date().toISOString(),
+        error: 'No health payload returned',
+      };
+    },
     refetchInterval: 60 * 1000,
   });
 }

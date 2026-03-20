@@ -11,6 +11,27 @@ import rateLimit from 'express-rate-limit';
 import config from '../config/index.js';
 import logger from '../utils/logger.js';
 
+const LOCAL_IPS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+
+const isLocalDevelopmentRequest = (req) => {
+  if (!config.server.isDevelopment) {
+    return false;
+  }
+
+  const host = String(req.hostname || '').toLowerCase();
+  const ip = String(req.ip || '').toLowerCase();
+
+  return host === 'localhost' || host === '127.0.0.1' || LOCAL_IPS.has(ip);
+};
+
+const shouldSkipRateLimit = (req) => {
+  if (req.user?.role === 'admin') {
+    return true;
+  }
+
+  return isLocalDevelopmentRequest(req);
+};
+
 /**
  * Create rate limit error response
  */
@@ -39,10 +60,7 @@ export const standardLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   handler: createLimitResponse,
-  skip: (req) => {
-    // Skip rate limiting for admin users
-    return req.user?.role === 'admin';
-  }
+  skip: shouldSkipRateLimit,
 });
 
 // Alias for backwards compatibility
@@ -56,7 +74,8 @@ export const strictLimiter = rateLimit({
   max: 10, // 10 requests per window
   standardHeaders: true,
   legacyHeaders: false,
-  handler: createLimitResponse
+  handler: createLimitResponse,
+  skip: isLocalDevelopmentRequest,
 });
 
 /**
@@ -71,7 +90,8 @@ export const iotLimiter = rateLimit({
     // Rate limit by device ID instead of IP
     return req.headers['x-device-id'] || req.ip;
   },
-  handler: createLimitResponse
+  handler: createLimitResponse,
+  skip: isLocalDevelopmentRequest,
 });
 
 /**
@@ -82,7 +102,8 @@ export const uploadLimiter = rateLimit({
   max: 50, // 50 uploads per hour
   standardHeaders: true,
   legacyHeaders: false,
-  handler: createLimitResponse
+  handler: createLimitResponse,
+  skip: isLocalDevelopmentRequest,
 });
 
 /**
@@ -93,7 +114,8 @@ export const analyticsLimiter = rateLimit({
   max: 30, // 30 requests per minute
   standardHeaders: true,
   legacyHeaders: false,
-  handler: createLimitResponse
+  handler: createLimitResponse,
+  skip: shouldSkipRateLimit,
 });
 
 /**
@@ -108,7 +130,8 @@ export const notificationLimiter = rateLimit({
     // Rate limit by user ID
     return req.user?.id || req.ip;
   },
-  handler: createLimitResponse
+  handler: createLimitResponse,
+  skip: shouldSkipRateLimit,
 });
 
 export default {

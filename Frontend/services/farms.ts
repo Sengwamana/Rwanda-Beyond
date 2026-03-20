@@ -242,7 +242,7 @@ export interface CreateFarmData {
   coordinates?: { lat: number; lng: number };
   sizeHectares?: number;
   soilType?: string;
-  cropVariety: string;
+  cropVariety?: string;
   plantingDate?: string;
   metadata?: Record<string, any>;
 }

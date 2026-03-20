@@ -1,4 +1,4 @@
-﻿// =====================================================
+// =====================================================
 // Weather Card Component - Smart Maize Farming System
 // Display weather data with forecast and conditions
 // =====================================================
@@ -177,9 +177,9 @@ export const WeatherCard: React.FC<WeatherCardProps> = ({
   // Full variant (default)
   return (
     <div className={`
-      bg-white dark:bg-slate-800 
-      border border-slate-100 dark:border-slate-700 
-      rounded-2xl overflow-hidden shadow-soft
+      bg-white dark:bg-slate-900 
+      border border-slate-200 dark:border-slate-800 
+      rounded-[1.25rem] overflow-hidden shadow-sm
       ${className}
     `}>
       {/* Header with gradient */}
