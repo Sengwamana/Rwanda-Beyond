@@ -15,6 +15,75 @@ import {
 } from '../types';
 import { normalizeUser } from './auth';
 
+function normalizeCoordinates(value: any): Farm['coordinates'] | undefined {
+  if (!value) return undefined;
+  if (typeof value === 'object' && typeof value.lat === 'number' && typeof value.lng === 'number') {
+    return value;
+  }
+  if (typeof value === 'object' && typeof value.latitude === 'number' && typeof value.longitude === 'number') {
+    return { lat: value.latitude, lng: value.longitude };
+  }
+  return undefined;
+}
+
+function normalizeAdminFarm(farm: any): Farm {
+  return {
+    id: String(farm?.id || farm?._id || ''),
+    userId: String(farm?.userId || farm?.user_id || farm?.user?.id || ''),
+    name: farm?.name || '',
+    districtId: farm?.districtId || farm?.district_id || farm?.district?.id || undefined,
+    locationName: farm?.locationName || farm?.location_name || undefined,
+    coordinates: normalizeCoordinates(farm?.coordinates) || normalizeCoordinates(farm),
+    sizeHectares:
+      typeof farm?.sizeHectares === 'number'
+        ? farm.sizeHectares
+        : typeof farm?.size_hectares === 'number'
+          ? farm.size_hectares
+          : undefined,
+    soilType: farm?.soilType || farm?.soil_type || undefined,
+    cropVariety: farm?.cropVariety || farm?.crop_variety || '',
+    plantingDate: farm?.plantingDate || farm?.planting_date || undefined,
+    expectedHarvestDate: farm?.expectedHarvestDate || farm?.expected_harvest_date || undefined,
+    currentGrowthStage: farm?.currentGrowthStage || farm?.current_growth_stage || undefined,
+    isActive:
+      typeof farm?.isActive === 'boolean'
+        ? farm.isActive
+        : typeof farm?.is_active === 'boolean'
+          ? farm.is_active
+          : true,
+    metadata: farm?.metadata || undefined,
+    createdAt: farm?.createdAt || farm?.created_at || new Date().toISOString(),
+    updatedAt: farm?.updatedAt || farm?.updated_at || new Date().toISOString(),
+    user: farm?.user ? normalizeUser(farm.user) : undefined,
+    district: farm?.district
+      ? {
+          id: String(farm.district.id || farm.district._id || ''),
+          name: farm.district.name,
+          province: farm.district.province,
+          coordinates: normalizeCoordinates(farm.district.coordinates) || normalizeCoordinates(farm.district),
+        }
+      : undefined,
+    sensors: Array.isArray(farm?.sensors)
+      ? farm.sensors.map((sensor: any) => ({
+          id: String(sensor.id || sensor._id || ''),
+          farmId: String(sensor.farmId || sensor.farm_id || farm?.id || farm?._id || ''),
+          deviceId: sensor.deviceId || sensor.device_id || '',
+          sensorType: sensor.sensorType || sensor.sensor_type || 'soil_moisture',
+          name: sensor.name || undefined,
+          locationDescription: sensor.locationDescription || sensor.location_description || undefined,
+          coordinates: normalizeCoordinates(sensor.coordinates) || normalizeCoordinates(sensor),
+          status: sensor.status || 'active',
+          batteryLevel: sensor.batteryLevel || sensor.battery_level || undefined,
+          firmwareVersion: sensor.firmwareVersion || sensor.firmware_version || undefined,
+          lastReadingAt: sensor.lastReadingAt || sensor.last_reading_at || undefined,
+          calibrationDate: sensor.calibrationDate || sensor.calibration_date || undefined,
+          createdAt: sensor.createdAt || sensor.created_at || new Date().toISOString(),
+          updatedAt: sensor.updatedAt || sensor.updated_at || new Date().toISOString(),
+        }))
+      : undefined,
+  };
+}
+
 export interface UserQueryParams {
   page?: number;
   limit?: number;
@@ -242,7 +311,10 @@ export const adminService = {
     search?: string;
   }): Promise<PaginatedResponse<Farm>> => {
     const response = await apiClient.get<PaginatedResponse<Farm>>('/admin/farms', { params });
-    return response.data;
+    return {
+      ...response.data,
+      data: Array.isArray(response.data?.data) ? response.data.data.map(normalizeAdminFarm) : [],
+    };
   },
 
   /**

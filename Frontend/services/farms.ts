@@ -20,6 +20,9 @@ function normalizeCoordinates(value: any): Farm['coordinates'] | undefined {
   if (typeof value === 'object' && typeof value.lat === 'number' && typeof value.lng === 'number') {
     return value;
   }
+  if (typeof value === 'object' && typeof value.latitude === 'number' && typeof value.longitude === 'number') {
+    return { lat: value.latitude, lng: value.longitude };
+  }
   return undefined;
 }
 
@@ -30,7 +33,7 @@ function normalizeFarm(farm: any): Farm {
     name: farm?.name || '',
     districtId: farm?.districtId || farm?.district_id || farm?.district?.id || undefined,
     locationName: farm?.locationName || farm?.location_name || undefined,
-    coordinates: normalizeCoordinates(farm?.coordinates),
+    coordinates: normalizeCoordinates(farm?.coordinates) || normalizeCoordinates(farm),
     sizeHectares:
       typeof farm?.sizeHectares === 'number'
         ? farm.sizeHectares
@@ -73,7 +76,7 @@ function normalizeFarm(farm: any): Farm {
           id: String(farm.district.id || farm.district._id || ''),
           name: farm.district.name,
           province: farm.district.province,
-          coordinates: normalizeCoordinates(farm.district.coordinates),
+          coordinates: normalizeCoordinates(farm.district.coordinates) || normalizeCoordinates(farm.district),
         }
       : undefined,
     sensors: Array.isArray(farm?.sensors)
@@ -84,7 +87,7 @@ function normalizeFarm(farm: any): Farm {
           sensorType: sensor.sensorType || sensor.sensor_type || 'soil_moisture',
           name: sensor.name || undefined,
           locationDescription: sensor.locationDescription || sensor.location_description || undefined,
-          coordinates: normalizeCoordinates(sensor.coordinates),
+          coordinates: normalizeCoordinates(sensor.coordinates) || normalizeCoordinates(sensor),
           status: sensor.status || 'active',
           batteryLevel: sensor.batteryLevel || sensor.battery_level || undefined,
           firmwareVersion: sensor.firmwareVersion || sensor.firmware_version || undefined,

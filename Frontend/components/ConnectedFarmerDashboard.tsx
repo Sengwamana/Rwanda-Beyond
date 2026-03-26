@@ -28,6 +28,8 @@ import { Button } from './ui/Button';
 import { Badge } from './ui/Badge';
 import { Spinner, LoadingState, ErrorState, EmptyState } from './ui/Spinner';
 import { FormattedAiResponse } from './ui/FormattedAiResponse';
+import { MapboxMap, type MapboxMarkerData, type MapboxMarkerTone } from './ui/MapboxMap';
+import { ScheduleInsightsPanel } from './ui/ScheduleInsightsPanel';
 import {
   XAxis,
   YAxis,
@@ -110,9 +112,13 @@ interface ConnectedFarmerDashboardProps {
 const DASH_CONTROL_CLASS = 'dash-control';
 const DASH_CONTROL_COMPACT_CLASS = 'dash-control-compact';
 const DASH_TEXTAREA_CLASS = 'dash-textarea';
+const DASH_ACTION_CLASS = 'dash-action-btn';
+const DASH_ACTION_LG_CLASS = 'dash-action-btn-lg';
 const controlClass = DASH_CONTROL_CLASS;
 const compactControlClass = DASH_CONTROL_COMPACT_CLASS;
 const textAreaClass = DASH_TEXTAREA_CLASS;
+const actionClass = DASH_ACTION_CLASS;
+const actionLgClass = DASH_ACTION_LG_CLASS;
 
 const localeByLanguage: Record<Language, string> = {
   en: 'en-US',
@@ -125,6 +131,24 @@ const formatDate = (dateString: string, locale: string) =>
     month: 'short',
     day: 'numeric',
   });
+
+const isValidCoordinatePair = (coordinates?: { lat?: number; lng?: number } | null): coordinates is { lat: number; lng: number } =>
+  typeof coordinates?.lat === 'number' && typeof coordinates?.lng === 'number';
+
+const getFarmMapCoordinates = (
+  farm?: Partial<Farm> | null,
+  sensors: Array<Partial<Sensor>> = []
+): { lat: number; lng: number } | undefined => {
+  if (isValidCoordinatePair(farm?.coordinates)) {
+    return farm.coordinates;
+  }
+
+  const sensorCoordinates =
+    sensors.find((sensor) => isValidCoordinatePair(sensor.coordinates))?.coordinates
+    || farm?.sensors?.find((sensor) => isValidCoordinatePair(sensor.coordinates))?.coordinates;
+
+  return isValidCoordinatePair(sensorCoordinates) ? sensorCoordinates : undefined;
+};
 
 const formatTime = (dateString: string, locale: string) =>
   new Date(dateString).toLocaleTimeString(locale, {
@@ -191,6 +215,10 @@ const farmerTabCopy: Record<string, { title: string; description: string }> = {
     title: 'Sensors',
     description: 'Review registered devices and the latest readings for the selected farm.',
   },
+  irrigation: {
+    title: 'Irrigation',
+    description: 'Track water schedules, execution status, and recent water usage for the selected farm.',
+  },
   fertilization: {
     title: 'Fertilization',
     description: 'Track planned and completed fertilization events for the selected farm.',
@@ -202,6 +230,10 @@ const farmerTabCopy: Record<string, { title: string; description: string }> = {
   analytics: {
     title: 'District Analytics',
     description: 'Inspect trends, forecasts, and farm performance metrics.',
+  },
+  'map-view': {
+    title: 'Map View',
+    description: 'Explore your mapped farms and keep the active field context visible on one map.',
   },
   'ai-chat': {
     title: 'AI Advice',
@@ -593,7 +625,7 @@ function WeatherHistoryCard({
           <EmptyState title="No history yet" message="Historical weather records are not available for this farm yet." />
         ) : (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="dash-soft-block">
                 <p className="text-sm text-muted-foreground">Average temperature</p>
                 <p className="font-semibold">{avgTemperature !== null ? `${avgTemperature.toFixed(1)} C` : '--'}</p>
@@ -718,6 +750,8 @@ export function ConnectedFarmerDashboard({
   const [postponeDateInput, setPostponeDateInput] = useState('');
   const [postponeTimeInput, setPostponeTimeInput] = useState('06:00');
   const [farmEditName, setFarmEditName] = useState('');
+  const [farmEditCrop, setFarmEditCrop] = useState('');
+  const [farmEditLocation, setFarmEditLocation] = useState('');
   const [farmEditStage, setFarmEditStage] = useState<GrowthStage>('vegetative');
   const [farmEditSize, setFarmEditSize] = useState('');
   const [latestPestAnalysis, setLatestPestAnalysis] = useState<any>(null);
@@ -761,6 +795,7 @@ export function ConnectedFarmerDashboard({
     };
   }, []);
   const { data: sensorData, refetch: refetchSensorData } = useFarmSensorData(selectedFarm?.id || '', { limit: 50 });
+  const { data: selectedFarmSensors } = useSensorsByFarm(selectedFarm?.id || '');
   const { data: weather, refetch: refetchWeather } = useWeather(selectedFarm?.id || '');
   const { data: forecast, refetch: refetchForecast } = useForecast(selectedFarm?.id || '', 5);
   const { data: farmingConditions, refetch: refetchFarmingConditions } = useFarmingConditions(selectedFarm?.id || '');
@@ -793,7 +828,10 @@ export function ConnectedFarmerDashboard({
       : undefined,
     !!selectedFarm && activeTab === 'overview'
   );
-  const { data: recommendations, refetch: refetchRecommendations } = useActiveRecommendations(selectedFarm?.id);
+  const { data: recommendations, refetch: refetchRecommendations } = useActiveRecommendations(
+    selectedFarm?.id,
+    !!selectedFarm
+  );
   const {
     data: farmIssuesResponse,
     isLoading: farmIssuesLoading,
@@ -837,6 +875,8 @@ export function ConnectedFarmerDashboard({
   useEffect(() => {
     if (!selectedFarm) return;
     setFarmEditName(selectedFarm.name || '');
+    setFarmEditCrop(selectedFarm.cropVariety || '');
+    setFarmEditLocation(selectedFarm.locationName || '');
     setFarmEditStage(selectedFarm.currentGrowthStage || 'vegetative');
     setFarmEditSize(
       typeof selectedFarm.sizeHectares === 'number' && !Number.isNaN(selectedFarm.sizeHectares)
@@ -932,6 +972,39 @@ export function ConnectedFarmerDashboard({
       return matchesSearchTerm(normalizedSearch, [farm.name, farm.locationName, farm.district?.name, farm.cropVariety]);
     });
   }, [farms, normalizedSearch]);
+  const selectedFarmMapCoordinates = useMemo(
+    () => getFarmMapCoordinates(selectedFarm, Array.isArray(selectedFarmSensors) ? selectedFarmSensors : []),
+    [selectedFarm, selectedFarmSensors]
+  );
+  const farmerMapMarkers = useMemo<MapboxMarkerData[]>(
+    () => {
+      const latitude = selectedFarmMapCoordinates?.lat;
+      const longitude = selectedFarmMapCoordinates?.lng;
+
+      if (!selectedFarm || typeof latitude !== 'number' || typeof longitude !== 'number') {
+        return [];
+      }
+
+      return [{
+        id: selectedFarm.id,
+        latitude,
+        longitude,
+        label: selectedFarm.name,
+        badge: selectedFarm.cropVariety || 'Farm',
+        description: selectedFarm.locationName || selectedFarm.district?.name || 'Mapped farm',
+        tone: 'info',
+      }];
+    },
+    [
+      selectedFarm?.cropVariety,
+      selectedFarm?.district?.name,
+      selectedFarm?.id,
+      selectedFarm?.locationName,
+      selectedFarm?.name,
+      selectedFarmMapCoordinates?.lat,
+      selectedFarmMapCoordinates?.lng,
+    ]
+  );
 
   const filteredSchedules = useMemo(() => {
     if (!normalizedSearch) return upcomingSchedules;
@@ -964,6 +1037,30 @@ export function ConnectedFarmerDashboard({
     });
     return map;
   }, [upcomingSchedules]);
+
+  const farmerSearchScopeItems = useMemo<SearchScopeItem[]>(() => {
+    if (!normalizedSearch) return [];
+
+    return [
+      { label: 'Farms', value: filteredFarms.length, total: farms.length },
+      { label: 'Advice', value: filteredRecommendations.length, total: recommendations?.length || 0 },
+      { label: 'Alerts', value: filteredWeatherAlerts.length, total: weatherAlerts?.alerts?.length || 0 },
+      { label: 'Issues', value: filteredFarmIssues.length, total: farmIssues.length },
+      { label: 'Irrigation', value: filteredSchedules.length, total: upcomingSchedules.length },
+    ];
+  }, [
+    farmIssues.length,
+    farms.length,
+    filteredFarmIssues.length,
+    filteredFarms.length,
+    filteredRecommendations.length,
+    filteredSchedules.length,
+    filteredWeatherAlerts.length,
+    normalizedSearch,
+    recommendations?.length,
+    upcomingSchedules.length,
+    weatherAlerts?.alerts?.length,
+  ]);
 
   const irrigationActionPending = executeIrrigationMutation.isPending || updateIrrigationMutation.isPending;
 
@@ -1181,10 +1278,15 @@ export function ConnectedFarmerDashboard({
 
     const parsedSize = farmEditSize.trim() ? Number(farmEditSize) : undefined;
     const trimmedName = farmEditName.trim() || selectedFarm.name;
+    const trimmedCrop = farmEditCrop.trim();
+    const trimmedLocation = farmEditLocation.trim();
     const normalizedSize =
       typeof parsedSize === 'number' && !Number.isNaN(parsedSize) ? parsedSize : undefined;
     const detailsChanged =
-      trimmedName !== selectedFarm.name || normalizedSize !== selectedFarm.sizeHectares;
+      trimmedName !== selectedFarm.name
+      || trimmedCrop !== (selectedFarm.cropVariety || '')
+      || trimmedLocation !== (selectedFarm.locationName || '')
+      || normalizedSize !== selectedFarm.sizeHectares;
     const growthStageChanged = farmEditStage !== (selectedFarm.currentGrowthStage || 'vegetative');
     try {
       let nextFarmState: Partial<Farm> | null = null;
@@ -1194,6 +1296,8 @@ export function ConnectedFarmerDashboard({
           id: selectedFarm.id,
           data: {
             name: trimmedName,
+            cropVariety: trimmedCrop || undefined,
+            locationName: trimmedLocation || undefined,
             sizeHectares: normalizedSize,
           },
         });
@@ -1338,26 +1442,6 @@ export function ConnectedFarmerDashboard({
     }
   };
 
-  if (farmsLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <LoadingState text="Loading your farms..." />
-      </div>
-    );
-  }
-
-  if (farmsError) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <ErrorState
-          title="Failed to load farms"
-          message="We could not load your farm data. Please try again."
-          onRetry={() => refetchFarms()}
-        />
-      </div>
-    );
-  }
-
   const latestReading = sensorData?.[0];
   const moistureStatus: 'normal' | 'warning' | 'critical' =
     typeof latestReading?.soilMoisture === 'number'
@@ -1378,54 +1462,310 @@ export function ConnectedFarmerDashboard({
       : undefined;
   const isOverviewTab = activeTab === 'overview';
   const activeTabCopy = farmerTabCopy[activeTab] || farmerTabCopy.overview;
-  const farmerQuickStats: Array<{ label: string; value: string | number; badge: string; helper: string }> = [
-    {
-      label: 'Tracked Farms',
-      value: filteredFarms.length,
-      badge: `${farmStats?.activeFarms ?? filteredFarms.length} active`,
-      helper: `${typeof farmStats?.totalAreaHectares === 'number' ? farmStats.totalAreaHectares.toFixed(1) : '0.0'} ha recorded`,
-    },
-    {
-      label: 'Active Advice',
-      value: recommendations?.length || 0,
-      badge: `${filteredRecommendations.length} visible`,
-      helper: `${farmSummary?.activeRecommendations?.length ?? recommendations?.length ?? 0} linked to this farm`,
-    },
-    {
-      label: 'Weather Alerts',
-      value: filteredWeatherAlerts.length,
-      badge: `${weatherHistory?.data?.length ?? 0} history rows`,
-      helper: selectedFarm ? 'Live records for the selected farm' : 'Live weather alert records',
-    },
-    {
-      label: 'Open Irrigation',
-      value: normalizedSearch ? filteredSchedules.length : irrigationSchedules?.length || 0,
-      badge: `${dueSchedules.length} due`,
-      helper: `${irrigationSchedules?.filter((schedule) => schedule.isExecuted).length ?? 0} completed`,
-    },
-  ];
-  const farmerSearchScopeItems = useMemo<SearchScopeItem[]>(() => {
-    if (!normalizedSearch) return [];
+  const completedIrrigationCount = irrigationSchedules?.filter((schedule) => schedule.isExecuted).length ?? 0;
+  const farmerHeroStats = useMemo<Array<{ label: string; value: string | number; badge: string; helper: string }>>(() => {
+    const activeAdviceCount = farmSummary?.activeRecommendations?.length ?? recommendations?.length ?? 0;
+    const selectedGrowthStage = selectedFarm?.currentGrowthStage?.replace(/_/g, ' ') || 'Not set';
+    const selectedCrop = selectedFarm?.cropVariety || 'Crop not set';
+    const selectedLocation = selectedFarm?.locationName || selectedFarm?.district?.name || 'Location not set';
+    const moistureValue =
+      typeof latestReading?.soilMoisture === 'number' ? `${Math.round(latestReading.soilMoisture)}%` : '--';
+    const temperatureValue =
+      typeof latestReading?.airTemperature === 'number'
+        ? `${Math.round(latestReading.airTemperature)}°C`
+        : typeof latestReading?.soilTemperature === 'number'
+          ? `${Math.round(latestReading.soilTemperature)}°C`
+          : '--';
+    const humidityValue = typeof latestReading?.humidity === 'number' ? `${Math.round(latestReading.humidity)}%` : '--';
+    const trendLabel =
+      moistureTrend === 'up' ? 'Rising'
+      : moistureTrend === 'down' ? 'Falling'
+      : moistureTrend === 'stable' ? 'Stable'
+      : 'Waiting';
+    const latestReadingTimestamp = latestReading?.readingTimestamp
+      ? new Date(latestReading.readingTimestamp).toLocaleString(locale)
+      : 'Waiting for sensor sync';
+
+    if (activeTab === 'sensors') {
+      return [
+        {
+          label: 'Latest Readings',
+          value: sensorData?.length ?? 0,
+          badge: selectedFarm?.name || 'No farm selected',
+          helper: latestReadingTimestamp,
+        },
+        {
+          label: 'Soil Moisture',
+          value: moistureValue,
+          badge: `${moistureStatus} status`,
+          helper: `Trend: ${trendLabel}`,
+        },
+        {
+          label: 'Air Temperature',
+          value: temperatureValue,
+          badge: `Humidity ${humidityValue}`,
+          helper: selectedFarm ? `Live telemetry from ${selectedFarm.name}` : 'Select a farm to inspect telemetry',
+        },
+        {
+          label: 'Weather Alerts',
+          value: filteredWeatherAlerts.length,
+          badge: `${weatherHistory?.data?.length ?? 0} history rows`,
+          helper: selectedFarm ? 'Forecast context for the selected farm' : 'Forecast context appears after farm selection',
+        },
+      ];
+    }
+
+    if (activeTab === 'fertilization') {
+      return [
+        {
+          label: 'Scheduled Plans',
+          value: normalizedSearch ? filteredSchedules.length : upcomingSchedules.length,
+          badge: `${dueSchedules.length} due now`,
+          helper: `${completedIrrigationCount} completed irrigation actions`,
+        },
+        {
+          label: 'Active Advice',
+          value: activeAdviceCount,
+          badge: `${filteredRecommendations.length} visible`,
+          helper: selectedFarm ? `Guidance linked to ${selectedFarm.name}` : 'Advice syncs after farm selection',
+        },
+        {
+          label: 'Growth Stage',
+          value: selectedGrowthStage,
+          badge: selectedCrop,
+          helper: 'Current field stage for nutrient planning',
+        },
+        {
+          label: 'Focus Farm',
+          value: selectedFarm?.name || 'No farm selected',
+          badge: selectedLocation,
+          helper: 'Nutrition schedules stay tied to the selected farm',
+        },
+      ];
+    }
+
+    if (activeTab === 'irrigation') {
+      return [
+        {
+          label: 'Scheduled Plans',
+          value: normalizedSearch ? filteredSchedules.length : irrigationSchedules?.length || 0,
+          badge: `${dueSchedules.length} due now`,
+          helper: `${completedIrrigationCount} completed irrigation actions`,
+        },
+        {
+          label: 'Water Planned',
+          value: `${Math.round(
+            (irrigationSchedules || []).reduce(
+              (total, schedule) => total + (schedule.actualWaterVolume ?? schedule.waterVolumeLiters ?? 0),
+              0
+            )
+          )} L`,
+          badge: selectedFarm?.name || 'No farm selected',
+          helper: 'Combined scheduled and executed water volume for the selected farm',
+        },
+        {
+          label: 'Best Window',
+          value: irrigationWindow?.optimalWindows?.length ?? 0,
+          badge: farmingConditions?.irrigationRecommendation || 'No recommendation',
+          helper: 'Forecast-informed irrigation window count',
+        },
+        {
+          label: 'Focus Farm',
+          value: selectedFarm?.name || 'No farm selected',
+          badge: selectedLocation,
+          helper: 'Irrigation schedules stay tied to the selected farm',
+        },
+      ];
+    }
+
+    if (activeTab === 'pest-history') {
+      return [
+        {
+          label: 'Recorded Scans',
+          value: farmPestLedger.length,
+          badge: `${farmSummary?.recentPestDetections?.length ?? farmPestLedger.length} recent`,
+          helper: selectedFarm ? `Detection history for ${selectedFarm.name}` : 'Select a farm to inspect pest history',
+        },
+        {
+          label: 'Open Issues',
+          value: filteredFarmIssues.length,
+          badge: `${farmIssues.length} tracked`,
+          helper: 'Reported field issues that still need attention',
+        },
+        {
+          label: 'Weather Alerts',
+          value: filteredWeatherAlerts.length,
+          badge: `${weatherHistory?.data?.length ?? 0} history rows`,
+          helper: 'Environmental context around past pest events',
+        },
+        {
+          label: 'Scan Status',
+          value: analyzePestMutation.isPending ? 'Running' : 'Ready',
+          badge: selectedFarm?.name || 'No farm selected',
+          helper: analyzePestMutation.isPending ? 'New pest scan is being processed' : 'Run a fresh scan from this workspace',
+        },
+      ];
+    }
+
+    if (activeTab === 'analytics') {
+      return [
+        {
+          label: 'Weather Alerts',
+          value: filteredWeatherAlerts.length,
+          badge: `${weatherHistory?.data?.length ?? 0} history rows`,
+          helper: selectedFarm ? `Trend context for ${selectedFarm.name}` : 'Select a farm to unlock trend context',
+        },
+        {
+          label: 'Advice Items',
+          value: activeAdviceCount,
+          badge: `${filteredRecommendations.length} visible`,
+          helper: 'Recommendation volume feeding current analytics',
+        },
+        {
+          label: 'Open Issues',
+          value: filteredFarmIssues.length,
+          badge: `${farmPestLedger.length} pest records`,
+          helper: 'Operational issues affecting current farm performance',
+        },
+        {
+          label: 'Irrigation Plans',
+          value: upcomingSchedules.length,
+          badge: `${dueSchedules.length} due`,
+          helper: `${completedIrrigationCount} completed actions`,
+        },
+      ];
+    }
+
+    if (activeTab === 'map-view') {
+      const selectedCoordinates =
+        typeof selectedFarmMapCoordinates?.lat === 'number' && typeof selectedFarmMapCoordinates?.lng === 'number'
+          ? `${selectedFarmMapCoordinates.lat.toFixed(4)}, ${selectedFarmMapCoordinates.lng.toFixed(4)}`
+          : 'Coordinates unavailable';
+
+      return [
+        {
+          label: 'Map Point',
+          value: farmerMapMarkers.length ? 'Live' : 'Missing',
+          badge: selectedFarm ? (farmerMapMarkers.length ? 'Coordinates ready' : 'Coordinates missing') : 'Select a farm',
+          helper: selectedFarm
+            ? 'Map view follows the currently selected farm only'
+            : 'Choose a farm to render its live location on the map',
+        },
+        {
+          label: 'Focus Farm',
+          value: selectedFarm?.name || 'No farm selected',
+          badge: selectedFarm?.cropVariety || 'Select a farm',
+          helper: selectedFarm?.locationName || selectedFarm?.district?.name || 'Location appears here after farm selection',
+        },
+        {
+          label: 'Coordinates',
+          value: selectedCoordinates,
+          badge: selectedGrowthStage,
+          helper: `Current crop context: ${selectedCrop}`,
+        },
+        {
+          label: 'Open Issues',
+          value: filteredFarmIssues.length,
+          badge: `${filteredWeatherAlerts.length} alerts`,
+          helper: selectedFarm ? 'Current issues and alerts attached to the selected farm workflow' : 'Issues appear after farm selection',
+        },
+      ];
+    }
+
+    if (activeTab === 'ai-chat') {
+      return [
+        {
+          label: 'Active Advice',
+          value: activeAdviceCount,
+          badge: `${filteredRecommendations.length} visible`,
+          helper: 'Live advice that can ground AI answers',
+        },
+        {
+          label: 'Open Issues',
+          value: filteredFarmIssues.length,
+          badge: `${farmPestLedger.length} pest records`,
+          helper: 'Use unresolved field issues as AI context',
+        },
+        {
+          label: 'Crop Variety',
+          value: selectedFarm?.cropVariety || 'Not set',
+          badge: selectedGrowthStage,
+          helper: 'Current crop context for the active farm',
+        },
+        {
+          label: 'Focus Farm',
+          value: selectedFarm?.name || 'No farm selected',
+          badge: selectedLocation,
+          helper: 'AI guidance will reflect the selected farm when available',
+        },
+      ];
+    }
 
     return [
-      { label: 'Farms', value: filteredFarms.length, total: farms.length },
-      { label: 'Advice', value: filteredRecommendations.length, total: recommendations?.length || 0 },
-      { label: 'Alerts', value: filteredWeatherAlerts.length, total: weatherAlerts?.alerts?.length || 0 },
-      { label: 'Issues', value: filteredFarmIssues.length, total: farmIssues.length },
-      { label: 'Irrigation', value: filteredSchedules.length, total: upcomingSchedules.length },
+      {
+        label: 'Tracked Farms',
+        value: filteredFarms.length,
+        badge: `${farmStats?.activeFarms ?? filteredFarms.length} active`,
+        helper: `${typeof farmStats?.totalAreaHectares === 'number' ? farmStats.totalAreaHectares.toFixed(1) : '0.0'} ha recorded`,
+      },
+      {
+        label: 'Active Advice',
+        value: recommendations?.length || 0,
+        badge: `${filteredRecommendations.length} visible`,
+        helper: `${activeAdviceCount} linked to this farm`,
+      },
+      {
+        label: 'Weather Alerts',
+        value: filteredWeatherAlerts.length,
+        badge: `${weatherHistory?.data?.length ?? 0} history rows`,
+        helper: selectedFarm ? 'Live records for the selected farm' : 'Live weather alert records',
+      },
+      {
+        label: 'Open Irrigation',
+        value: normalizedSearch ? filteredSchedules.length : irrigationSchedules?.length || 0,
+        badge: `${dueSchedules.length} due`,
+        helper: `${completedIrrigationCount} completed`,
+      },
     ];
   }, [
+    activeTab,
+    analyzePestMutation.isPending,
+    completedIrrigationCount,
+    dueSchedules.length,
     farmIssues.length,
-    farms.length,
+    farmPestLedger.length,
+    farmStats?.activeFarms,
+    farmStats?.totalAreaHectares,
+    farmSummary?.activeRecommendations?.length,
+    farmSummary?.recentPestDetections?.length,
     filteredFarmIssues.length,
-    filteredFarms.length,
     filteredRecommendations.length,
     filteredSchedules.length,
     filteredWeatherAlerts.length,
+    irrigationSchedules?.length,
+    latestReading?.airTemperature,
+    latestReading?.humidity,
+    latestReading?.readingTimestamp,
+    latestReading?.soilMoisture,
+    latestReading?.soilTemperature,
+    locale,
+    moistureStatus,
+    moistureTrend,
     normalizedSearch,
     recommendations?.length,
+    selectedFarm?.cropVariety,
+    selectedFarm?.currentGrowthStage,
+    selectedFarm?.district?.name,
+    selectedFarm?.locationName,
+    selectedFarm?.name,
+    sensorData?.length,
+    farmerMapMarkers.length,
+    selectedFarmMapCoordinates?.lat,
+    selectedFarmMapCoordinates?.lng,
     upcomingSchedules.length,
-    weatherAlerts?.alerts?.length,
+    irrigationWindow?.optimalWindows?.length,
+    farmingConditions?.irrigationRecommendation,
+    weatherHistory?.data?.length,
   ]);
   const sectionTitleClass = 'text-base md:text-lg font-extrabold tracking-tight';
   const sectionDescriptionClass = 'text-xs md:text-sm text-muted-foreground/90';
@@ -1436,6 +1776,26 @@ export function ConnectedFarmerDashboard({
   const controlClass = DASH_CONTROL_CLASS;
   const compactControlClass = DASH_CONTROL_COMPACT_CLASS;
   const textAreaClass = DASH_TEXTAREA_CLASS;
+
+  if (farmsLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <LoadingState text="Loading your farms..." />
+      </div>
+    );
+  }
+
+  if (farmsError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <ErrorState
+          title="Failed to load farms"
+          message="We could not load your farm data. Please try again."
+          onRetry={() => refetchFarms()}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="dashboard-page dash-section-stack mx-auto w-full max-w-[1600px] px-1 pb-2 pt-0 animate-fade-in">
@@ -1457,11 +1817,11 @@ export function ConnectedFarmerDashboard({
             <p className="mt-2 max-w-2xl text-[15px] text-slate-500 dark:text-slate-400">{activeTabCopy.description}</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <Button variant="outline" size="sm" className="h-10 rounded-full px-4" onClick={() => refetchFarms()}>
+            <Button variant="outline" size="sm" className={actionClass} onClick={() => refetchFarms()}>
               <RefreshCw size={14} className="mr-2" />
               Refresh
             </Button>
-            <Button variant="outline" size="sm" className="h-10 rounded-full px-4" onClick={handleRefreshAll}>
+            <Button variant="outline" size="sm" className={actionClass} onClick={handleRefreshAll}>
               <RefreshCw size={14} className="mr-2" />
               Refresh All
             </Button>
@@ -1469,7 +1829,7 @@ export function ConnectedFarmerDashboard({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-10 rounded-full px-4"
+                className={actionClass}
                 onClick={handleExportSensorCsv}
                 disabled={!sensorData || sensorData.length === 0}
               >
@@ -1479,7 +1839,7 @@ export function ConnectedFarmerDashboard({
             {(isOverviewTab || activeTab === 'pest-history') && (
               <Button
                 size="sm"
-                className="h-10 rounded-full px-4"
+                className={actionClass}
                 onClick={handlePestScanClick}
                 disabled={!selectedFarm || analyzePestMutation.isPending}
               >
@@ -1496,8 +1856,8 @@ export function ConnectedFarmerDashboard({
           </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {farmerQuickStats.map((stat, index) => (
+        <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {farmerHeroStats.map((stat, index) => (
             <div
               key={stat.label}
               className={`${index === 0 ? 'dash-kpi-card dash-kpi-card-accent' : 'dash-kpi-card'} animate-fade-in [animation-fill-mode:both]`}
@@ -1507,7 +1867,7 @@ export function ConnectedFarmerDashboard({
                 <span className={`text-[13px] font-semibold ${index === 0 ? 'text-white/88' : 'text-slate-600 dark:text-slate-300'}`}>
                   {stat.label}
                 </span>
-                <div className={`flex items-center justify-center w-10 h-10 rounded-full ${index === 0 ? 'bg-white text-[#1D6042]' : 'border border-[hsl(var(--border))] bg-[#F7F8F2] dark:bg-slate-800 text-slate-700 dark:text-slate-200'}`}>
+                <div className={`flex items-center justify-center w-10 h-10 rounded-full ${index === 0 ? 'bg-white text-primary' : 'border border-[hsl(var(--border))] bg-[hsl(var(--secondary))] dark:bg-slate-800 text-slate-700 dark:text-slate-200'}`}>
                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17l9.2-9.2M17 17V7H7"/></svg>
                 </div>
               </div>
@@ -1516,7 +1876,7 @@ export function ConnectedFarmerDashboard({
                   {stat.value}
                 </span>
                 <div className="mt-4 flex items-center gap-2">
-                  <div className={`flex items-center justify-center px-2 py-1 rounded-full text-[10px] font-bold ${index === 0 ? 'bg-[#2D7A54] text-white' : 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'}`}>
+                  <div className={`flex items-center justify-center px-2 py-1 rounded-full text-[10px] font-bold ${index === 0 ? 'bg-white/15 text-white' : 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'}`}>
                     {stat.badge}
                   </div>
                   <span className={`text-[11px] font-medium ${index === 0 ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>{stat.helper}</span>
@@ -1565,7 +1925,7 @@ export function ConnectedFarmerDashboard({
                 </div>
               </div>
               <p className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Step 1 of daily start - Data sync</p>
-              <Button className="mt-5 h-11 w-full rounded-full" onClick={handleRefreshAll}>
+              <Button className={`mt-5 w-full ${actionLgClass}`} onClick={handleRefreshAll}>
                 Refresh All Sources
               </Button>
             </CardContent>
@@ -1585,7 +1945,7 @@ export function ConnectedFarmerDashboard({
               <p className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Step 2 of daily start - Water plan</p>
               <Button
                 variant="outline"
-                className="mt-5 h-11 w-full rounded-full"
+                className={`mt-5 w-full ${actionLgClass}`}
                 onClick={() => setShowIrrigationPlanner((previous) => !previous)}
               >
                 {showIrrigationPlanner ? 'Hide Planner' : 'Open Planner'}
@@ -1607,7 +1967,7 @@ export function ConnectedFarmerDashboard({
               <p className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Step 3 of daily start - Risk scan</p>
               <Button
                 variant="outline"
-                className="mt-5 h-11 w-full rounded-full"
+                className={`mt-5 w-full ${actionLgClass}`}
                 onClick={handlePestScanClick}
                 disabled={!selectedFarm || analyzePestMutation.isPending}
               >
@@ -1647,12 +2007,12 @@ export function ConnectedFarmerDashboard({
                 <LoadingState text="Loading farm statistics..." size="sm" />
               ) : (
                 <>
-                  <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-2 2xl:grid-cols-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-2 2xl:grid-cols-4">
                     <div className="dash-metric-tile dash-metric-tile-accent relative flex min-h-[130px] flex-col justify-between p-4 sm:p-5">
                       <div className="flex justify-between items-start">
                         <p className="text-[15px] font-medium text-white/90">Registered Farms</p>
                         <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shrink-0 -mt-1 -mr-1 cursor-pointer transition-transform hover:scale-105">
-                          <TrendingUp size={16} className="text-[#0F5132]" />
+                          <TrendingUp size={16} className="text-primary" />
                         </div>
                       </div>
                       <p className="text-4xl font-bold mt-3 tracking-tight">{farmStats.totalFarms ?? 0}</p>
@@ -1964,16 +2324,28 @@ export function ConnectedFarmerDashboard({
             <Card className={`${workspaceMainClass} dash-panel`}>
               <CardHeader>
                 <CardTitle className="text-lg">Farm Profile</CardTitle>
-                <CardDescription>Update core farm details and growth stage</CardDescription>
+                <CardDescription>Update core farm details, crop context, and growth stage</CardDescription>
               </CardHeader>
               <CardContent>
-                <form className="grid grid-cols-1 md:grid-cols-4 gap-3" onSubmit={handleSaveFarmProfile}>
+                <form className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3" onSubmit={handleSaveFarmProfile}>
                 <input
                   value={farmEditName}
                   onChange={(event) => setFarmEditName(event.target.value)}
                   placeholder="Farm name"
                   className={`${controlClass} md:col-span-2`}
                   required
+                />
+                <input
+                  value={farmEditCrop}
+                  onChange={(event) => setFarmEditCrop(event.target.value)}
+                  placeholder="Crop variety"
+                  className={controlClass}
+                />
+                <input
+                  value={farmEditLocation}
+                  onChange={(event) => setFarmEditLocation(event.target.value)}
+                  placeholder="Location"
+                  className={controlClass}
                 />
                 <select
                   value={farmEditStage}
@@ -2020,7 +2392,7 @@ export function ConnectedFarmerDashboard({
               </CardContent>
             </Card>
 
-          <Card className="xl:col-span-4 xl:sticky xl:top-24 self-start dash-panel">
+          <Card className="xl:col-span-4 self-start dash-panel">
             <CardHeader>
               <CardTitle className="text-lg">Selected Farm Detail</CardTitle>
               <CardDescription>Route-backed detail loaded from the single farm backend endpoint</CardDescription>
@@ -2029,7 +2401,7 @@ export function ConnectedFarmerDashboard({
               {selectedFarmDetailLoading ? (
                 <LoadingState text="Loading farm detail..." size="sm" />
               ) : selectedFarmDetail ? (
-                <div className="grid grid-cols-1 gap-3 xl:max-h-[520px] xl:overflow-y-auto xl:pr-1">
+                <div className="grid grid-cols-1 gap-3 2xl:max-h-[520px] 2xl:overflow-y-auto 2xl:pr-1">
                   <div className="dash-soft-block">
                     <p className="text-xs text-muted-foreground uppercase">Farm Name</p>
                     <p className="font-medium">{selectedFarmDetail.name || 'N/A'}</p>
@@ -2141,13 +2513,13 @@ export function ConnectedFarmerDashboard({
             </CardContent>
           </Card>
 
-          <Card className="xl:col-span-4 self-start xl:sticky xl:top-24 dash-panel">
+          <Card className="xl:col-span-4 self-start dash-panel">
             <CardHeader>
               <CardTitle className="text-lg">Operational Snapshot</CardTitle>
               <CardDescription>Quick pulse checks before executing field actions</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="dash-soft-block">
                   <p className="text-xs text-muted-foreground uppercase">Soil Moisture</p>
                   <p className="font-semibold">
@@ -2463,7 +2835,7 @@ export function ConnectedFarmerDashboard({
               </CardHeader>
               <CardContent>
                 {filteredRecommendations.length > 0 ? (
-                  <div className="space-y-4 xl:max-h-[760px] xl:overflow-y-auto xl:pr-2">
+                  <div className="space-y-4 2xl:max-h-[760px] 2xl:overflow-y-auto 2xl:pr-2">
                     {filteredRecommendations.map((recommendation) => {
                       const linkedIrrigationSchedule = recommendation.irrigationScheduleId
                         ? irrigationSchedulesByRecommendationId.get(recommendation.irrigationScheduleId) || null
@@ -2829,8 +3201,8 @@ export function ConnectedFarmerDashboard({
                     {selectedFarm?.locationName || selectedFarm?.district?.name || 'Location not set'}
                   </p>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  {farmerQuickStats.slice(0, 4).map((stat) => (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {farmerHeroStats.slice(0, 4).map((stat) => (
                     <div key={`sensor-${stat.label}`} className="dash-outline-block">
                       <p className="text-xs text-muted-foreground uppercase">{stat.label}</p>
                       <p className="text-lg font-semibold">{stat.value}</p>
@@ -2850,11 +3222,126 @@ export function ConnectedFarmerDashboard({
         </section>
       )}
 
+      {/* ===== Irrigation Tab ===== */}
+      {activeTab === 'irrigation' && selectedFarmId && selectedFarm && (
+        <section className={sectionShellClass}>
+          <ScheduleInsightsPanel
+            resource="irrigation"
+            role="farmer"
+            farms={[selectedFarm]}
+            selectedFarmId={selectedFarmId}
+            title="Irrigation Usage"
+            description="Water usage trends and recent irrigation execution for the selected farm."
+            emptyTitle="No irrigation schedules yet"
+            emptyMessage="Create an irrigation plan to start tracking water usage for this farm."
+            maxFarms={1}
+          />
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6 items-start mt-5">
+            <div className="lg:col-span-8 min-w-0">
+              <Card className="dash-panel">
+                <CardHeader>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <Calendar size={20} />
+                        Irrigation Queue
+                      </CardTitle>
+                      <CardDescription>Planned and executed irrigation work for the selected farm</CardDescription>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleExecuteDueIrrigation}
+                      disabled={irrigationActionPending || dueSchedules.length === 0}
+                    >
+                      {irrigationActionPending ? <Spinner size="sm" /> : `Execute Due (${dueSchedules.length})`}
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {filteredSchedules.length === 0 ? (
+                    <EmptyState
+                      title={normalizedSearch ? 'No matching schedules' : 'No irrigation plans'}
+                      message={
+                        normalizedSearch
+                          ? `No irrigation schedules match "${searchQuery}".`
+                          : 'Use the planner on the overview tab to create an irrigation schedule.'
+                      }
+                    />
+                  ) : (
+                    <div className="space-y-3">
+                      {filteredSchedules.slice(0, 8).map((schedule) => (
+                        <div key={schedule.id} className="dash-outline-block">
+                          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                            <div>
+                              <p className="font-semibold">
+                                {formatDate(schedule.scheduledDate, locale)} at{' '}
+                                {schedule.scheduledTime || formatTime(schedule.scheduledDate, locale)}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                Duration: {schedule.durationMinutes} min
+                                {typeof schedule.waterVolumeLiters === 'number' ? ` | Water: ${schedule.waterVolumeLiters} L` : ''}
+                                {schedule.triggerSource ? ` | Source: ${schedule.triggerSource}` : ''}
+                              </p>
+                            </div>
+                            <Badge variant={schedule.isExecuted ? 'secondary' : 'outline'}>
+                              {schedule.isExecuted ? 'executed' : 'scheduled'}
+                            </Badge>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className={workspaceRailClass}>
+              <Card className="dash-panel">
+                <CardHeader className="pb-3">
+                  <CardTitle className={sectionTitleClass}>Water Planning Context</CardTitle>
+                  <CardDescription className={sectionDescriptionClass}>Forecast-aware water planning for the active farm</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <IrrigationWindowCard data={irrigationWindow} />
+                  <div className="dash-outline-block">
+                    <p className="text-xs text-muted-foreground uppercase">Irrigation recommendation</p>
+                    <p className="font-semibold">{farmingConditions?.irrigationRecommendation || 'No recommendation yet'}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {selectedFarm.locationName || selectedFarm.district?.name || 'Location not set'}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {activeTab === 'irrigation' && !selectedFarmId && (
+        <section className={sectionShellClass}>
+          <EmptyState title="No farm selected" message="Select a farm to view irrigation schedules and water usage." />
+        </section>
+      )}
+
       {/* ===== Fertilization Tab ===== */}
       {activeTab === 'fertilization' && selectedFarmId && (
         <section className={sectionShellClass}>
         <div className={workspaceGridClass}>
-          <div className={workspaceMainClass}>
+          <div className={`${workspaceMainClass} space-y-5`}>
+            <ScheduleInsightsPanel
+              resource="fertilization"
+              role="farmer"
+              farms={selectedFarm ? [selectedFarm] : []}
+              selectedFarmId={selectedFarmId}
+              title="Fertilizer Usage"
+              description="Nutrient application trends and recent fertilization activity for the selected farm."
+              emptyTitle="No fertilization schedules yet"
+              emptyMessage="Create a fertilization schedule to start tracking nutrient usage for this farm."
+              maxFarms={1}
+            />
+
             <Card className="dash-panel">
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
@@ -2972,7 +3459,7 @@ export function ConnectedFarmerDashboard({
                   <p className="text-xs text-muted-foreground uppercase">Farm</p>
                   <p className="font-semibold">{selectedFarm?.name || 'N/A'}</p>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="dash-outline-block">
                     <p className="text-xs text-muted-foreground uppercase">Weather alerts</p>
                     <p className="text-lg font-semibold">{filteredWeatherAlerts.length}</p>
@@ -2992,6 +3479,97 @@ export function ConnectedFarmerDashboard({
       {activeTab === 'analytics' && !selectedFarmId && (
         <section className={sectionShellClass}>
           <EmptyState title="No farm selected" message="Select a farm to view analytics and trend summaries." />
+        </section>
+      )}
+
+      {activeTab === 'map-view' && (
+        <section className={sectionShellClass}>
+          <div className={workspaceGridClass}>
+            <div className={workspaceMainClass}>
+              <Card className="dash-panel">
+                <CardHeader>
+                  <CardTitle className="text-lg">Farm Location Map</CardTitle>
+                  <CardDescription>
+                    {selectedFarm
+                      ? `View the live mapped position for ${selectedFarm.name}.`
+                      : 'Select a farm to display its exact mapped location.'}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <MapboxMap
+                    markers={farmerMapMarkers}
+                    selectedMarkerId={selectedFarm?.id || null}
+                    center={
+                      typeof selectedFarmMapCoordinates?.lat === 'number' && typeof selectedFarmMapCoordinates?.lng === 'number'
+                        ? { lat: selectedFarmMapCoordinates.lat, lng: selectedFarmMapCoordinates.lng }
+                        : undefined
+                    }
+                    fitToMarkers={farmerMapMarkers.length > 0}
+                    mapClassName="h-[440px]"
+                    emptyTitle={selectedFarm ? 'Selected farm has no coordinates yet' : 'No farm selected'}
+                    emptyMessage={
+                      selectedFarm
+                        ? `Add farm coordinates, or at least one sensor coordinate, for ${selectedFarm.name} to render its live map location.`
+                        : 'Choose a farm from the dashboard to render its live location here.'
+                    }
+                    tokenMissingMessage="Add VITE_MAPBOX_ACCESS_TOKEN to enable the farmer map workspace."
+                  />
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className={workspaceRailClass}>
+              <Card className="dash-panel">
+                <CardHeader className="pb-3">
+                  <CardTitle className={sectionTitleClass}>Location Context</CardTitle>
+                  <CardDescription className={sectionDescriptionClass}>Current farm details and live coordinate status</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="dash-outline-block">
+                    <p className="text-xs text-muted-foreground uppercase">Focus farm</p>
+                    <p className="font-semibold">{selectedFarm?.name || 'No farm selected'}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {selectedFarm?.locationName || selectedFarm?.district?.name || 'Choose a mapped farm from the map'}
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="dash-outline-block">
+                      <p className="text-xs text-muted-foreground uppercase">Latitude</p>
+                      <p className="text-lg font-semibold">
+                        {typeof selectedFarmMapCoordinates?.lat === 'number' ? selectedFarmMapCoordinates.lat.toFixed(5) : '--'}
+                      </p>
+                    </div>
+                    <div className="dash-outline-block">
+                      <p className="text-xs text-muted-foreground uppercase">Longitude</p>
+                      <p className="text-lg font-semibold">
+                        {typeof selectedFarmMapCoordinates?.lng === 'number' ? selectedFarmMapCoordinates.lng.toFixed(5) : '--'}
+                      </p>
+                    </div>
+                    <div className="dash-outline-block">
+                      <p className="text-xs text-muted-foreground uppercase">Mapped status</p>
+                      <p className="text-lg font-semibold">{farmerMapMarkers.length ? 'Ready' : 'Pending'}</p>
+                    </div>
+                    <div className="dash-outline-block">
+                      <p className="text-xs text-muted-foreground uppercase">Growth stage</p>
+                      <p className="text-lg font-semibold capitalize">
+                        {selectedFarm?.currentGrowthStage?.replace(/_/g, ' ') || 'Not set'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="dash-outline-block">
+                      <p className="text-xs text-muted-foreground uppercase">Open issues</p>
+                      <p className="text-lg font-semibold">{filteredFarmIssues.length}</p>
+                    </div>
+                    <div className="dash-outline-block">
+                      <p className="text-xs text-muted-foreground uppercase">Weather alerts</p>
+                      <p className="text-lg font-semibold">{filteredWeatherAlerts.length}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
         </section>
       )}
 
@@ -3139,7 +3717,62 @@ function SensorManagementPanel({ farmId, locale }: { farmId: string; locale: str
     ? (Object.entries((latestSnapshot as SensorLatestReadingsPayload).readings || {}) as Array<[string, any]>)
         .filter(([, value]) => value)
     : [];
+  const sensorMapMarkers = useMemo<MapboxMarkerData[]>(
+    () =>
+      list.flatMap((sensor) => {
+        const latitude = sensor.coordinates?.lat;
+        const longitude = sensor.coordinates?.lng;
+
+        if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+          return [];
+        }
+
+        const tone: MapboxMarkerTone =
+          sensor.id === selectedSensorId
+            ? 'info'
+            : sensor.status === 'inactive'
+              ? 'warning'
+              : sensor.status === 'faulty'
+                ? 'danger'
+                : 'success';
+
+        return [{
+          id: sensor.id,
+          latitude,
+          longitude,
+          label: sensor.name || sensor.deviceId || sensor.sensorType,
+          badge: sensor.sensorType.replace(/_/g, ' '),
+          description: sensor.locationDescription || sensor.status || 'Sensor location',
+          tone,
+        }];
+      }),
+    [list, selectedSensorId]
+  );
+  const draftLatitude = toOptionalNumber(form.latitude);
+  const draftLongitude = toOptionalNumber(form.longitude);
+  const activeSensorMapMarkers: MapboxMarkerData[] =
+    typeof draftLatitude === 'number' && typeof draftLongitude === 'number'
+      ? [
+          {
+            id: editingSensorId ? `draft-${editingSensorId}` : 'draft-sensor-location',
+            latitude: draftLatitude,
+            longitude: draftLongitude,
+            label: editingSensorId ? 'Updated sensor position' : 'New sensor position',
+            badge: 'Draft coordinates',
+            description: form.locationDescription.trim() || 'Click the map to set sensor coordinates.',
+            tone: 'info' as const,
+          },
+          ...sensorMapMarkers.filter((marker) => marker.id !== editingSensorId),
+        ]
+      : sensorMapMarkers;
   const isSubmitting = createSensorMutation.isPending || updateSensorMutation.isPending;
+  const handleMapCoordinatePick = ({ lat, lng }: { lat: number; lng: number }) => {
+    setForm((current) => ({
+      ...current,
+      latitude: String(lat),
+      longitude: String(lng),
+    }));
+  };
 
   useEffect(() => {
     if (!selectedSensorId && list.length > 0) {
@@ -3222,6 +3855,24 @@ function SensorManagementPanel({ farmId, locale }: { farmId: string; locale: str
                 className={controlClass}
                 inputMode="decimal"
               />
+              <div className="md:col-span-2 space-y-2">
+                <p className="text-sm font-medium">Sensor Location Map</p>
+                <MapboxMap
+                  markers={activeSensorMapMarkers}
+                  selectedMarkerId={editingSensorId}
+                  onCoordinateSelect={handleMapCoordinatePick}
+                  center={
+                    typeof draftLatitude === 'number' && typeof draftLongitude === 'number'
+                      ? { lat: draftLatitude, lng: draftLongitude }
+                      : undefined
+                  }
+                  fitToMarkers={activeSensorMapMarkers.length > 0}
+                  mapClassName="h-[280px]"
+                  emptyTitle="No sensor coordinates yet"
+                  emptyMessage="Click the map to place the sensor or add coordinates manually."
+                  tokenMissingMessage="Add VITE_MAPBOX_ACCESS_TOKEN to enable map-based sensor placement."
+                />
+              </div>
               <div className="md:col-span-2 flex justify-end gap-2">
                 <Button type="button" variant="outline" onClick={resetForm} disabled={isSubmitting}>
                   Cancel
@@ -3375,6 +4026,21 @@ function SensorManagementPanel({ farmId, locale }: { farmId: string; locale: str
                     <p className="font-medium">{selectedSensor.locationDescription}</p>
                   </div>
                 )}
+                <MapboxMap
+                  markers={sensorMapMarkers}
+                  selectedMarkerId={selectedSensor.id}
+                  onSelectMarker={setSelectedSensorId}
+                  center={
+                    typeof selectedSensor.coordinates?.lat === 'number' && typeof selectedSensor.coordinates?.lng === 'number'
+                      ? { lat: selectedSensor.coordinates.lat, lng: selectedSensor.coordinates.lng }
+                      : undefined
+                  }
+                  fitToMarkers={sensorMapMarkers.length > 0}
+                  mapClassName="h-[280px]"
+                  emptyTitle="Selected sensor has no coordinates"
+                  emptyMessage="Add coordinates to this sensor to view it on the farm map."
+                  tokenMissingMessage="Add VITE_MAPBOX_ACCESS_TOKEN to render the live sensor map."
+                />
               </div>
             ) : (
               <EmptyState title="Sensor detail unavailable" message="We could not load the selected sensor detail from the backend route." />
@@ -4175,7 +4841,7 @@ function AnalyticsPanel({ farmId, searchQuery = '' }: { farmId: string; searchQu
           </div>
         </div>
       )}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
         {stats.map((stat) => (
           <Card key={stat.label} className="dash-panel">
             <CardContent className="pt-4">
@@ -4227,7 +4893,7 @@ function AnalyticsPanel({ farmId, searchQuery = '' }: { farmId: string; searchQu
               <CardDescription>How quickly you have been responding over the last 30 days.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:grid-cols-4">
                 <div className="dash-soft-block">
                   <p className="text-xs text-muted-foreground">Total recommendations</p>
                   <p className="mt-1 text-2xl font-semibold">{recommendationStats?.total ?? 0}</p>
@@ -4325,7 +4991,7 @@ function AnalyticsPanel({ farmId, searchQuery = '' }: { farmId: string; searchQu
                 <CardTitle className="text-base">Farm Activity Log</CardTitle>
                 <CardDescription>Recent logged actions across recommendations, schedules, pest scans, and issue follow-up.</CardDescription>
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="dash-toolbar">
                 <Button
                   size="sm"
                   variant="outline"

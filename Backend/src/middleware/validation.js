@@ -361,6 +361,20 @@ export const validateFarmUpdate = [
     .trim()
     .isLength({ min: 1, max: 255 })
     .withMessage('Farm name must be between 1 and 255 characters'),
+  body('locationName')
+    .optional()
+    .trim()
+    .isLength({ max: 255 })
+    .withMessage('Location name must be less than 255 characters'),
+  body('cropVariety')
+    .optional()
+    .trim()
+    .isLength({ max: 255 })
+    .withMessage('Crop variety must be less than 255 characters'),
+  body('sizeHectares')
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage('Farm size must be a positive number'),
   body('currentGrowthStage')
     .optional()
     .isIn(['germination', 'vegetative', 'flowering', 'grain_filling', 'maturity'])

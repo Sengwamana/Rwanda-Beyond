@@ -70,7 +70,11 @@ import { LoadingState, ErrorState, EmptyState } from './ui/Spinner';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
 import { Badge } from './ui/Badge';
+import { MapboxMap, type MapboxMarkerData, type MapboxMarkerTone } from './ui/MapboxMap';
+import { ScheduleInsightsPanel } from './ui/ScheduleInsightsPanel';
 import { User, UserRole } from '../types';
+import { adminService } from '../services/admin';
+import { sensorService } from '../services/sensors';
 
 type AdminTab =
   | 'overview'
@@ -78,11 +82,14 @@ type AdminTab =
   | 'farms'
   | 'audit'
   | 'devices'
+  | 'irrigation'
+  | 'fertilization'
   | 'config'
   | 'monitoring'
   | 'reports'
   | 'broadcast'
   | 'analytics'
+  | 'map-view'
   | 'content'
   | 'ussd';
 
@@ -97,11 +104,14 @@ const ADMIN_TABS: AdminTab[] = [
   'farms',
   'audit',
   'devices',
+  'irrigation',
+  'fertilization',
   'config',
   'monitoring',
   'reports',
   'broadcast',
   'analytics',
+  'map-view',
   'content',
   'ussd',
 ];
@@ -112,13 +122,14 @@ const workspaceMainStackClass = 'dash-workspace-main-stack-lg';
 const workspaceMainWideStackClass = 'dash-workspace-main-wide-stack-lg';
 const workspaceRailClass = 'dash-workspace-rail-lg';
 const sectionShellClass = 'dash-workspace-section';
-const centeredMetricTileClass = 'dash-metric-tile text-center';
+const centeredMetricTileClass = 'dash-metric-tile text-center min-h-[112px] flex flex-col justify-center';
 const softBlockClass = 'dash-soft-block';
 const outlineBlockClass = 'dash-outline-block';
 const filterBarClass = 'dash-filter-bar';
 const roundedSelectClass = 'dash-control';
 const compactSelectClass = 'dash-control-compact';
 const textAreaClass = 'dash-textarea';
+const actionButtonClass = 'dash-action-btn';
 
 const normalizeTab = (value?: string): AdminTab =>
   ADMIN_TABS.includes((value || 'overview') as AdminTab) ? (value as AdminTab) : 'overview';
@@ -146,6 +157,40 @@ const getFarmDistrictId = (issue: any): string | undefined =>
   || issue?.farm?.district?.id
   || undefined;
 
+const getFarmMapCoordinates = (farm: any) => {
+  if (typeof farm?.coordinates?.lat === 'number' && typeof farm?.coordinates?.lng === 'number') {
+    return farm.coordinates;
+  }
+  if (typeof farm?.latitude === 'number' && typeof farm?.longitude === 'number') {
+    return { lat: farm.latitude, lng: farm.longitude };
+  }
+
+  const sensorCoordinates = Array.isArray(farm?.sensors)
+    ? farm.sensors.find(
+        (sensor: any) =>
+          (typeof sensor?.coordinates?.lat === 'number' && typeof sensor?.coordinates?.lng === 'number')
+          || (typeof sensor?.latitude === 'number' && typeof sensor?.longitude === 'number')
+      )
+    : undefined;
+
+  if (typeof sensorCoordinates?.coordinates?.lat === 'number' && typeof sensorCoordinates?.coordinates?.lng === 'number') {
+    return sensorCoordinates.coordinates;
+  }
+  if (typeof sensorCoordinates?.latitude === 'number' && typeof sensorCoordinates?.longitude === 'number') {
+    return { lat: sensorCoordinates.latitude, lng: sensorCoordinates.longitude };
+  }
+
+  const nestedSensorCoordinates = Array.isArray(farm?.sensors)
+    ? farm.sensors.find(
+        (sensor: any) => typeof sensor?.coordinates?.lat === 'number' && typeof sensor?.coordinates?.lng === 'number'
+      )?.coordinates
+    : undefined;
+
+  return typeof nestedSensorCoordinates?.lat === 'number' && typeof nestedSensorCoordinates?.lng === 'number'
+    ? nestedSensorCoordinates
+    : undefined;
+};
+
 const formatActivityLabel = (value: string) =>
   value
     .split('_')
@@ -172,6 +217,21 @@ const getUserName = (user: any): string =>
   'Unknown User';
 
 const getDeviceId = (device: any): string => device?.deviceId || device?.device_id || device?.id || '';
+const getDeviceRenderKey = (device: any, index: number): string =>
+  [
+    device?.id,
+    device?._id,
+    device?.deviceId,
+    device?.device_id,
+    device?.createdAt,
+    device?.created_at,
+    device?.lastSeen,
+    device?.last_seen,
+    index,
+  ]
+    .filter((value) => value !== undefined && value !== null && String(value).trim() !== '')
+    .map((value) => String(value))
+    .join('-');
 
 const getDeviceStatus = (device: any): string =>
   String(device?.status || (device?.is_active === false ? 'inactive' : 'active')).toLowerCase();
@@ -241,6 +301,7 @@ function SearchScopePills({
 
 export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = '' }: ConnectedAdminDashboardProps) {
   const tab = normalizeTab(activeTab);
+  const analyticsWindowEnabled = tab === 'overview' || tab === 'monitoring' || tab === 'analytics';
 
   const [search, setSearch] = useState('');
   const [usersPage, setUsersPage] = useState(1);
@@ -322,7 +383,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
   const activeRecommendationsQuery = useActiveRecommendations(undefined, tab === 'overview');
   const globalRecommendationsQuery = useRecommendations({ page: 1, limit: 6 }, tab === 'overview');
   const globalPestDetectionsQuery = usePestDetections({ page: 1, limit: 6 }, tab === 'overview');
-  const analyticsQuery = useAdminAnalytics({ period: '30d' }, tab === 'overview' || tab === 'monitoring');
+  const analyticsQuery = useAdminAnalytics({ period: '30d' }, analyticsWindowEnabled);
   const recentActivityQuery = useRecentActivityAnalytics({ hours: activityHours, limit: 8, type: activityType }, tab === 'overview');
   const exportRecentActivity = useExportRecentActivity();
 
@@ -350,13 +411,30 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
     },
     tab === 'farms'
   );
-  const districtsQuery = useDistricts(tab === 'users' || tab === 'overview' || tab === 'analytics' || tab === 'farms');
+  const resourceFarmsQuery = useAdminFarms(
+    {
+      page: 1,
+      limit: 100,
+      search: effectiveSearch || undefined,
+    },
+    tab === 'irrigation' || tab === 'fertilization'
+  );
+  const mapViewFarmsQuery = useAdminFarms({ page: 1, limit: 100 }, tab === 'map-view');
+  const districtsQuery = useDistricts(
+    tab === 'users'
+      || tab === 'overview'
+      || tab === 'analytics'
+      || tab === 'farms'
+      || tab === 'irrigation'
+      || tab === 'fertilization'
+  );
   const auditLogsQuery = useAuditLogs({ page: auditPage, limit: 30 }, tab === 'audit');
   const devicesQuery = useAdminDevices({ page: devicesPage, limit: 20 }, tab === 'devices');
   const configsQuery = useAdminConfigs(tab === 'config');
-  const sensorHealthQuery = useAdminSensorHealth(tab === 'monitoring');
-  const healthQuery = useSystemHealth(tab === 'monitoring');
+  const sensorHealthQuery = useAdminSensorHealth(tab === 'monitoring' || tab === 'irrigation' || tab === 'fertilization');
+  const healthQuery = useSystemHealth(tab === 'monitoring' || tab === 'irrigation' || tab === 'fertilization');
   const metricsQuery = useSystemMetrics({ period: metricsPeriod }, tab === 'monitoring');
+  const mapViewOutbreakQuery = usePestOutbreakMap({ days: 30 }, tab === 'map-view');
 
   const updateUserMutation = useUpdateUser();
   const updateConfigMutation = useUpdateSystemConfig();
@@ -365,6 +443,10 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
   const sendBroadcastMutation = useSendBroadcast();
   const processNotificationQueueMutation = useProcessNotificationQueue();
   const notificationQueueQuery = useNotificationQueueSnapshot({ limit: 8, maxRetries: 3 }, tab === 'broadcast');
+  const contentResourcesQuery = useContentResources();
+  const contentFaqQuery = useContentFAQ();
+  const aiHealthHeroQuery = useAiHealth();
+  const ussdHealthHeroQuery = useUssdHealth(tab === 'ussd');
   const generateReportMutation = useGenerateAdminReport();
   const bulkGenerateRecommendationsMutation = useBulkGenerateRecommendations();
 
@@ -448,13 +530,21 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
   const users = usersQuery.data?.data || [];
   const selectedUser = selectedUserQuery.data as any;
   const adminFarms = farmsQuery.data?.data || [];
+  const resourceFarms = resourceFarmsQuery.data?.data || [];
+  const mapViewFarms = mapViewFarmsQuery.data?.data || [];
+  const mapViewFarmPagination = mapViewFarmsQuery.data?.pagination;
   const districts = districtsQuery.data || [];
   const auditLogs = auditLogsQuery.data?.data || [];
   const devices = devicesQuery.data?.data || [];
   const sensorHealth = sensorHealthQuery.data as any;
   const health = healthQuery.data as any;
   const metrics = metricsQuery.data as any;
+  const mapViewOutbreak = mapViewOutbreakQuery.data as any;
   const notificationQueueSnapshot = notificationQueueQuery.data;
+  const contentResources = (contentResourcesQuery.data as any)?.items ?? [];
+  const contentFaqs = (contentFaqQuery.data as any)?.items ?? [];
+  const aiHealthHero = aiHealthHeroQuery.data as any;
+  const ussdHealthHero = ussdHealthHeroQuery.data as any;
   const filteredQueuedMessages = useMemo(() => {
     const queued = notificationQueueSnapshot?.queued || [];
     if (!normalizedDashboardSearch) return queued;
@@ -780,6 +870,101 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
       errors: metrics?.metrics?.errors ?? 0,
     };
   }, [health, metrics, sensorHealth]);
+  const filteredContentResources = useMemo(() => {
+    if (!normalizedDashboardSearch) return contentResources;
+    return contentResources.filter((resource: any) =>
+      matchesSearchTerm(normalizedDashboardSearch, [
+        resource.title,
+        resource.category,
+        resource.type,
+        resource.desc,
+        resource.url,
+      ])
+    );
+  }, [contentResources, normalizedDashboardSearch]);
+  const filteredContentFaqs = useMemo(() => {
+    if (!normalizedDashboardSearch) return contentFaqs;
+    return contentFaqs.filter((faq: any) =>
+      matchesSearchTerm(normalizedDashboardSearch, [
+        faq.question,
+        faq.answer,
+        faq.category,
+      ])
+    );
+  }, [contentFaqs, normalizedDashboardSearch]);
+  const contentHeroStats = useMemo(() => {
+    const categories = new Set<string>();
+    filteredContentResources.forEach((resource: any) => {
+      if (resource?.category) categories.add(String(resource.category));
+    });
+    return {
+      resources: filteredContentResources.length,
+      faqs: filteredContentFaqs.length,
+      categories: categories.size,
+      scope: normalizedDashboardSearch ? 'Filtered' : 'All content',
+    };
+  }, [filteredContentFaqs.length, filteredContentResources, normalizedDashboardSearch]);
+  const ussdHeroStatus = ussdHealthHero?.status === 'ok' ? 'healthy' : String(ussdHealthHero?.status || 'unknown');
+  const adminMapFarmMarkers = useMemo<MapboxMarkerData[]>(
+    () =>
+      mapViewFarms.flatMap((farm: any) => {
+        const coordinates = getFarmMapCoordinates(farm);
+        const latitude = coordinates?.lat;
+        const longitude = coordinates?.lng;
+
+        if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+          return [];
+        }
+
+        return [{
+          id: `farm-${farm.id}`,
+          latitude,
+          longitude,
+          label: farm.name || 'Farm',
+          badge: farm.cropVariety || 'Farm',
+          description: farm.locationName || farm.district?.name || 'Mapped farm',
+          tone: 'success',
+        }];
+      }),
+    [mapViewFarms]
+  );
+  const adminMapDistrictCoverage = useMemo(() => {
+    return new Set(
+      mapViewFarms
+        .map((farm: any) => farm.district?.name || farm.districtId || farm.district_id)
+        .filter(Boolean)
+    ).size;
+  }, [mapViewFarms]);
+  const adminMapOutbreakMarkers = useMemo<MapboxMarkerData[]>(
+    () =>
+      (mapViewOutbreak?.detections || []).flatMap((detection: any) => {
+        const latitude = detection.coordinates?.lat;
+        const longitude = detection.coordinates?.lng;
+
+        if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+          return [];
+        }
+
+        const severity = String(detection.severity || 'low');
+        const tone: MapboxMarkerTone =
+          severity === 'severe' || severity === 'high'
+            ? 'danger'
+            : severity === 'medium'
+              ? 'warning'
+              : 'success';
+
+        return [{
+          id: `outbreak-${detection.id}`,
+          latitude,
+          longitude,
+          label: detection.pestType || 'Outbreak detection',
+          badge: `${severity} severity`,
+          description: `${detection.farm?.name || detection.locationDescription || 'Unknown location'} • ${new Date(detection.createdAt).toLocaleDateString()}`,
+          tone,
+        }];
+      }),
+    [mapViewOutbreak?.detections]
+  );
 
   const reportSegmentStats = useMemo(() => {
     const hasDateWindow = Boolean(reportStartDate || reportEndDate);
@@ -1218,6 +1403,622 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
     }
   };
 
+  const adminHeroMeta: Record<AdminTab, { eyebrow: string; title: string; description: string }> = {
+    overview: {
+      eyebrow: 'Administration Bridge',
+      title: 'System Operations Hub',
+      description: 'Manage users, farms, devices, monitoring, and platform-level controls from one console.',
+    },
+    users: {
+      eyebrow: 'Identity Workspace',
+      title: 'User Administration',
+      description: 'Review user roles, status, and profile details without leaving the operations shell.',
+    },
+    farms: {
+      eyebrow: 'Field Registry',
+      title: 'Farm Operations',
+      description: 'Track farm activation, area coverage, and district distribution in one management lane.',
+    },
+    audit: {
+      eyebrow: 'Governance Trail',
+      title: 'Audit Log Review',
+      description: 'Inspect system actions, entity coverage, and the latest administrative events.',
+    },
+    devices: {
+      eyebrow: 'Device Fleet',
+      title: 'Device Operations',
+      description: 'Manage device registration, token status, and fleet health from the same workspace.',
+    },
+    config: {
+      eyebrow: 'Platform Controls',
+      title: 'System Configuration',
+      description: 'Review live configuration categories, active settings, and platform toggles safely.',
+    },
+    monitoring: {
+      eyebrow: 'Monitoring Center',
+      title: 'Sensor & Platform Monitoring',
+      description: 'Watch sensor fleet health, platform checks, and backend metrics in a unified console.',
+    },
+    reports: {
+      eyebrow: 'Report Studio',
+      title: 'Report Generation',
+      description: 'Prepare exports with the right type, format, and reporting window before generation.',
+    },
+    broadcast: {
+      eyebrow: 'Communication Queue',
+      title: 'Broadcast Operations',
+      description: 'Manage queued notifications, failed deliveries, and outbound targeting from one lane.',
+    },
+    analytics: {
+      eyebrow: 'Analytics Studio',
+      title: 'System Analytics',
+      description: 'Compare district coverage, sensor activity, recommendation output, and recent system trends.',
+    },
+    irrigation: {
+      eyebrow: 'Water Operations',
+      title: 'Irrigation',
+      description: 'Monitor irrigation schedules and water usage across the platform with district-level rollups.',
+    },
+    fertilization: {
+      eyebrow: 'Nutrient Operations',
+      title: 'Fertilization',
+      description: 'Review fertilization schedules and nutrient usage across the platform with district-level rollups.',
+    },
+    'map-view': {
+      eyebrow: 'Spatial Control',
+      title: 'Map View',
+      description: 'Inspect mapped farms and outbreak detections across the platform in one admin map workspace.',
+    },
+    content: {
+      eyebrow: 'Content Library',
+      title: 'Content Management',
+      description: 'Maintain public resources and FAQ content with a clear view of what is currently visible.',
+    },
+    ussd: {
+      eyebrow: 'Service Monitor',
+      title: 'USSD Operations',
+      description: 'Monitor the USSD service, AI health, and integration readiness without leaving admin.',
+    },
+  };
+  const currentHeroMeta = adminHeroMeta[tab] || adminHeroMeta.overview;
+  const adminQuickStats = useMemo<Array<{ label: string; value: string | number; badge: string; helper: string }>>(() => {
+    if (tab === 'users') {
+      return [
+        {
+          label: 'Visible Users',
+          value: userSegmentStats.total,
+          badge: `${userSegmentStats.active} active`,
+          helper: `${userSegmentStats.inactive} inactive accounts in the current view`,
+        },
+        {
+          label: 'Experts',
+          value: userSegmentStats.roleBreakdown.expert,
+          badge: `${userSegmentStats.roleBreakdown.admin} admins`,
+          helper: 'Expert accounts available for field support and review',
+        },
+        {
+          label: 'Farmers',
+          value: userSegmentStats.roleBreakdown.farmer,
+          badge: `${userSegmentStats.roleBreakdown.expert} experts`,
+          helper: 'Farmer accounts represented in the current user directory',
+        },
+        {
+          label: 'Focused Profile',
+          value: selectedUser ? getUserName(selectedUser) : 'No user selected',
+          badge: selectedUser ? toRole(selectedUser.role) : 'Directory view',
+          helper: selectedUser ? `Status: ${isUserActive(selectedUser) ? 'active' : 'inactive'}` : 'Select a user to inspect profile details',
+        },
+      ];
+    }
+
+    if (tab === 'farms') {
+      return [
+        {
+          label: 'Visible Farms',
+          value: farmSegmentStats.total,
+          badge: `${farmSegmentStats.active} active`,
+          helper: `${farmSegmentStats.inactive} inactive in the current farm registry view`,
+        },
+        {
+          label: 'Total Area',
+          value: `${farmSegmentStats.totalAreaHectares.toFixed(1)} ha`,
+          badge: `${farmSegmentStats.averageAreaHectares.toFixed(1)} avg`,
+          helper: 'Combined area covered by visible farm records',
+        },
+        {
+          label: 'District Coverage',
+          value: farmSegmentStats.topDistricts.length,
+          badge: `${districts.length} districts loaded`,
+          helper: 'Top districts currently represented in the farm registry',
+        },
+        {
+          label: 'Search Scope',
+          value: effectiveSearch ? 'Filtered' : 'All farms',
+          badge: farmStatusFilter === 'all' ? 'All statuses' : farmStatusFilter,
+          helper: farmDistrictFilter || 'All districts',
+        },
+      ];
+    }
+
+    if (tab === 'audit') {
+      return [
+        {
+          label: 'Logged Events',
+          value: auditSegmentStats.total,
+          badge: `${auditLogsQuery.data?.pagination?.total || auditSegmentStats.total} total`,
+          helper: 'Audit entries currently loaded into this review lane',
+        },
+        {
+          label: 'Entity Types',
+          value: auditSegmentStats.uniqueEntities,
+          badge: `${auditSegmentStats.topEntities.length} top entities`,
+          helper: 'Distinct entity types represented in recent logs',
+        },
+        {
+          label: 'Action Types',
+          value: auditSegmentStats.uniqueActions,
+          badge: `${auditSegmentStats.topActions.length} top actions`,
+          helper: 'Unique administrative actions present in the current page',
+        },
+        {
+          label: 'Latest Event',
+          value: auditSegmentStats.latestTimestamp,
+          badge: `${auditPage} page`,
+          helper: 'Timestamp of the most recent visible audit entry',
+        },
+      ];
+    }
+
+    if (tab === 'devices') {
+      return [
+        {
+          label: 'Visible Devices',
+          value: deviceSegmentStats.total,
+          badge: `${deviceSegmentStats.active} active`,
+          helper: `${deviceSegmentStats.inactive} inactive device registrations`,
+        },
+        {
+          label: 'Inactive Devices',
+          value: deviceSegmentStats.inactive,
+          badge: `${deviceSegmentStats.revoked} revoked`,
+          helper: 'Devices that are not currently active in the fleet',
+        },
+        {
+          label: 'Revoked Tokens',
+          value: deviceSegmentStats.revoked,
+          badge: `${deviceSegmentStats.topStatuses.length} statuses`,
+          helper: 'Registrations that need token regeneration or re-onboarding',
+        },
+        {
+          label: 'Search Scope',
+          value: effectiveSearch ? 'Filtered' : 'All devices',
+          badge: `${devicesQuery.data?.pagination?.total || deviceSegmentStats.total} total`,
+          helper: 'Current device directory scope in this workspace',
+        },
+      ];
+    }
+
+    if (tab === 'config') {
+      return [
+        {
+          label: 'Visible Configs',
+          value: configSegmentStats.total,
+          badge: `${configSegmentStats.active} active`,
+          helper: `${configSegmentStats.inactive} inactive configuration entries`,
+        },
+        {
+          label: 'Categories',
+          value: configSegmentStats.categories,
+          badge: `${configSegmentStats.topCategories.length} top groups`,
+          helper: 'Distinct configuration groups in the current filtered view',
+        },
+        {
+          label: 'Search Scope',
+          value: effectiveSearch ? 'Filtered' : 'All configs',
+          badge: `${flattenedConfigs.length} total`,
+          helper: 'Configuration visibility after the current search term',
+        },
+        {
+          label: 'Active Entries',
+          value: configSegmentStats.active,
+          badge: `${configSegmentStats.inactive} inactive`,
+          helper: 'Configuration entries currently enabled',
+        },
+      ];
+    }
+
+    if (tab === 'monitoring') {
+      return [
+        {
+          label: 'Tracked Sensors',
+          value: monitoringSegmentStats.totalSensors,
+          badge: `${monitoringSegmentStats.activeSensors} active`,
+          helper: `${monitoringSegmentStats.inactiveSensors} inactive sensors in the fleet`,
+        },
+        {
+          label: 'Faulty Sensors',
+          value: monitoringSegmentStats.faultySensors,
+          badge: `${monitoringSegmentStats.maintenanceRequired} maintenance`,
+          helper: 'Devices currently marked with degraded health',
+        },
+        {
+          label: 'Avg Battery',
+          value: monitoringSegmentStats.avgBatteryLevel !== null ? `${monitoringSegmentStats.avgBatteryLevel}%` : '--',
+          badge: monitoringSegmentStats.healthStatus,
+          helper: `Checked ${monitoringSegmentStats.healthCheckedAt}`,
+        },
+        {
+          label: 'Sensor Readings',
+          value: monitoringSegmentStats.sensorReadings,
+          badge: `${monitoringSegmentStats.recommendationsGenerated} recommendations`,
+          helper: `${monitoringSegmentStats.errors} errors in the current metrics window`,
+        },
+      ];
+    }
+
+    if (tab === 'reports') {
+      return [
+        {
+          label: 'Report Type',
+          value: reportSegmentStats.type.replace('-', ' '),
+          badge: reportSegmentStats.format.toUpperCase(),
+          helper: 'Current export type selected for generation',
+        },
+        {
+          label: 'Date Window',
+          value: reportSegmentStats.hasDateWindow ? 'Custom' : 'Default',
+          badge: reportSegmentStats.windowLabel,
+          helper: 'Reporting window that will be sent to the backend',
+        },
+        {
+          label: 'Output Format',
+          value: reportSegmentStats.format.toUpperCase(),
+          badge: reportSegmentStats.type.replace('-', ' '),
+          helper: 'The download format currently staged in the report form',
+        },
+        {
+          label: 'Generation State',
+          value: generateReportMutation.isPending ? 'Running' : 'Ready',
+          badge: reportSegmentStats.hasDateWindow ? 'Scoped' : 'Platform default',
+          helper: generateReportMutation.isPending ? 'Report generation is in progress' : 'The current report configuration is ready to run',
+        },
+      ];
+    }
+
+    if (tab === 'broadcast') {
+      return [
+        {
+          label: 'Queued Messages',
+          value: notificationQueueSnapshot?.counts?.queued ?? 0,
+          badge: `${filteredQueuedMessages.length} visible`,
+          helper: 'Messages currently waiting in the outbound queue',
+        },
+        {
+          label: 'Failed Messages',
+          value: notificationQueueSnapshot?.counts?.failed ?? 0,
+          badge: `${filteredFailedMessages.length} visible`,
+          helper: 'Messages that need retry or manual review',
+        },
+        {
+          label: 'Draft Length',
+          value: broadcastSegmentStats.totalLength,
+          badge: broadcastSegmentStats.hasDraft ? 'Draft ready' : 'No draft',
+          helper: `${broadcastSegmentStats.englishLength} EN • ${broadcastSegmentStats.kinyarwandaLength} RW`,
+        },
+        {
+          label: 'Target Route',
+          value: `${broadcastSegmentStats.targetRole}/${broadcastSegmentStats.channel}`,
+          badge: processNotificationQueueMutation.isPending ? 'Processing queue' : 'Ready',
+          helper: 'Current audience and delivery channel for the draft',
+        },
+      ];
+    }
+
+    if (tab === 'analytics') {
+      return [
+        {
+          label: 'Districts Loaded',
+          value: districts.length,
+          badge: `${effectiveSearch ? 'Filtered' : 'Full'} scope`,
+          helper: 'District coverage available in the analytics workspace',
+        },
+        {
+          label: 'Sensor Readings',
+          value: analytics?.metrics?.sensorReadings ?? 0,
+          badge: `${analytics?.metrics?.recommendationsGenerated ?? 0} recommendations`,
+          helper: 'Platform activity for the current analytics period',
+        },
+        {
+          label: 'Messages Sent',
+          value: analytics?.metrics?.messagesSent ?? 0,
+          badge: `${analytics?.metrics?.errors ?? 0} errors`,
+          helper: 'Outbound system activity captured in analytics',
+        },
+        {
+          label: 'Tracked Alerts',
+          value: overviewCards.pendingAlerts,
+          badge: `${activeRecommendations.length} active`,
+          helper: 'Pending recommendation load contributing to analytics context',
+        },
+      ];
+    }
+
+    if (tab === 'irrigation') {
+      return [
+        {
+          label: 'Scoped Farms',
+          value: resourceFarms.length,
+          badge: effectiveSearch ? 'Filtered scope' : 'Platform scope',
+          helper: 'Farm records contributing irrigation usage to this admin workspace',
+        },
+        {
+          label: 'District Coverage',
+          value: districts.length,
+          badge: `${resourceFarms.length} farms loaded`,
+          helper: 'District footprint represented in irrigation reporting',
+        },
+        {
+          label: 'Pending Alerts',
+          value: overviewCards.pendingAlerts,
+          badge: `${activeRecommendations.length} active`,
+          helper: 'Operational signals that could impact irrigation planning',
+        },
+        {
+          label: 'System Health',
+          value: health?.status || 'Checking',
+          badge: `${sensorHealth?.healthy ?? 0} healthy sensors`,
+          helper: 'Telemetry readiness behind irrigation monitoring',
+        },
+      ];
+    }
+
+    if (tab === 'fertilization') {
+      return [
+        {
+          label: 'Scoped Farms',
+          value: resourceFarms.length,
+          badge: effectiveSearch ? 'Filtered scope' : 'Platform scope',
+          helper: 'Farm records contributing fertilizer usage to this admin workspace',
+        },
+        {
+          label: 'District Coverage',
+          value: districts.length,
+          badge: `${resourceFarms.length} farms loaded`,
+          helper: 'District footprint represented in nutrient reporting',
+        },
+        {
+          label: 'Active Advice',
+          value: activeRecommendations.length,
+          badge: `${filteredGlobalRecommendations.length} visible`,
+          helper: 'Recommendation volume that can influence fertilizer operations',
+        },
+        {
+          label: 'Monitoring Status',
+          value: health?.status || 'Checking',
+          badge: `${sensorHealth?.total ?? 0} tracked sensors`,
+          helper: 'Platform readiness for nutrient planning and execution',
+        },
+      ];
+    }
+
+    if (tab === 'map-view') {
+      return [
+        {
+          label: 'Mapped Farms',
+          value: adminMapFarmMarkers.length,
+          badge: `${mapViewFarms.length} loaded`,
+          helper: `${Math.max(mapViewFarms.length - adminMapFarmMarkers.length, 0)} farms still need coordinates`,
+        },
+        {
+          label: 'District Coverage',
+          value: adminMapDistrictCoverage,
+          badge: `${districts.length} platform districts`,
+          helper: 'Districts represented by the current nationwide farm map',
+        },
+        {
+          label: 'Country Scope',
+          value: 'Rwanda',
+          badge: `${adminMapFarmMarkers.length} mapped farms`,
+          helper: 'Map view shows farmer records across the full national platform',
+        },
+        {
+          label: 'Coordinate Gaps',
+          value: Math.max(mapViewFarms.length - adminMapFarmMarkers.length, 0),
+          badge: normalizedExternalSearch ? 'Search filtered' : 'National scope',
+          helper: 'Farmer records that still need coordinates before they can appear on the map',
+        },
+      ];
+    }
+
+    if (tab === 'content') {
+      return [
+        {
+          label: 'Resources',
+          value: contentHeroStats.resources,
+          badge: `${contentResources.length} total`,
+          helper: 'Public resources currently visible in this content workspace',
+        },
+        {
+          label: 'FAQ Items',
+          value: contentHeroStats.faqs,
+          badge: `${contentFaqs.length} total`,
+          helper: 'Frequently asked questions currently visible in the content lane',
+        },
+        {
+          label: 'Categories',
+          value: contentHeroStats.categories,
+          badge: contentHeroStats.scope,
+          helper: 'Distinct content categories represented after current filtering',
+        },
+        {
+          label: 'Search Scope',
+          value: normalizedExternalSearch ? 'Filtered' : 'All content',
+          badge: normalizedExternalSearch || 'No external filter',
+          helper: 'Hero counts now follow the same search scope as the content panel',
+        },
+      ];
+    }
+
+    if (tab === 'ussd') {
+      return [
+        {
+          label: 'USSD Service',
+          value: ussdHeroStatus,
+          badge: ussdHealthHero?.service || 'Backend check',
+          helper: ussdHealthHero?.timestamp ? `Checked ${toDateString(ussdHealthHero.timestamp)}` : 'Awaiting latest health check',
+        },
+        {
+          label: 'AI Status',
+          value: aiHealthHero?.status || 'unknown',
+          badge: aiHealthHero?.provider || 'AI provider',
+          helper: aiHealthHero?.model ? `Model ${aiHealthHero.model}` : 'AI model will appear after health check',
+        },
+        {
+          label: 'Callback Paths',
+          value: 2,
+          badge: '/ussd/callback',
+          helper: 'Both classic and enhanced callback flows are available for testing',
+        },
+        {
+          label: 'Simulator State',
+          value: 'Ready',
+          badge: 'v1 + v2',
+          helper: 'Run live backend simulations from the USSD workspace',
+        },
+      ];
+    }
+
+    return [
+      {
+        label: 'Total Users',
+        value: overviewCards.totalUsers,
+        badge: `${userStatistics?.activeUsers ?? userSegmentStats.active} active`,
+        helper: `${recentUsersQuery.data?.pagination?.total || overviewCards.totalUsers} user records loaded`,
+      },
+      {
+        label: 'Total Farms',
+        value: overviewCards.totalFarms,
+        badge: `${farmStatistics?.activeFarms ?? farmSegmentStats.active} active`,
+        helper: `${typeof (farmStatistics?.totalAreaHectares ?? farmSegmentStats.totalAreaHectares) === 'number' ? Number(farmStatistics?.totalAreaHectares ?? farmSegmentStats.totalAreaHectares).toFixed(1) : '0.0'} ha recorded`,
+      },
+      {
+        label: 'Total Sensors',
+        value: overviewCards.totalSensors,
+        badge: `${analytics?.metrics?.sensorReadings ?? 0} reads`,
+        helper: 'Sensor activity in the current analytics window',
+      },
+      {
+        label: 'Pending Alerts',
+        value: overviewCards.pendingAlerts,
+        badge: `${activeRecommendations.length} active`,
+        helper: `${globalRecommendations.length} recent recommendations loaded`,
+      },
+    ];
+  }, [
+    activeRecommendations.length,
+    adminMapFarmMarkers.length,
+    mapViewOutbreak?.byDistrict?.length,
+    adminMapOutbreakMarkers.length,
+    aiHealthHero?.model,
+    aiHealthHero?.provider,
+    aiHealthHero?.status,
+    analytics?.metrics?.errors,
+    analytics?.metrics?.messagesSent,
+    analytics?.metrics?.recommendationsGenerated,
+    analytics?.metrics?.sensorReadings,
+    auditLogsQuery.data?.pagination?.total,
+    auditPage,
+    auditSegmentStats.latestTimestamp,
+    auditSegmentStats.topActions.length,
+    auditSegmentStats.topEntities.length,
+    auditSegmentStats.total,
+    auditSegmentStats.uniqueActions,
+    auditSegmentStats.uniqueEntities,
+    broadcastSegmentStats.channel,
+    broadcastSegmentStats.englishLength,
+    broadcastSegmentStats.hasDraft,
+    broadcastSegmentStats.kinyarwandaLength,
+    broadcastSegmentStats.targetRole,
+    broadcastSegmentStats.totalLength,
+    configSegmentStats.active,
+    configSegmentStats.categories,
+    configSegmentStats.inactive,
+    configSegmentStats.topCategories.length,
+    configSegmentStats.total,
+    contentFaqs.length,
+    contentHeroStats.categories,
+    contentHeroStats.faqs,
+    contentHeroStats.resources,
+    contentHeroStats.scope,
+    contentResources.length,
+    deviceSegmentStats.active,
+    deviceSegmentStats.inactive,
+    deviceSegmentStats.revoked,
+    deviceSegmentStats.topStatuses.length,
+    deviceSegmentStats.total,
+    devicesQuery.data?.pagination?.total,
+    districts.length,
+    effectiveSearch,
+    farmDistrictFilter,
+    farmSegmentStats.active,
+    farmSegmentStats.averageAreaHectares,
+    farmSegmentStats.inactive,
+    farmSegmentStats.topDistricts.length,
+    farmSegmentStats.total,
+    farmSegmentStats.totalAreaHectares,
+    farmStatistics?.activeFarms,
+    farmStatistics?.totalAreaHectares,
+    flattenedConfigs.length,
+    filteredFailedMessages.length,
+    filteredQueuedMessages.length,
+    generateReportMutation.isPending,
+    globalRecommendations.length,
+    monitoringSegmentStats.activeSensors,
+    monitoringSegmentStats.avgBatteryLevel,
+    monitoringSegmentStats.errors,
+    monitoringSegmentStats.faultySensors,
+    monitoringSegmentStats.healthCheckedAt,
+    monitoringSegmentStats.healthStatus,
+    monitoringSegmentStats.inactiveSensors,
+    monitoringSegmentStats.maintenanceRequired,
+    monitoringSegmentStats.recommendationsGenerated,
+    monitoringSegmentStats.sensorReadings,
+    monitoringSegmentStats.totalSensors,
+    mapViewFarms.length,
+    normalizedExternalSearch,
+    notificationQueueSnapshot?.counts?.failed,
+    notificationQueueSnapshot?.counts?.queued,
+    overviewCards.pendingAlerts,
+    overviewCards.totalFarms,
+    overviewCards.totalSensors,
+    overviewCards.totalUsers,
+    processNotificationQueueMutation.isPending,
+    recentUsersQuery.data?.pagination?.total,
+    reportSegmentStats.format,
+    reportSegmentStats.hasDateWindow,
+    reportSegmentStats.type,
+    reportSegmentStats.windowLabel,
+    resourceFarms.length,
+    selectedUser,
+    sensorHealth?.healthy,
+    sensorHealth?.total,
+    health?.status,
+    tab,
+    userSegmentStats.active,
+    userSegmentStats.inactive,
+    userSegmentStats.roleBreakdown.admin,
+    userSegmentStats.roleBreakdown.expert,
+    userSegmentStats.roleBreakdown.farmer,
+    userSegmentStats.total,
+    userStatistics?.activeUsers,
+    ussdHealthHero?.service,
+    ussdHealthHero?.status,
+    ussdHealthHero?.timestamp,
+    ussdHeroStatus,
+  ]);
+  const sectionTitleClass = 'text-base md:text-lg font-extrabold tracking-tight';
+  const sectionDescriptionClass = 'text-xs md:text-sm text-muted-foreground/90';
+
   if (tab === 'overview' && overviewQuery.isLoading) {
     return <LoadingState text="Loading system overview..." />;
   }
@@ -1232,43 +2033,14 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
     );
   }
 
-  const adminQuickStats: Array<{ label: string; value: string | number; badge: string; helper: string }> = [
-    {
-      label: 'Total Users',
-      value: overviewCards.totalUsers,
-      badge: `${userStatistics?.activeUsers ?? userSegmentStats.active} active`,
-      helper: `${recentUsersQuery.data?.pagination?.total || overviewCards.totalUsers} user records loaded`,
-    },
-    {
-      label: 'Total Farms',
-      value: overviewCards.totalFarms,
-      badge: `${farmStatistics?.activeFarms ?? farmSegmentStats.active} active`,
-      helper: `${typeof (farmStatistics?.totalAreaHectares ?? farmSegmentStats.totalAreaHectares) === 'number' ? Number(farmStatistics?.totalAreaHectares ?? farmSegmentStats.totalAreaHectares).toFixed(1) : '0.0'} ha recorded`,
-    },
-    {
-      label: 'Total Sensors',
-      value: overviewCards.totalSensors,
-      badge: `${analytics?.metrics?.sensorReadings ?? 0} reads`,
-      helper: 'Sensor activity in the current analytics window',
-    },
-    {
-      label: 'Pending Alerts',
-      value: overviewCards.pendingAlerts,
-      badge: `${activeRecommendations.length} active`,
-      helper: `${globalRecommendations.length} recent recommendations loaded`,
-    },
-  ];
-  const sectionTitleClass = 'text-base md:text-lg font-extrabold tracking-tight';
-  const sectionDescriptionClass = 'text-xs md:text-sm text-muted-foreground/90';
-
   return (
     <div className="dashboard-page dash-section-stack mx-auto w-full max-w-[1600px] px-1 animate-fade-in">
       <div className="dash-hero-panel animate-fade-in [animation-delay:40ms] [animation-fill-mode:both]">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-sky-700/85 dark:text-sky-300/85">Administration Bridge</p>
-            <h2 className="text-[2rem] md:text-[2.55rem] font-extrabold tracking-tight text-slate-900 dark:text-white">System Operations Hub</h2>
-            <p className="mt-2 text-[15px] text-slate-500 dark:text-slate-400">Manage users, farms, devices, monitoring, and platform-level controls from one console.</p>
+            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-sky-700/85 dark:text-sky-300/85">{currentHeroMeta.eyebrow}</p>
+            <h2 className="text-[2rem] md:text-[2.55rem] font-extrabold tracking-tight text-slate-900 dark:text-white">{currentHeroMeta.title}</h2>
+            <p className="mt-2 text-[15px] text-slate-500 dark:text-slate-400">{currentHeroMeta.description}</p>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
@@ -1280,17 +2052,17 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
               <option value="csv">CSV</option>
               <option value="json">JSON</option>
             </select>
-            <Button variant="outline" size="sm" className="h-10 rounded-full px-4" onClick={handleExportCurrentTab}>
+            <Button variant="outline" size="sm" className={actionButtonClass} onClick={handleExportCurrentTab}>
               Export Tab
             </Button>
-            <Button variant="outline" size="sm" className="h-10 rounded-full px-4" onClick={handleRefreshTab}>
+            <Button variant="outline" size="sm" className={actionButtonClass} onClick={handleRefreshTab}>
               <RefreshCw size={14} className="mr-2" />
               Refresh Tab
             </Button>
           </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {adminQuickStats.map((stat, index) => (
             <div
               key={stat.label}
@@ -1300,7 +2072,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
               <p className={`text-[11px] font-bold uppercase tracking-[0.14em] ${index === 0 ? 'text-white/85' : 'text-slate-500 dark:text-slate-400'}`}>{stat.label}</p>
               <p className={`mt-3 text-[2.2rem] font-extrabold tracking-tight ${index === 0 ? 'text-white' : 'text-slate-900 dark:text-white'}`}>{stat.value}</p>
               <div className="mt-4 flex flex-wrap items-center gap-2">
-                <span className={`inline-flex items-center rounded-full px-2 py-1 text-[10px] font-bold ${index === 0 ? 'bg-[#2D7A54] text-white' : 'bg-sky-50 text-sky-700 dark:bg-sky-900/25 dark:text-sky-300'}`}>
+                <span className={`inline-flex items-center rounded-full px-2 py-1 text-[10px] font-bold ${index === 0 ? 'bg-white/15 text-white' : 'bg-sky-50 text-sky-700 dark:bg-sky-900/25 dark:text-sky-300'}`}>
                   {stat.badge}
                 </span>
                 <span className={`text-[11px] font-medium ${index === 0 ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
@@ -1337,7 +2109,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
           <Button
             size="sm"
             variant="outline"
-            className="h-9 rounded-full self-start md:self-auto"
+            className="dash-action-btn-sm self-start md:self-auto"
             onClick={() => {
               setSearch('');
               setRoleFilter('all');
@@ -1367,7 +2139,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                 </div>
               </div>
               <p className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Ops lane - Reconcile counters</p>
-              <Button className="mt-auto h-10 w-full rounded-full focus-visible:ring-2 focus-visible:ring-emerald-500/70 focus-visible:ring-offset-2" onClick={handleRefreshTab}>
+              <Button className="dash-action-btn mt-auto w-full focus-visible:ring-2 focus-visible:ring-emerald-500/70 focus-visible:ring-offset-2" onClick={handleRefreshTab}>
                 Sync Overview
               </Button>
             </CardContent>
@@ -1385,7 +2157,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                 </div>
               </div>
               <p className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Reporting lane - Export snapshot</p>
-              <Button variant="outline" className="mt-auto h-10 w-full rounded-full focus-visible:ring-2 focus-visible:ring-emerald-500/70 focus-visible:ring-offset-2" onClick={handleExportCurrentTab}>
+              <Button variant="outline" className="dash-action-btn mt-auto w-full focus-visible:ring-2 focus-visible:ring-emerald-500/70 focus-visible:ring-offset-2" onClick={handleExportCurrentTab}>
                 Export Current Tab
               </Button>
             </CardContent>
@@ -1410,23 +2182,23 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
           </div>
           </div>
 
-          <Card className="lg:col-span-4 lg:sticky lg:top-24 self-start dash-panel">
+          <Card className="lg:col-span-4 self-start dash-panel xl:sticky xl:top-28">
             <CardHeader className="pb-2">
               <CardTitle className={sectionTitleClass}>Quick Actions</CardTitle>
               <CardDescription className={sectionDescriptionClass}>High-frequency admin operations from a single action rail</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2.5 lg:space-y-3">
-              <Button variant="outline" className="h-10 w-full justify-start rounded-full" onClick={handleRefreshTab}>
+              <Button variant="outline" className="dash-action-btn w-full justify-start" onClick={handleRefreshTab}>
                 <RefreshCw size={14} className="mr-2" />
                 Refresh Active Tab
               </Button>
-              <Button variant="outline" className="h-10 w-full justify-start rounded-full" onClick={handleExportCurrentTab}>
+              <Button variant="outline" className="dash-action-btn w-full justify-start" onClick={handleExportCurrentTab}>
                 <FileSpreadsheet size={14} className="mr-2" />
                 Export Active Tab
               </Button>
               <Button
                 variant="outline"
-                className="h-10 w-full justify-start rounded-full"
+                className="dash-action-btn w-full justify-start"
                 onClick={() => {
                   setSearch('');
                   setRoleFilter('all');
@@ -1454,7 +2226,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                 {dashboardSummaryQuery.isLoading ? (
                   <LoadingState text="Loading dashboard snapshot..." size="sm" />
                 ) : (
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className={centeredMetricTileClass}>
                       <p className="text-xs text-muted-foreground uppercase">Users</p>
                       <p className="text-xl font-semibold">{dashboardSummary?.users?.total ?? 0}</p>
@@ -1486,7 +2258,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                   <LoadingState text="Loading user statistics..." size="sm" />
                 ) : (
                   <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className={centeredMetricTileClass}>
                         <p className="text-xs text-muted-foreground uppercase">Total Users</p>
                         <p className="text-xl font-semibold">{userStatistics?.totalUsers ?? 0}</p>
@@ -1533,7 +2305,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                   <LoadingState text="Loading farm statistics..." size="sm" />
                 ) : (
                   <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className={centeredMetricTileClass}>
                         <p className="text-xs text-muted-foreground uppercase">Total Farms</p>
                         <p className="text-xl font-semibold">{farmStatistics?.totalFarms ?? 0}</p>
@@ -1617,7 +2389,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
           </div>
 
           <div className={workspaceGridClass}>
-          <Card className="lg:col-span-5 lg:sticky lg:top-24 self-start dash-panel">
+          <Card className="lg:col-span-5 self-start dash-panel xl:sticky xl:top-28">
             <CardHeader>
               <CardTitle>Recent Users</CardTitle>
               <CardDescription>Most recent accounts in the system</CardDescription>
@@ -1833,7 +2605,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                   <CardTitle>Recent System Activity</CardTitle>
                   <CardDescription>Recent operator-facing system activity with filters and export.</CardDescription>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="dash-toolbar">
                   <select
                     className={compactSelectClass}
                     value={activityHours}
@@ -1874,29 +2646,29 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                 <LoadingState text="Loading recent activity..." size="sm" />
               ) : (
                 <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
+                  <div className="dash-summary-grid-wide">
                     <div className={centeredMetricTileClass}>
-                      <p className="text-xs text-muted-foreground uppercase">Users</p>
+                      <p className="text-xs text-muted-foreground uppercase break-words text-balance">Users</p>
                       <p className="text-xl font-semibold">{recentActivityQuery.data?.summary?.newUsers ?? 0}</p>
                     </div>
                     <div className={centeredMetricTileClass}>
-                      <p className="text-xs text-muted-foreground uppercase">Farms</p>
+                      <p className="text-xs text-muted-foreground uppercase break-words text-balance">Farms</p>
                       <p className="text-xl font-semibold">{recentActivityQuery.data?.summary?.newFarms ?? 0}</p>
                     </div>
                     <div className={centeredMetricTileClass}>
-                      <p className="text-xs text-muted-foreground uppercase">Readings</p>
+                      <p className="text-xs text-muted-foreground uppercase break-words text-balance">Readings</p>
                       <p className="text-xl font-semibold">{recentActivityQuery.data?.summary?.sensorReadings ?? 0}</p>
                     </div>
                     <div className={centeredMetricTileClass}>
-                      <p className="text-xs text-muted-foreground uppercase">Recommendations</p>
+                      <p className="text-xs text-muted-foreground uppercase break-words text-balance">Recommendations</p>
                       <p className="text-xl font-semibold">{recentActivityQuery.data?.summary?.recommendations ?? 0}</p>
                     </div>
                     <div className={centeredMetricTileClass}>
-                      <p className="text-xs text-muted-foreground uppercase">Pest Events</p>
+                      <p className="text-xs text-muted-foreground uppercase break-words text-balance">Pest Events</p>
                       <p className="text-xl font-semibold">{recentActivityQuery.data?.summary?.pestDetections ?? 0}</p>
                     </div>
                     <div className={centeredMetricTileClass}>
-                      <p className="text-xs text-muted-foreground uppercase">Pest Control</p>
+                      <p className="text-xs text-muted-foreground uppercase break-words text-balance">Pest Control</p>
                       <p className="text-xl font-semibold">{recentActivityQuery.data?.summary?.pestControlActions ?? 0}</p>
                     </div>
                   </div>
@@ -1936,18 +2708,27 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
       )}
 
       {tab === 'farms' && (
-        <div className={workspaceGridClass}>
-          <Card className={`${workspaceMainClass} dash-panel`}>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Sprout size={20} />
-                Farm Management
-              </CardTitle>
-              <CardDescription>Browse all farms through the dedicated admin farm listing endpoint</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6 items-start">
+          {/* ── Main Column ── */}
+          <div className="lg:col-span-8 min-w-0 space-y-5">
+            {/* Header Card */}
+            <div className="dash-panel p-5 md:p-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-primary/10 text-primary shrink-0">
+                    <Sprout size={20} />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold tracking-tight">Farm Management</h2>
+                    <p className="text-sm text-muted-foreground">Browse and manage all registered farms</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Filters */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 <Input
+                  className="h-11"
                   placeholder={
                     normalizedExternalSearch
                       ? 'Using dashboard search filter'
@@ -1980,8 +2761,9 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                 </select>
               </div>
 
-              <div className={filterBarClass}>
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">Fleet controls</p>
+              {/* Controls Bar */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-4 pt-4 border-t border-[hsl(var(--border))]">
+                <p className="text-[11px] text-muted-foreground uppercase tracking-widest font-semibold">Fleet controls</p>
                 <div className="flex flex-wrap items-center gap-2">
                   <select
                     className={compactSelectClass}
@@ -1991,15 +2773,17 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                     <option value="csv">CSV</option>
                     <option value="json">JSON</option>
                   </select>
-                  <Button size="sm" variant="outline" onClick={handleExportCurrentTab}>
+                  <Button size="sm" variant="outline" className="h-9 rounded-full" onClick={handleExportCurrentTab}>
                     Export
                   </Button>
-                  <Button size="sm" variant="outline" onClick={handleRefreshTab}>
+                  <Button size="sm" variant="outline" className="h-9 rounded-full" onClick={handleRefreshTab}>
+                    <RefreshCw size={14} className="mr-1.5" />
                     Refresh
                   </Button>
                   <Button
                     size="sm"
                     variant="outline"
+                    className="h-9 rounded-full text-destructive border-destructive/30 hover:bg-destructive/10"
                     onClick={() => {
                       setSearch('');
                       setFarmDistrictFilter('');
@@ -2012,135 +2796,161 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                   </Button>
                 </div>
               </div>
+            </div>
 
-              {farmsQuery.isLoading ? (
+            {/* Farm List */}
+            {farmsQuery.isLoading ? (
+              <div className="dash-panel p-8 flex items-center justify-center min-h-[200px]">
                 <LoadingState text="Loading farms..." />
-              ) : farmsQuery.error ? (
+              </div>
+            ) : farmsQuery.error ? (
+              <div className="dash-panel p-8 flex items-center justify-center min-h-[200px]">
                 <ErrorState title="Failed to load farms" message="Please retry." onRetry={farmsQuery.refetch} />
-              ) : adminFarms.length === 0 ? (
-                <EmptyState title="No farms found" message="No farms matched your filters." />
-              ) : (
-                <div className="space-y-3">
-                  {adminFarms.map((farm: any) => {
-                    const farmDistrictName =
-                      farm.district?.name
-                      || districts.find((district: any) => String(district.id) === String(farm.districtId || farm.district_id))?.name
-                      || farm.district_name
-                      || 'Unknown district';
-                    const farmOwner =
-                      [farm.user?.firstName, farm.user?.lastName].filter(Boolean).join(' ')
-                      || farm.user?.email
-                      || farm.user?.phoneNumber
-                      || farm.user_id
-                      || farm.userId
-                      || 'Unknown owner';
-                    const farmStatus = farm.isActive === false || farm.is_active === false ? 'inactive' : 'active';
+              </div>
+            ) : adminFarms.length === 0 ? (
+              <div className="dash-panel p-8 flex items-center justify-center min-h-[200px]">
+                <EmptyState title="No farms found" message="No farms matched your current filters." />
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {adminFarms.map((farm: any) => {
+                  const farmDistrictName =
+                    farm.district?.name
+                    || districts.find((district: any) => String(district.id) === String(farm.districtId || farm.district_id))?.name
+                    || farm.district_name
+                    || 'Unknown district';
+                  const farmOwner =
+                    [farm.user?.firstName, farm.user?.lastName].filter(Boolean).join(' ')
+                    || farm.user?.email
+                    || farm.user?.phoneNumber
+                    || farm.user_id
+                    || farm.userId
+                    || 'Unknown owner';
+                  const farmStatus = farm.isActive === false || farm.is_active === false ? 'inactive' : 'active';
 
-                    return (
-                      <div key={farm.id || farm._id} className="dash-detail-card space-y-3">
-                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                          <div>
-                            <p className="font-semibold">{farm.name || 'Unnamed farm'}</p>
-                            <p className="text-xs text-muted-foreground">
-                              Owner: {farmOwner}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Badge variant="outline">{farmDistrictName}</Badge>
-                            <Badge variant={farmStatus === 'active' ? 'secondary' : 'outline'}>
-                              {farmStatus}
-                            </Badge>
-                          </div>
+                  return (
+                    <div key={farm.id || farm._id} className="dash-detail-card p-4 md:p-5">
+                      {/* Row 1: Name + Badges */}
+                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-[15px] truncate">{farm.name || 'Unnamed farm'}</p>
+                          <p className="text-sm text-muted-foreground mt-0.5 truncate">
+                            <span className="inline-flex items-center gap-1.5">
+                              <Users size={13} className="shrink-0 opacity-60" />
+                              {farmOwner}
+                            </span>
+                          </p>
                         </div>
-
-                        <div className="grid gap-3 md:grid-cols-4 text-sm">
-                          <div className={softBlockClass}>
-                            <p className="text-xs text-muted-foreground uppercase">Crop</p>
-                            <p className="font-medium">{farm.cropVariety || farm.crop_variety || 'N/A'}</p>
-                          </div>
-                          <div className={softBlockClass}>
-                            <p className="text-xs text-muted-foreground uppercase">Growth Stage</p>
-                            <p className="font-medium">{farm.currentGrowthStage || farm.current_growth_stage || 'N/A'}</p>
-                          </div>
-                          <div className={softBlockClass}>
-                            <p className="text-xs text-muted-foreground uppercase">Size</p>
-                            <p className="font-medium">
-                              {typeof (farm.sizeHectares ?? farm.size_hectares) === 'number'
-                                ? `${(farm.sizeHectares ?? farm.size_hectares).toFixed(1)} ha`
-                                : 'N/A'}
-                            </p>
-                          </div>
-                          <div className={softBlockClass}>
-                            <p className="text-xs text-muted-foreground uppercase">Location</p>
-                            <p className="font-medium">{farm.locationName || farm.location_name || 'N/A'}</p>
-                          </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Badge variant="outline">{farmDistrictName}</Badge>
+                          <Badge variant={farmStatus === 'active' ? 'secondary' : 'outline'}>
+                            {farmStatus}
+                          </Badge>
                         </div>
                       </div>
-                    );
-                  })}
 
+                      {/* Row 2: Metadata Grid */}
+                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+                        <div className={softBlockClass}>
+                          <p className="text-[10.5px] text-muted-foreground uppercase tracking-wider font-medium mb-0.5">Crop</p>
+                          <p className="text-sm font-medium truncate">{farm.cropVariety || farm.crop_variety || 'N/A'}</p>
+                        </div>
+                        <div className={softBlockClass}>
+                          <p className="text-[10.5px] text-muted-foreground uppercase tracking-wider font-medium mb-0.5">Growth Stage</p>
+                          <p className="text-sm font-medium truncate">{farm.currentGrowthStage || farm.current_growth_stage || 'N/A'}</p>
+                        </div>
+                        <div className={softBlockClass}>
+                          <p className="text-[10.5px] text-muted-foreground uppercase tracking-wider font-medium mb-0.5">Size</p>
+                          <p className="text-sm font-medium">
+                            {typeof (farm.sizeHectares ?? farm.size_hectares) === 'number'
+                              ? `${(farm.sizeHectares ?? farm.size_hectares).toFixed(1)} ha`
+                              : 'N/A'}
+                          </p>
+                        </div>
+                        <div className={softBlockClass}>
+                          <p className="text-[10.5px] text-muted-foreground uppercase tracking-wider font-medium mb-0.5">Location</p>
+                          <p className="text-sm font-medium truncate">{farm.locationName || farm.location_name || 'N/A'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* Pagination */}
+                <div className="flex justify-center pt-2">
                   {renderPagination(
                     farmsQuery.data?.pagination?.page || farmsPage,
                     farmsQuery.data?.pagination?.totalPages,
                     setFarmsPage
                   )}
                 </div>
-              )}
-            </CardContent>
-          </Card>
+              </div>
+            )}
+          </div>
 
-          <div className={workspaceRailClass}>
-            <Card className="dash-panel">
-              <CardHeader className="pb-3">
-                <CardTitle className={sectionTitleClass}>Farm Fleet Snapshot</CardTitle>
-                <CardDescription className={sectionDescriptionClass}>Current result set health and distribution</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className={centeredMetricTileClass}>
-                    <p className="text-xs text-muted-foreground uppercase">Visible farms</p>
-                    <p className="text-xl font-semibold">{farmSegmentStats.total}</p>
-                  </div>
-                  <div className={centeredMetricTileClass}>
-                    <p className="text-xs text-muted-foreground uppercase">Active</p>
-                    <p className="text-xl font-semibold">{farmSegmentStats.active}</p>
-                  </div>
-                  <div className={centeredMetricTileClass}>
-                    <p className="text-xs text-muted-foreground uppercase">Inactive</p>
-                    <p className="text-xl font-semibold">{farmSegmentStats.inactive}</p>
-                  </div>
-                  <div className={centeredMetricTileClass}>
-                    <p className="text-xs text-muted-foreground uppercase">Avg size</p>
-                    <p className="text-xl font-semibold">{farmSegmentStats.averageAreaHectares.toFixed(1)} ha</p>
-                  </div>
+          {/* ── Side Rail ── */}
+          <div className="lg:col-span-4 min-w-0 space-y-5 2xl:max-h-[calc(100vh-7rem)] 2xl:overflow-y-auto 2xl:pr-1" style={{ scrollbarWidth: 'thin' }}>
+            {/* Farm Fleet Snapshot */}
+            <div className="dash-panel p-5">
+              <div className="flex items-center gap-2.5 mb-4">
+                <Activity size={16} className="text-primary shrink-0" />
+                <div>
+                  <h3 className="text-sm font-bold tracking-tight">Farm Fleet Snapshot</h3>
+                  <p className="text-xs text-muted-foreground">Health and metrics for current results</p>
                 </div>
-                <div className={outlineBlockClass}>
-                  <p className="text-xs text-muted-foreground uppercase">Total visible area</p>
-                  <p className="text-xl font-semibold">{farmSegmentStats.totalAreaHectares.toFixed(1)} ha</p>
+              </div>
+              <div className="grid grid-cols-2 gap-2.5 mb-3">
+                <div className="dash-soft-block text-center">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Visible</p>
+                  <p className="text-xl font-bold mt-0.5">{farmSegmentStats.total}</p>
                 </div>
-              </CardContent>
-            </Card>
+                <div className="dash-soft-block text-center">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Avg Size</p>
+                  <p className="text-xl font-bold mt-0.5">{farmSegmentStats.averageAreaHectares.toFixed(1)} <span className="text-xs font-normal text-muted-foreground">ha</span></p>
+                </div>
+                <div className="dash-soft-block text-center" style={{ background: 'hsl(var(--primary) / 0.06)' }}>
+                  <p className="text-[10px] text-primary uppercase tracking-wider font-medium">Active</p>
+                  <p className="text-xl font-bold text-primary mt-0.5">{farmSegmentStats.active}</p>
+                </div>
+                <div className="dash-soft-block text-center">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Inactive</p>
+                  <p className="text-xl font-bold mt-0.5">{farmSegmentStats.inactive}</p>
+                </div>
+              </div>
+              <div className="dash-outline-block text-center py-4">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Total Visible Area</p>
+                <p className="text-2xl font-bold text-primary mt-1">{farmSegmentStats.totalAreaHectares.toFixed(1)} <span className="text-sm font-normal text-muted-foreground">ha</span></p>
+              </div>
+            </div>
 
-            <Card className="dash-panel">
-              <CardHeader className="pb-3">
-                <CardTitle className={sectionTitleClass}>District Concentration</CardTitle>
-                <CardDescription className={sectionDescriptionClass}>Highest farm volumes in current filters</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {farmSegmentStats.topDistricts.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No district distribution available for the selected farms.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {farmSegmentStats.topDistricts.map(([districtName, count]) => (
-                      <div key={districtName} className={`${outlineBlockClass} flex items-center justify-between gap-3`}>
-                        <p className="text-sm font-medium">{districtName}</p>
-                        <Badge variant="outline">{count}</Badge>
+            {/* District Concentration */}
+            <div className="dash-panel p-5">
+              <div className="flex items-center gap-2.5 mb-4">
+                <BarChart2 size={16} className="text-primary shrink-0" />
+                <div>
+                  <h3 className="text-sm font-bold tracking-tight">District Concentration</h3>
+                  <p className="text-xs text-muted-foreground">Farm volumes by district</p>
+                </div>
+              </div>
+              {farmSegmentStats.topDistricts.length === 0 ? (
+                <div className="dash-dashed-block flex flex-col items-center justify-center py-6 text-center">
+                  <AlertTriangle size={20} className="text-muted-foreground/50 mb-2" />
+                  <p className="text-sm text-muted-foreground">No distribution data available.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {farmSegmentStats.topDistricts.map(([districtName, count]) => (
+                    <div key={districtName} className="dash-outline-block flex items-center justify-between gap-3 transition-colors hover:bg-[hsl(var(--secondary))]">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-2 h-2 rounded-full bg-primary/50 shrink-0" />
+                        <p className="text-sm font-medium truncate">{districtName}</p>
                       </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                      <Badge variant="outline" className="shrink-0">{count}</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -2308,7 +3118,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                 <CardDescription className={sectionDescriptionClass}>Role and status composition from current result set</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className={centeredMetricTileClass}>
                     <p className="text-xs text-muted-foreground uppercase">Visible users</p>
                     <p className="text-xl font-semibold">{userSegmentStats.total}</p>
@@ -2472,7 +3282,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                 <CardDescription className={sectionDescriptionClass}>Current page distribution and activity mix</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className={centeredMetricTileClass}>
                     <p className="text-xs text-muted-foreground uppercase">Visible events</p>
                     <p className="text-xl font-semibold">{auditSegmentStats.total}</p>
@@ -2561,7 +3371,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                       const status = getDeviceStatus(device);
                       const deviceId = getDeviceId(device);
                       return (
-                        <div key={deviceId || device.createdAt || `device-${index}`} className={outlineBlockClass}>
+                        <div key={getDeviceRenderKey(device, index)} className={outlineBlockClass}>
                           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                             <div>
                               <p className="font-medium">{device.device_name || device.deviceName || deviceId || 'Unknown device'}</p>
@@ -2659,7 +3469,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                 <CardDescription className={sectionDescriptionClass}>Status mix from the current device page</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className={centeredMetricTileClass}>
                     <p className="text-xs text-muted-foreground uppercase">Visible devices</p>
                     <p className="text-xl font-semibold">{deviceSegmentStats.total}</p>
@@ -2788,7 +3598,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                 <CardDescription className={sectionDescriptionClass}>Current configuration inventory in view</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className={centeredMetricTileClass}>
                     <p className="text-xs text-muted-foreground uppercase">Visible keys</p>
                     <p className="text-xl font-semibold">{configSegmentStats.total}</p>
@@ -3028,7 +3838,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                 <CardDescription className={sectionDescriptionClass}>Cross-source health summary for current period</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className={centeredMetricTileClass}>
                     <p className="text-xs text-muted-foreground uppercase">Sensors</p>
                     <p className="text-xl font-semibold">{monitoringSegmentStats.totalSensors}</p>
@@ -3389,7 +4199,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                   <p className="text-xs text-muted-foreground uppercase">Channel</p>
                   <p className="font-medium uppercase">{broadcastSegmentStats.channel}</p>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className={centeredMetricTileClass}>
                     <p className="text-xs text-muted-foreground uppercase">EN chars</p>
                     <p className="text-xl font-semibold">{broadcastSegmentStats.englishLength}</p>
@@ -3425,7 +4235,7 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
                 </div>
                 <div className={outlineBlockClass}>
                   <p className="text-xs text-muted-foreground uppercase">Queue snapshot</p>
-                  <div className="mt-2 grid grid-cols-2 gap-3">
+                  <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className={centeredMetricTileClass}>
                       <p className="text-xs text-muted-foreground uppercase">Queued</p>
                       <p className="text-xl font-semibold">{notificationQueueSnapshot?.counts?.queued ?? 0}</p>
@@ -3464,6 +4274,47 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
         <AdminAnalyticsPanel searchQuery={normalizedExternalSearch} />
       )}
 
+      {/* ===== Irrigation Tab ===== */}
+      {tab === 'irrigation' && (
+        <section className={sectionShellClass}>
+          <ScheduleInsightsPanel
+            resource="irrigation"
+            role="admin"
+            farms={resourceFarms}
+            title="Platform Irrigation"
+            description="Water usage is grouped by district so administrators can compare irrigation load across the platform."
+            emptyTitle="No irrigation schedules available"
+            emptyMessage="No irrigation schedules are available yet across the current admin farm scope."
+            maxFarms={100}
+          />
+        </section>
+      )}
+
+      {/* ===== Fertilization Tab ===== */}
+      {tab === 'fertilization' && (
+        <section className={sectionShellClass}>
+          <ScheduleInsightsPanel
+            resource="fertilization"
+            role="admin"
+            farms={resourceFarms}
+            title="Platform Fertilization"
+            description="Fertilizer usage is grouped by district so administrators can compare nutrient activity across the platform."
+            emptyTitle="No fertilization schedules available"
+            emptyMessage="No fertilization schedules are available yet across the current admin farm scope."
+            maxFarms={100}
+          />
+        </section>
+      )}
+
+      {/* ===== Map View Tab ===== */}
+      {tab === 'map-view' && (
+        <AdminMapViewPanel
+          farms={mapViewFarms}
+          pagination={mapViewFarmPagination}
+          isLoading={mapViewFarmsQuery.isLoading}
+        />
+      )}
+
       {/* ===== Content Tab ===== */}
       {tab === 'content' && (
         <AdminContentPanel searchQuery={normalizedExternalSearch} />
@@ -3473,6 +4324,278 @@ export function ConnectedAdminDashboard({ activeTab = 'overview', searchQuery = 
       {tab === 'ussd' && (
         <AdminUssdPanel />
       )}
+    </div>
+  );
+}
+
+function AdminMapViewPanel({
+  farms,
+  pagination,
+  isLoading,
+}: {
+  farms: any[];
+  pagination?: {
+    page?: number;
+    totalPages?: number;
+    total?: number;
+    limit?: number;
+  };
+  isLoading: boolean;
+}) {
+  const [allFarms, setAllFarms] = useState<any[]>(farms);
+  const [allFarmsLoading, setAllFarmsLoading] = useState(false);
+  const [sensorCoordinateFallbacks, setSensorCoordinateFallbacks] = useState<Record<string, { lat: number; lng: number }>>({});
+  const [sensorCoordinateLoading, setSensorCoordinateLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const totalPages = Number(pagination?.totalPages || 1);
+
+    if (!Number.isFinite(totalPages) || totalPages <= 1) {
+      setAllFarms(farms);
+      setAllFarmsLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setAllFarmsLoading(true);
+
+    void (async () => {
+      try {
+        const remainingPages = Array.from({ length: totalPages - 1 }, (_, index) => index + 2);
+        const responses = await Promise.all(
+          remainingPages.map((page) => adminService.getAllFarms({ page, limit: 100 }))
+        );
+
+        if (cancelled) return;
+
+        const mergedFarms = [farms, ...responses.map((response) => response.data || [])].flat();
+        const dedupedFarms = Array.from(
+          new Map(
+            mergedFarms
+              .filter((farm: any) => farm?.id)
+              .map((farm: any) => [String(farm.id), farm])
+          ).values()
+        );
+
+        setAllFarms(dedupedFarms);
+      } catch {
+        if (cancelled) return;
+        setAllFarms(farms);
+      } finally {
+        if (!cancelled) {
+          setAllFarmsLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [farms, pagination?.totalPages]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const farmsNeedingFallback = allFarms.filter((farm: any) => !getFarmMapCoordinates(farm) && farm?.id);
+
+    if (!farmsNeedingFallback.length) {
+      setSensorCoordinateFallbacks({});
+      setSensorCoordinateLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setSensorCoordinateLoading(true);
+
+    void (async () => {
+      const fallbackEntries = await Promise.all(
+        farmsNeedingFallback.map(async (farm: any) => {
+          try {
+            const response = await sensorService.getByFarm(String(farm.id));
+            const sensors = Array.isArray(response.data) ? response.data : [];
+            const mappedSensor = sensors.find(
+              (sensor) =>
+                (typeof sensor.coordinates?.lat === 'number' && typeof sensor.coordinates?.lng === 'number')
+                || (typeof (sensor as any).latitude === 'number' && typeof (sensor as any).longitude === 'number')
+            );
+            const fallbackCoordinates =
+              typeof mappedSensor?.coordinates?.lat === 'number' && typeof mappedSensor?.coordinates?.lng === 'number'
+                ? mappedSensor.coordinates
+                : typeof (mappedSensor as any)?.latitude === 'number' && typeof (mappedSensor as any)?.longitude === 'number'
+                  ? { lat: (mappedSensor as any).latitude, lng: (mappedSensor as any).longitude }
+                  : undefined;
+
+            return fallbackCoordinates ? [String(farm.id), fallbackCoordinates] as const : null;
+          } catch {
+            return null;
+          }
+        })
+      );
+
+      if (cancelled) return;
+
+      setSensorCoordinateFallbacks(
+        Object.fromEntries(
+          fallbackEntries.filter(
+            (entry): entry is readonly [string, { lat: number; lng: number }] => Array.isArray(entry)
+          )
+        )
+      );
+      setSensorCoordinateLoading(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [allFarms]);
+
+  const farmMarkers = useMemo<MapboxMarkerData[]>(
+    () =>
+      allFarms.flatMap((farm: any) => {
+        const coordinates = getFarmMapCoordinates(farm) || sensorCoordinateFallbacks[String(farm.id)];
+        const latitude = coordinates?.lat;
+        const longitude = coordinates?.lng;
+
+        if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+          return [];
+        }
+
+        return [{
+          id: `farm-${farm.id}`,
+          latitude,
+          longitude,
+          label: farm.name || 'Farm',
+          badge: farm.cropVariety || 'Farm',
+          description: farm.locationName || farm.district?.name || 'Mapped farm',
+          tone: 'success',
+        }];
+      }),
+    [allFarms, sensorCoordinateFallbacks]
+  );
+  const outbreakMap: any = null;
+  const outbreakMarkers = useMemo<MapboxMarkerData[]>(
+    () =>
+      (outbreakMap?.detections || []).flatMap((detection: any) => {
+        const latitude = detection.coordinates?.lat;
+        const longitude = detection.coordinates?.lng;
+
+        if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+          return [];
+        }
+
+        const severity = String(detection.severity || 'low');
+        const tone: MapboxMarkerTone =
+          severity === 'severe' || severity === 'high'
+            ? 'danger'
+            : severity === 'medium'
+              ? 'warning'
+              : 'success';
+
+        return [{
+          id: `outbreak-${detection.id}`,
+          latitude,
+          longitude,
+          label: detection.pestType || 'Outbreak detection',
+          badge: `${severity} severity`,
+          description: `${detection.farm?.name || detection.locationDescription || 'Unknown location'} • ${new Date(detection.createdAt).toLocaleDateString()}`,
+          tone,
+        }];
+      }),
+    [outbreakMap?.detections]
+  );
+  const combinedMarkers = [...farmMarkers, ...outbreakMarkers];
+  const districtCoverage = useMemo(() => {
+    return new Set(
+      allFarms
+        .map((farm: any) => farm.district?.name || farm.districtId || farm.district_id)
+        .filter(Boolean)
+    ).size;
+  }, [allFarms]);
+  const topDistricts = useMemo(() => {
+    const districtCounts = new Map<string, number>();
+
+    allFarms.forEach((farm: any) => {
+      const districtName = farm.district?.name || farm.districtId || farm.district_id;
+      if (!districtName) return;
+      districtCounts.set(districtName, (districtCounts.get(districtName) || 0) + 1);
+    });
+
+    return Array.from(districtCounts.entries())
+      .sort((left, right) => right[1] - left[1])
+      .slice(0, 4);
+  }, [allFarms]);
+
+  const nationwideMapLoading = isLoading || allFarmsLoading || sensorCoordinateLoading;
+
+  return (
+    <div className={workspaceGridClass}>
+      <Card className={`${workspaceMainClass} dash-panel`}>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <BarChart2 size={20} className="text-primary" />
+            National Farmer Map
+          </CardTitle>
+          <CardDescription>Review all mapped farmer locations across the country from one admin workspace.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {nationwideMapLoading ? (
+            <LoadingState text="Resolving farm and sensor locations for the national map..." />
+          ) : (
+            <MapboxMap
+              markers={farmMarkers}
+              fitToMarkers={farmMarkers.length > 0}
+              mapClassName="h-[500px]"
+              emptyTitle="No mapped farmer records yet"
+              emptyMessage="No farm or sensor coordinates were returned for the current admin farm list."
+              tokenMissingMessage="Add VITE_MAPBOX_ACCESS_TOKEN to enable the admin map workspace."
+            />
+          )}
+        </CardContent>
+      </Card>
+
+      <div className={workspaceRailClass}>
+        <Card className="dash-panel">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm">Map Snapshot</CardTitle>
+            <CardDescription>Current nationwide farm coverage and coordinate readiness</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className={outlineBlockClass}>
+              <p className="text-xs text-muted-foreground uppercase">Mapped farms</p>
+              <p className="text-lg font-semibold">{farmMarkers.length}</p>
+            </div>
+            <div className={outlineBlockClass}>
+              <p className="text-xs text-muted-foreground uppercase">Unmapped farms</p>
+              <p className="text-lg font-semibold">{Math.max(allFarms.length - farmMarkers.length, 0)}</p>
+            </div>
+            <div className={outlineBlockClass}>
+              <p className="text-xs text-muted-foreground uppercase">District coverage</p>
+              <p className="text-lg font-semibold">{districtCoverage}</p>
+            </div>
+            {nationwideMapLoading ? (
+              <LoadingState text="Loading platform map coverage..." size="sm" />
+            ) : topDistricts.length ? (
+              <div className="space-y-2">
+                {topDistricts.map(([district, farmCount]) => (
+                  <div key={district} className="dash-outline-block flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-medium">{district}</p>
+                      <p className="text-xs text-muted-foreground">Mapped farmer records in this district</p>
+                    </div>
+                    <Badge variant="outline">{farmCount}</Badge>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyState title="No mapped districts yet" message="No farm or sensor coordinates are available right now." />
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
@@ -3620,6 +4743,36 @@ function AdminAnalyticsPanel({ searchQuery = '' }: { searchQuery?: string }) {
       severeSignals,
     };
   }, [normalizedSearch, outbreakMap]);
+  const outbreakMarkers = useMemo<MapboxMarkerData[]>(
+    () =>
+      (outbreakMap?.detections || []).flatMap((detection: any) => {
+        const latitude = detection.coordinates?.lat;
+        const longitude = detection.coordinates?.lng;
+
+        if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+          return [];
+        }
+
+        const severity = String(detection.severity || 'low');
+        const tone: MapboxMarkerTone =
+          severity === 'severe' || severity === 'high'
+            ? 'danger'
+            : severity === 'medium'
+              ? 'warning'
+              : 'success';
+
+        return [{
+          id: detection.id,
+          latitude,
+          longitude,
+          label: detection.pestType || 'Pest detection',
+          badge: `${severity} severity`,
+          description: `${detection.farm?.name || detection.locationDescription || 'Unknown location'} • ${new Date(detection.createdAt).toLocaleDateString()}`,
+          tone,
+        }];
+      }),
+    [outbreakMap?.detections]
+  );
 
   const analyticsSnapshot = useMemo(() => {
     return {
@@ -3811,7 +4964,7 @@ function AdminAnalyticsPanel({ searchQuery = '' }: { searchQuery?: string }) {
             <LoadingState text="Loading recommendation response analytics..." size="sm" />
           ) : (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:grid-cols-4">
                 <div className="dash-metric-tile text-center">
                   <p className="text-2xl font-bold">{recommendationStats?.total ?? 0}</p>
                   <p className="text-xs text-muted-foreground mt-1">Recommendations</p>
@@ -3888,7 +5041,7 @@ function AdminAnalyticsPanel({ searchQuery = '' }: { searchQuery?: string }) {
             <LoadingState text="Loading outbreak signals..." size="sm" />
           ) : (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:grid-cols-4">
                 <div className="dash-metric-tile text-center">
                   <p className="text-2xl font-bold">{outbreakSummary.totalDetections}</p>
                   <p className="text-xs text-muted-foreground mt-1">Detections</p>
@@ -3906,6 +5059,14 @@ function AdminAnalyticsPanel({ searchQuery = '' }: { searchQuery?: string }) {
                   <p className="text-xs text-muted-foreground mt-1">Top District</p>
                 </div>
               </div>
+
+              <MapboxMap
+                markers={outbreakMarkers}
+                mapClassName="h-[340px]"
+                emptyTitle="No mapped outbreak detections"
+                emptyMessage="Outbreak detections need coordinates before they can be plotted on the admin map."
+                tokenMissingMessage="Add VITE_MAPBOX_ACCESS_TOKEN to render the system outbreak map."
+              />
 
               {outbreakMap?.byDistrict?.length ? (
                 <div className="space-y-2">
@@ -3942,7 +5103,7 @@ function AdminAnalyticsPanel({ searchQuery = '' }: { searchQuery?: string }) {
             <LoadingState text="Loading pest control operations..." size="sm" />
           ) : (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:grid-cols-3">
                 <div className="dash-metric-tile text-center">
                   <p className="text-2xl font-bold">{pestControlSummary.total}</p>
                   <p className="text-xs text-muted-foreground mt-1">Logged Operations</p>
@@ -3998,7 +5159,7 @@ function AdminAnalyticsPanel({ searchQuery = '' }: { searchQuery?: string }) {
             <LoadingState text="Loading alert statistics..." size="sm" />
           ) : (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:grid-cols-4">
                 <div className="dash-metric-tile text-center">
                   <p className="text-2xl font-bold">{alertStats?.totalAlerts ?? 0}</p>
                   <p className="text-xs text-muted-foreground mt-1">Total Alerts</p>
@@ -4097,7 +5258,7 @@ function AdminAnalyticsPanel({ searchQuery = '' }: { searchQuery?: string }) {
             <LoadingState text="Loading farm issues..." size="sm" />
           ) : (
             <>
-              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:grid-cols-4">
                 <div className="dash-metric-tile text-center">
                   <p className="text-2xl font-bold">{allFarmIssuesResponse?.pagination?.total || issueSummary.total}</p>
                   <p className="text-xs text-muted-foreground mt-1">Visible Issues</p>
@@ -4412,7 +5573,7 @@ function AdminAnalyticsPanel({ searchQuery = '' }: { searchQuery?: string }) {
             <CardDescription>Cross-surface summary from active analytics feeds</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className={centeredMetricTileClass}>
                 <p className="text-xs text-muted-foreground uppercase">Users</p>
                 <p className="text-xl font-semibold">{analyticsSnapshot.totalUsers}</p>
@@ -4604,7 +5765,7 @@ function AdminContentPanel({ searchQuery = '' }: { searchQuery?: string }) {
             <CardDescription>Current content inventory and active workspace section</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className={centeredMetricTileClass}>
                 <p className="text-xs text-muted-foreground uppercase">Resources</p>
                 <p className="text-xl font-semibold">{contentStats.resources}</p>
@@ -4698,7 +5859,7 @@ function AdminUssdPanel() {
                 <span className="text-sm text-muted-foreground">Checking...</span>
               ) : (
                 <span className="flex items-center gap-1.5 text-sm">
-                  <span className={`inline-block w-2 h-2 rounded-full ${ussdStatus === 'healthy' ? 'bg-green-500' : 'bg-green-500'}`} />
+                  <span className={`inline-block w-2 h-2 rounded-full ${ussdStatus === 'healthy' ? 'bg-green-500' : 'bg-red-500'}`} />
                   {u?.status || 'unknown'}{u?.service ? ` (${u.service})` : ''}
                 </span>
               )}
@@ -4849,7 +6010,7 @@ function AdminUssdPanel() {
               <p className="text-xs text-muted-foreground uppercase">AI status</p>
               <p className="font-medium capitalize">{ussdPanelStats.aiStatus}</p>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className={centeredMetricTileClass}>
                 <p className="text-xs text-muted-foreground uppercase">Flow</p>
                 <p className="font-medium uppercase">{ussdPanelStats.flow}</p>
@@ -4873,3 +6034,4 @@ function AdminUssdPanel() {
 }
 
 export default ConnectedAdminDashboard;
+

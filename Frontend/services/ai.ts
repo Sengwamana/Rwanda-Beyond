@@ -132,6 +132,33 @@ function normalizeHealthStatus(payload: unknown): AIHealthStatus {
   };
 }
 
+function normalizeCapabilities(payload: unknown): AICapabilities {
+  const response = (payload ?? {}) as Partial<AICapabilities>;
+
+  return {
+    provider:
+      typeof response.provider === 'string' && response.provider.trim().length > 0
+        ? response.provider
+        : 'unknown',
+    model:
+      typeof response.model === 'string' && response.model.trim().length > 0
+        ? response.model
+        : 'Unavailable',
+    features: Array.isArray(response.features)
+      ? response.features
+          .filter((feature): feature is NonNullable<AICapabilities['features']>[number] => Boolean(feature))
+          .map((feature) => ({
+            name: typeof feature.name === 'string' ? feature.name : 'Unnamed feature',
+            endpoint: typeof feature.endpoint === 'string' ? feature.endpoint : '',
+            description: typeof feature.description === 'string' ? feature.description : 'No description available.',
+          }))
+      : [],
+    supportedLanguages: Array.isArray(response.supportedLanguages) ? response.supportedLanguages : [],
+    supportedCrops: Array.isArray(response.supportedCrops) ? response.supportedCrops : [],
+    regions: Array.isArray(response.regions) ? response.regions : [],
+  };
+}
+
 export interface AICapabilities {
   provider: string;
   model: string;
@@ -200,7 +227,7 @@ export const sendChatMessage = async (
  */
 export const getCapabilities = async (): Promise<AICapabilities> => {
   const response: AxiosResponse<ApiResponse<AICapabilities>> = await apiClient.get('/ai/capabilities');
-  return response.data.data;
+  return normalizeCapabilities(getResponsePayload(response));
 };
 
 /**

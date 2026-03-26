@@ -34,7 +34,10 @@ import { LoadingState, ErrorState, EmptyState, Spinner } from './ui/Spinner';
 import { Button } from './ui/Button';
 import { Badge } from './ui/Badge';
 import { FormattedAiResponse } from './ui/FormattedAiResponse';
+import { MapboxMap, type MapboxMarkerData, type MapboxMarkerTone } from './ui/MapboxMap';
+import { ScheduleInsightsPanel } from './ui/ScheduleInsightsPanel';
 import { useAuthStore } from '../store';
+import type { Farm } from '../types';
 
 interface ConnectedExpertDashboardProps {
   searchQuery?: string;
@@ -44,9 +47,15 @@ interface ConnectedExpertDashboardProps {
 const DASH_CONTROL_CLASS = 'dash-control';
 const DASH_CONTROL_COMPACT_CLASS = 'dash-control-compact';
 const DASH_TEXTAREA_CLASS = 'dash-textarea';
+const DASH_ACTION_CLASS = 'dash-action-btn';
+const DASH_ACTION_SM_CLASS = 'dash-action-btn-sm';
+const DASH_ACTION_LG_CLASS = 'dash-action-btn-lg';
 const controlClass = DASH_CONTROL_CLASS;
 const compactControlClass = DASH_CONTROL_COMPACT_CLASS;
 const textAreaClass = DASH_TEXTAREA_CLASS;
+const actionClass = DASH_ACTION_CLASS;
+const actionSmClass = DASH_ACTION_SM_CLASS;
+const actionLgClass = DASH_ACTION_LG_CLASS;
 
 const recommendationPriorityClass: Record<string, string> = {
   critical: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
@@ -75,6 +84,50 @@ const matchesSearchTerm = (term: string, values: Array<unknown>) => {
     .join(' ')
     .toLowerCase()
     .includes(term);
+};
+
+const normalizeLocationKey = (value: unknown) => String(value || '').trim().toLowerCase();
+
+const getUserDistrictKeys = (user: any) =>
+  Array.from(
+    new Set(
+      [
+        user?.districtId,
+        user?.district_id,
+        user?.metadata?.districtId,
+        user?.metadata?.district_id,
+      ]
+        .map(normalizeLocationKey)
+        .filter(Boolean)
+    )
+  );
+
+const getFarmDistrictKeys = (farm?: Partial<Farm> | null) =>
+  Array.from(
+    new Set(
+      [
+        farm?.districtId,
+        (farm as any)?.district_id,
+        farm?.district?.id,
+        farm?.district?.name,
+      ]
+        .map(normalizeLocationKey)
+        .filter(Boolean)
+    )
+  );
+
+const getFarmMapCoordinates = (farm?: Partial<Farm> | null) => {
+  if (typeof farm?.coordinates?.lat === 'number' && typeof farm?.coordinates?.lng === 'number') {
+    return farm.coordinates;
+  }
+
+  const sensorCoordinates = farm?.sensors?.find(
+    (sensor) => typeof sensor.coordinates?.lat === 'number' && typeof sensor.coordinates?.lng === 'number'
+  )?.coordinates;
+
+  return typeof sensorCoordinates?.lat === 'number' && typeof sensorCoordinates?.lng === 'number'
+    ? sensorCoordinates
+    : undefined;
 };
 
 type SearchScopeItem = {
@@ -139,18 +192,24 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
   const isSnapshotTab = activeTab === 'overview';
   const isFarmCoordinationTab = activeTab === 'farm-coordination';
   const isFieldSupportTab = activeTab === 'field-support';
+  const isIrrigationTab = activeTab === 'irrigation';
+  const isFertilizationTab = activeTab === 'fertilization';
   const isExpertGuidanceTab = activeTab === 'expert-guidance';
   const isIssueOversightTab = activeTab === 'issue-oversight';
   const isReviewLanesTab = activeTab === 'review-lanes';
   const isDistrictAnalyticsTab = activeTab === 'district-analytics';
+  const isMapViewTab = activeTab === 'map-view';
   const isAiAdviceTab = activeTab === 'ai-advice';
   const showExpertWorkspaceChrome =
     isSnapshotTab
     || isFarmCoordinationTab
     || isFieldSupportTab
+    || isIrrigationTab
+    || isFertilizationTab
     || isExpertGuidanceTab
     || isIssueOversightTab
-    || isReviewLanesTab;
+    || isReviewLanesTab
+    || isMapViewTab;
 
   const {
     data: farmsResponse,
@@ -261,6 +320,23 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
   }, [farms, normalizedSearch]);
 
   const selectedFarm = farms.find((farm) => farm.id === selectedFarmId) || null;
+  const expertMapDistrictKeys = useMemo(
+    () => Array.from(new Set([...getFarmDistrictKeys(selectedFarm), ...getUserDistrictKeys(user)])),
+    [selectedFarm, user]
+  );
+  const districtScopedFarms = useMemo(() => {
+    if (!expertMapDistrictKeys.length) return filteredFarms;
+
+    const matchingDistrictFarms = filteredFarms.filter((farm) =>
+      getFarmDistrictKeys(farm).some((districtKey) => expertMapDistrictKeys.includes(districtKey))
+    );
+
+    return matchingDistrictFarms.length ? matchingDistrictFarms : filteredFarms;
+  }, [expertMapDistrictKeys, filteredFarms]);
+  const expertMapDistrictLabel =
+    selectedFarm?.district?.name
+    || districtScopedFarms.find((farm) => farm.district?.name)?.district?.name
+    || (expertMapDistrictKeys.length ? 'Assigned district' : 'All assigned districts');
   const {
     data: responseHistory,
     isLoading: responseHistoryLoading,
@@ -293,7 +369,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
     data: recentActivity,
     isLoading: recentActivityLoading,
   } = useRecentActivityAnalytics({ hours: activityHours, limit: 6, type: activityType }, isExpertGuidanceTab);
-
+  const { data: expertMapOutbreak } = usePestOutbreakMap({ days: 30 }, false);
   const filteredRecommendations = useMemo(() => {
     return recommendations.filter((recommendation) => {
       if (selectedFarmId && recommendation.farmId !== selectedFarmId) return false;
@@ -518,6 +594,77 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
     recommendationsResponse?.pagination?.total || recommendations.length;
   const pendingReviewCount = pestStats?.pendingReviewCount || pendingReviewsResponse?.pagination?.total || 0;
   const severePestCount = (pestStats?.bySeverity?.severe || 0) + (pestStats?.bySeverity?.high || 0);
+  const expertDistrictCount = useMemo(() => {
+    return new Set(
+      farms.map((farm) => farm.district?.name || farm.districtId || 'Unknown district')
+    ).size;
+  }, [farms]);
+  const issueStatusCounts = useMemo(() => {
+    return filteredFarmIssues.reduce(
+      (counts, issue) => {
+        const status = issue.status || 'open';
+        if (status === 'open') counts.open += 1;
+        if (status === 'in_progress') counts.inProgress += 1;
+        if (status === 'resolved') counts.resolved += 1;
+        if (status === 'closed') counts.closed += 1;
+        return counts;
+      },
+      { open: 0, inProgress: 0, resolved: 0, closed: 0 }
+    );
+  }, [filteredFarmIssues]);
+  const expertMapFarmMarkers = useMemo<MapboxMarkerData[]>(
+    () =>
+      districtScopedFarms.flatMap((farm) => {
+        const coordinates = getFarmMapCoordinates(farm);
+        const latitude = coordinates?.lat;
+        const longitude = coordinates?.lng;
+
+        if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+          return [];
+        }
+
+        return [{
+          id: `farm-${farm.id}`,
+          latitude,
+          longitude,
+          label: farm.name,
+          badge: farm.cropVariety || 'Farm',
+          description: farm.locationName || farm.district?.name || 'Assigned farm',
+          tone: selectedFarm?.id === farm.id ? 'info' : 'success',
+        }];
+      }),
+    [districtScopedFarms, selectedFarm?.id]
+  );
+  const expertMapOutbreakMarkers = useMemo<MapboxMarkerData[]>(
+    () =>
+      (expertMapOutbreak?.detections || []).flatMap((detection: any) => {
+        const latitude = detection.coordinates?.lat;
+        const longitude = detection.coordinates?.lng;
+
+        if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+          return [];
+        }
+
+        const severity = String(detection.severity || 'low');
+        const tone: MapboxMarkerTone =
+          severity === 'severe' || severity === 'high'
+            ? 'danger'
+            : severity === 'medium'
+              ? 'warning'
+              : 'success';
+
+        return [{
+          id: `outbreak-${detection.id}`,
+          latitude,
+          longitude,
+          label: detection.pestType || 'Outbreak detection',
+          badge: `${severity} severity`,
+          description: `${detection.farm?.name || detection.locationDescription || 'Unknown location'} • ${new Date(detection.createdAt).toLocaleDateString()}`,
+          tone,
+        }];
+      }),
+    [expertMapOutbreak?.detections]
+  );
 
   const isAnyActionPending =
     respondToRecommendation.isPending
@@ -873,56 +1020,395 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
     exportRowsAsCsv(headers, rows);
   };
 
-  if (showExpertWorkspaceChrome && farmsLoading) {
-    return <LoadingState text="Loading expert dashboard..." />;
-  }
+  const expertHeroStats = useMemo<Array<{ label: string; value: string | number; badge: string; helper: string }>>(() => {
+    const responseRateLabel =
+      typeof responseHistory?.stats?.responseRate === 'number'
+        ? `${Math.round(responseHistory.stats.responseRate)}%`
+        : '--';
+    const averageResponseTimeLabel =
+      typeof responseHistory?.stats?.averageResponseTime === 'number'
+        ? `${responseHistory.stats.averageResponseTime}h avg`
+        : 'Avg response pending';
+    const visibleQueueCount = filteredRecommendations.length + filteredPendingReviews.length;
 
-  if (showExpertWorkspaceChrome && farmsError) {
-    return (
-      <ErrorState
-        title="Failed to load expert dashboard"
-        message="Please retry."
-        onRetry={refetchFarms}
-      />
-    );
-  }
+    if (activeTab === 'farm-coordination') {
+      return [
+        {
+          label: 'Farm Queue',
+          value: filteredFarms.length,
+          badge: `${farmCount} assigned`,
+          helper: selectedFarm ? `Focused on ${selectedFarm.name}` : 'Select a farm to inspect coordination details',
+        },
+        {
+          label: 'Response Rate',
+          value: responseRateLabel,
+          badge: `${responseHistory?.stats?.total ?? 0} interactions`,
+          helper: `${responseHistory?.stats?.byStatus?.responded ?? 0} responded • ${averageResponseTimeLabel}`,
+        },
+        {
+          label: 'History Feed',
+          value: filteredRecommendationHistoryFeed.length,
+          badge: `${recommendationHistoryFeed?.data?.length ?? 0} recent updates`,
+          helper: selectedFarm ? `Latest farmer actions for ${selectedFarm.name}` : 'Recent farmer actions across accessible farms',
+        },
+        {
+          label: 'Healthy Sensors',
+          value: sensorHealthLoading ? '--' : sensorHealth?.healthy ?? 0,
+          badge: `${sensorHealth?.total ?? 0} tracked`,
+          helper: `${sensorHealth?.warning ?? 0} warning • ${sensorHealth?.critical ?? 0} critical`,
+        },
+      ];
+    }
 
-  const expertQuickStats: Array<{ label: string; value: string | number; badge: string; helper: string }> = [
-    {
-      label: 'Assigned Farms',
-      value: farmCount,
-      badge: `${filteredFarms.length} visible`,
-      helper: selectedFarm ? `Focused on ${selectedFarm.name}` : 'Across all accessible farms',
-    },
-    {
-      label: 'Pending Advice',
-      value: recommendationsLoading ? '--' : pendingRecommendationCount,
-      badge: `${filteredRecommendations.length} visible`,
-      helper: `${recommendationsResponse?.pagination?.total || recommendations.length} queued from records`,
-    },
-    {
-      label: 'Pending Reviews',
-      value: pestStatsLoading ? '--' : pendingReviewCount,
-      badge: `${filteredPendingReviews.length} visible`,
-      helper: `${pendingReviewsResponse?.pagination?.total || pendingReviews.length} detections awaiting review`,
-    },
-    {
-      label: 'High/Severe Cases',
-      value: pestStatsLoading ? '--' : severePestCount,
-      badge: `${pestStats?.totalDetections ?? pendingReviews.length} detections`,
-      helper: `${pestStats?.pendingReviewCount ?? pendingReviewCount} still awaiting expert action`,
-    },
-  ];
+    if (activeTab === 'field-support') {
+      return [
+        {
+          label: 'Scheduled Actions',
+          value: pestControlSchedules.length,
+          badge: selectedFarm?.name || 'No farm selected',
+          helper: 'Total pest-control work linked to the active farm',
+        },
+        {
+          label: 'Pending Execution',
+          value: filteredPendingPestControlSchedules.length,
+          badge: `${filteredCompletedPestControlSchedules.length} completed`,
+          helper: 'Open field tasks still waiting on execution',
+        },
+        {
+          label: 'Completed Actions',
+          value: filteredCompletedPestControlSchedules.length,
+          badge: `${filteredPendingPestControlSchedules.length} pending`,
+          helper: 'Recently completed pest-control work',
+        },
+        {
+          label: 'Logged Activity',
+          value: filteredPestControlActivity.length,
+          badge: `${selectedFarmActivity?.activity?.length ?? 0} farm events`,
+          helper: 'Recent field activity captured in the farm timeline',
+        },
+      ];
+    }
+
+    if (activeTab === 'irrigation') {
+      return [
+        {
+          label: 'Visible Farms',
+          value: filteredFarms.length,
+          badge: `${selectedFarm?.name || 'All assigned farms'}`,
+          helper: 'Assigned farms contributing irrigation records to this workspace',
+        },
+        {
+          label: 'Due Irrigation',
+          value: pendingPestControlSchedules.length,
+          badge: `${completedPestControlSchedules.length} completed field actions`,
+          helper: 'Use this lane to compare farm readiness with active execution load',
+        },
+        {
+          label: 'Open Issues',
+          value: filteredFarmIssues.length,
+          badge: `${issueStatusCounts.open} open`,
+          helper: 'Issue pressure that could affect irrigation execution planning',
+        },
+        {
+          label: 'Recent Field Activity',
+          value: filteredPestControlActivity.length,
+          badge: `${activityHours}h window`,
+          helper: 'Operational activity across expert-accessible farms',
+        },
+      ];
+    }
+
+    if (activeTab === 'fertilization') {
+      return [
+        {
+          label: 'Visible Farms',
+          value: filteredFarms.length,
+          badge: `${selectedFarm?.name || 'All assigned farms'}`,
+          helper: 'Assigned farms contributing fertilization records to this workspace',
+        },
+        {
+          label: 'Pending Advice',
+          value: recommendationsLoading ? '--' : pendingRecommendationCount,
+          badge: `${filteredRecommendations.length} visible`,
+          helper: 'Recommendation pressure tied to current nutrient planning',
+        },
+        {
+          label: 'Open Issues',
+          value: filteredFarmIssues.length,
+          badge: `${issueStatusCounts.open} open`,
+          helper: 'Reported issues that can affect nutrient follow-through',
+        },
+        {
+          label: 'District Scope',
+          value: expertDistrictCount,
+          badge: `${filteredFarms.length} farms`,
+          helper: 'District coverage represented in this nutrient workspace',
+        },
+      ];
+    }
+
+    if (activeTab === 'expert-guidance') {
+      return [
+        {
+          label: 'Visible Advice',
+          value: filteredRecommendations.length,
+          badge: `${pendingRecommendationCount} queued`,
+          helper: 'Recommendation work available in the current guidance lane',
+        },
+        {
+          label: 'Visible Reviews',
+          value: filteredPendingReviews.length,
+          badge: `${pendingReviewCount} pending`,
+          helper: 'Pest review items competing for expert attention',
+        },
+        {
+          label: 'Visible Issues',
+          value: filteredFarmIssues.length,
+          badge: `${farmIssuesResponse?.pagination?.total || farmIssues.length} tracked`,
+          helper: 'Farmer-reported issues that can inform direct recommendations',
+        },
+        {
+          label: 'Recent Events',
+          value: filteredRecentActivityItems.length,
+          badge: `${activityHours}h window`,
+          helper: `Activity type: ${activityType}`,
+        },
+      ];
+    }
+
+    if (activeTab === 'issue-oversight') {
+      return [
+        {
+          label: 'Visible Issues',
+          value: filteredFarmIssues.length,
+          badge: `${issueStatusFilter} filter`,
+          helper: 'Current issue queue after status and search filters',
+        },
+        {
+          label: 'Open Issues',
+          value: issueStatusCounts.open,
+          badge: `${issueStatusCounts.inProgress} in progress`,
+          helper: 'New issue reports that still need triage',
+        },
+        {
+          label: 'In Progress',
+          value: issueStatusCounts.inProgress,
+          badge: `${issueStatusCounts.open} open`,
+          helper: 'Active issue resolutions underway',
+        },
+        {
+          label: 'Resolved / Closed',
+          value: issueStatusCounts.resolved + issueStatusCounts.closed,
+          badge: `${issueStatusCounts.resolved} resolved`,
+          helper: `${issueStatusCounts.closed} fully closed`,
+        },
+      ];
+    }
+
+    if (activeTab === 'review-lanes') {
+      return [
+        {
+          label: 'Pending Advice',
+          value: recommendationsLoading ? '--' : pendingRecommendationCount,
+          badge: `${filteredRecommendations.length} visible`,
+          helper: `${recommendationTypeFilter} recommendation filter`,
+        },
+        {
+          label: 'Pending Reviews',
+          value: pestStatsLoading ? '--' : pendingReviewCount,
+          badge: `${filteredPendingReviews.length} visible`,
+          helper: `${reviewSeverityFilter} severity filter`,
+        },
+        {
+          label: 'High/Severe Cases',
+          value: pestStatsLoading ? '--' : severePestCount,
+          badge: `${pestStats?.totalDetections ?? pendingReviews.length} detections`,
+          helper: `${pestStats?.pendingReviewCount ?? pendingReviewCount} still awaiting expert action`,
+        },
+        {
+          label: 'Visible Queue',
+          value: visibleQueueCount,
+          badge: `${filteredRecommendations.length} advice • ${filteredPendingReviews.length} reviews`,
+          helper: 'Combined decision load across both review lanes',
+        },
+      ];
+    }
+
+    if (activeTab === 'district-analytics') {
+      return [
+        {
+          label: 'Visible Farms',
+          value: filteredFarms.length,
+          badge: `${expertDistrictCount} districts`,
+          helper: 'Farm coverage that feeds the current analytics workspace',
+        },
+        {
+          label: 'Open Issues',
+          value: filteredFarmIssues.length,
+          badge: `${farmIssues.length} tracked`,
+          helper: 'Issue volume that could influence district performance',
+        },
+        {
+          label: 'Pending Reviews',
+          value: pestStatsLoading ? '--' : pendingReviewCount,
+          badge: `${filteredPendingReviews.length} visible`,
+          helper: 'Review queue still affecting regional risk signals',
+        },
+        {
+          label: 'High/Severe Cases',
+          value: pestStatsLoading ? '--' : severePestCount,
+          badge: `${pestStats?.totalDetections ?? pendingReviews.length} detections`,
+          helper: 'Serious detections that need district-level awareness',
+        },
+      ];
+    }
+
+    if (activeTab === 'map-view') {
+      return [
+        {
+          label: 'District Farms',
+          value: expertMapFarmMarkers.length,
+          badge: `${districtScopedFarms.length} in scope`,
+          helper: `${Math.max(districtScopedFarms.length - expertMapFarmMarkers.length, 0)} farms still need coordinates`,
+        },
+        {
+          label: 'District Scope',
+          value: expertMapDistrictLabel,
+          badge: `${expertDistrictCount} districts available`,
+          helper: 'Map view narrows to the farms in the current expert district context',
+        },
+        {
+          label: 'Focus Farm',
+          value: selectedFarm?.name || 'No farm selected',
+          badge: selectedFarm?.cropVariety || 'Select a farm',
+          helper: selectedFarm?.locationName || selectedFarm?.district?.name || 'Pick a farm marker to inspect it',
+        },
+        {
+          label: 'Growth Context',
+          value: selectedFarm?.currentGrowthStage?.replace(/_/g, ' ') || 'Not set',
+          badge: selectedFarm?.cropVariety || 'Crop not set',
+          helper: selectedFarm ? 'Current agronomy context for the focused farm' : 'Select a farm marker to inspect crop context',
+        },
+      ];
+    }
+
+    if (activeTab === 'ai-advice') {
+      return [
+        {
+          label: 'Reachable Farms',
+          value: filteredFarms.length,
+          badge: `${expertDistrictCount} districts`,
+          helper: 'Farm context the AI answers can draw from',
+        },
+        {
+          label: 'Pending Advice',
+          value: recommendationsLoading ? '--' : pendingRecommendationCount,
+          badge: `${filteredRecommendations.length} visible`,
+          helper: 'Recommendation queue you can reference in prompts',
+        },
+        {
+          label: 'Pending Reviews',
+          value: pestStatsLoading ? '--' : pendingReviewCount,
+          badge: `${filteredPendingReviews.length} visible`,
+          helper: 'Review load that can shape AI guidance priorities',
+        },
+        {
+          label: 'Open Issues',
+          value: filteredFarmIssues.length,
+          badge: selectedFarm?.name || 'All farms',
+          helper: 'Operational issue context for the current expert focus',
+        },
+      ];
+    }
+
+    return [
+      {
+        label: 'Assigned Farms',
+        value: farmCount,
+        badge: `${filteredFarms.length} visible`,
+        helper: selectedFarm ? `Focused on ${selectedFarm.name}` : 'Across all accessible farms',
+      },
+      {
+        label: 'Pending Advice',
+        value: recommendationsLoading ? '--' : pendingRecommendationCount,
+        badge: `${filteredRecommendations.length} visible`,
+        helper: `${recommendationsResponse?.pagination?.total || recommendations.length} queued from records`,
+      },
+      {
+        label: 'Pending Reviews',
+        value: pestStatsLoading ? '--' : pendingReviewCount,
+        badge: `${filteredPendingReviews.length} visible`,
+        helper: `${pendingReviewsResponse?.pagination?.total || pendingReviews.length} detections awaiting review`,
+      },
+      {
+        label: 'High/Severe Cases',
+        value: pestStatsLoading ? '--' : severePestCount,
+        badge: `${pestStats?.totalDetections ?? pendingReviews.length} detections`,
+        helper: `${pestStats?.pendingReviewCount ?? pendingReviewCount} still awaiting expert action`,
+      },
+    ];
+  }, [
+    activeTab,
+    activityHours,
+    activityType,
+    districtScopedFarms.length,
+    expertDistrictCount,
+    expertMapDistrictLabel,
+    expertMapFarmMarkers.length,
+    expertMapOutbreak?.byDistrict?.length,
+    expertMapOutbreakMarkers.length,
+    farmCount,
+    farmIssues.length,
+    farmIssuesResponse?.pagination?.total,
+    filteredFarmIssues.length,
+    filteredPendingPestControlSchedules.length,
+    filteredPendingReviews.length,
+    filteredPestControlActivity.length,
+    filteredRecommendationHistoryFeed.length,
+    filteredRecommendations.length,
+    filteredRecentActivityItems.length,
+    issueStatusCounts.closed,
+    issueStatusCounts.inProgress,
+    issueStatusCounts.open,
+    issueStatusCounts.resolved,
+    issueStatusFilter,
+    pendingRecommendationCount,
+    pendingReviewCount,
+    pendingReviews.length,
+    pendingReviewsResponse?.pagination?.total,
+    pestControlSchedules.length,
+    pestStats?.pendingReviewCount,
+    pestStats?.totalDetections,
+    pestStatsLoading,
+    recommendationHistoryFeed?.data?.length,
+    recommendationTypeFilter,
+    recommendations.length,
+    recommendationsLoading,
+    recommendationsResponse?.pagination?.total,
+    responseHistory?.stats?.averageResponseTime,
+    responseHistory?.stats?.byStatus?.responded,
+    responseHistory?.stats?.responseRate,
+    responseHistory?.stats?.total,
+    reviewSeverityFilter,
+    selectedFarm?.name,
+    selectedFarmActivity?.activity?.length,
+    sensorHealth?.critical,
+    sensorHealth?.healthy,
+    sensorHealth?.total,
+    sensorHealth?.warning,
+    sensorHealthLoading,
+    severePestCount,
+  ]);
   const sectionTitleClass = 'text-base md:text-lg font-extrabold tracking-tight';
   const sectionDescriptionClass = 'text-xs md:text-sm text-muted-foreground/90';
-  const metricTileClass = 'dash-metric-tile';
-  const centeredMetricTileClass = 'dash-metric-tile text-center';
+  const metricTileClass = 'dash-metric-tile min-h-[112px] flex flex-col justify-center';
+  const centeredMetricTileClass = 'dash-metric-tile text-center min-h-[112px] flex flex-col justify-center';
   const outlineBlockClass = 'dash-outline-block';
   const softBlockClass = 'dash-soft-block';
   const dashedBlockClass = 'dash-dashed-block';
   const workspaceGridClass = 'dash-workspace-grid-lg';
   const workspaceMainClass = 'dash-workspace-main-lg';
-  const workspaceRailClass = 'dash-workspace-rail-lg';
+  const workspaceRailClass = 'lg:col-span-4 min-w-0 space-y-4 self-start';
   const sectionShellClass = 'dash-workspace-section';
   const controlClass = DASH_CONTROL_CLASS;
   const compactControlClass = DASH_CONTROL_COMPACT_CLASS;
@@ -963,6 +1449,16 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
       title: 'Field Support',
       description: 'Track pest-control execution and field follow-through for the active farm.',
     },
+    irrigation: {
+      eyebrow: 'Water Operations',
+      title: 'Irrigation',
+      description: 'Monitor irrigation schedules and water usage across the farms assigned to this expert scope.',
+    },
+    fertilization: {
+      eyebrow: 'Nutrient Operations',
+      title: 'Fertilization',
+      description: 'Review fertilization schedules and nutrient usage across the farms assigned to this expert scope.',
+    },
     'expert-guidance': {
       eyebrow: 'Execution Workbench',
       title: 'Expert Guidance',
@@ -983,6 +1479,11 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
       title: 'District Analytics',
       description: 'Compare district performance, outbreak activity, and weather conditions from the analytics routes.',
     },
+    'map-view': {
+      eyebrow: 'Spatial Workspace',
+      title: 'Map View',
+      description: 'Navigate assigned farms and outbreak detections on one interactive expert map.',
+    },
     'ai-advice': {
       eyebrow: 'AI Expert System',
       title: 'AI Advice',
@@ -990,6 +1491,20 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
     },
   };
   const currentWorkspaceMeta = activeWorkspaceMeta[activeTab] || activeWorkspaceMeta.overview;
+
+  if (showExpertWorkspaceChrome && farmsLoading) {
+    return <LoadingState text="Loading expert dashboard..." />;
+  }
+
+  if (showExpertWorkspaceChrome && farmsError) {
+    return (
+      <ErrorState
+        title="Failed to load expert dashboard"
+        message="Please retry."
+        onRetry={refetchFarms}
+      />
+    );
+  }
 
   return (
     <div className="dashboard-page dash-section-stack mx-auto w-full max-w-[1600px] px-1 animate-fade-in">
@@ -1014,9 +1529,9 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
           </div>
         </div>
 
-        {showExpertWorkspaceChrome && (
-          <div className="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {expertQuickStats.map((stat, index) => (
+        {expertHeroStats.length > 0 && (
+          <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {expertHeroStats.map((stat, index) => (
               <div
                 key={stat.label}
                 className={`${index === 0 ? 'dash-kpi-card dash-kpi-card-accent' : 'dash-kpi-card'} animate-fade-in [animation-fill-mode:both]`}
@@ -1026,7 +1541,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
                   <span className={`text-[13px] font-semibold ${index === 0 ? 'text-white/88' : 'text-slate-600 dark:text-slate-300'}`}>
                     {stat.label}
                   </span>
-                  <div className={`flex items-center justify-center w-10 h-10 rounded-full ${index === 0 ? 'bg-white text-[#1D6042]' : 'border border-[hsl(var(--border))] bg-[#F7F8F2] dark:bg-slate-800 text-slate-700 dark:text-slate-200'}`}>
+                  <div className={`flex items-center justify-center w-10 h-10 rounded-full ${index === 0 ? 'bg-white text-primary' : 'border border-[hsl(var(--border))] bg-[hsl(var(--secondary))] dark:bg-slate-800 text-slate-700 dark:text-slate-200'}`}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17l9.2-9.2M17 17V7H7"/></svg>
                   </div>
                 </div>
@@ -1035,7 +1550,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
                     {stat.value}
                   </span>
                   <div className="mt-4 flex items-center gap-2">
-                    <div className={`flex items-center justify-center px-2 py-1 rounded-full text-[10px] font-bold ${index === 0 ? 'bg-[#2D7A54] text-white' : 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'}`}>
+                    <div className={`flex items-center justify-center px-2 py-1 rounded-full text-[10px] font-bold ${index === 0 ? 'bg-white/15 text-white' : 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'}`}>
                       {stat.badge}
                     </div>
                     <span className={`text-[11px] font-medium ${index === 0 ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>{stat.helper}</span>
@@ -1106,7 +1621,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
             <Button
               size="sm"
               variant="outline"
-              className="h-9 rounded-full self-start xl:self-auto"
+              className={`${actionSmClass} self-start xl:self-auto`}
               onClick={() => {
                 setRecommendationTypeFilter('all');
                 setReviewSeverityFilter('all');
@@ -1143,7 +1658,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
             </div>
             <p className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Triage lane - Confirm severity</p>
             <p className="mt-6 text-3xl font-black text-slate-900 dark:text-white">{pendingReviewCount}</p>
-            <Button variant="outline" className="mt-auto h-11 w-full rounded-full" onClick={() => setReviewSeverityFilter('all')}>
+            <Button variant="outline" className={`mt-auto w-full ${actionLgClass}`} onClick={() => setReviewSeverityFilter('all')}>
               Reset Severity Filter
             </Button>
           </CardContent>
@@ -1163,7 +1678,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
             <p className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Execution lane - Push advice</p>
             <p className="mt-6 text-3xl font-black text-slate-900 dark:text-white">{pendingRecommendationCount}</p>
             <Button
-              className="mt-auto h-11 w-full rounded-full"
+              className={`mt-auto w-full ${actionLgClass}`}
               onClick={handleGenerateForFarm}
               disabled={!selectedFarmId || generateRecommendations.isPending}
             >
@@ -1185,7 +1700,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
             </div>
             <p className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Feedback lane - Track adoption</p>
             <p className="mt-6 text-3xl font-black text-slate-900 dark:text-white">{responseHistory?.stats?.byStatus?.responded ?? 0}</p>
-            <Button variant="outline" className="mt-auto h-11 w-full rounded-full" onClick={handleRefreshAll}>
+            <Button variant="outline" className={`mt-auto w-full ${actionLgClass}`} onClick={handleRefreshAll}>
               Sync Signals
             </Button>
           </CardContent>
@@ -1193,19 +1708,19 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
         </div>
         </div>
 
-        <Card className="lg:col-span-4 lg:sticky lg:top-24 self-start h-fit dash-panel">
+        <Card className="lg:col-span-4 self-start h-fit dash-panel">
           <CardHeader className="pb-2">
             <CardTitle className={sectionTitleClass}>Quick Actions</CardTitle>
             <CardDescription className={sectionDescriptionClass}>Run frequent expert operations with one click</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2.5 lg:space-y-3">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-2.5">
-              <Button variant="outline" className="h-10 w-full justify-start rounded-full" onClick={handleRefreshAll}>
+              <Button variant="outline" className={`${actionClass} w-full justify-start`} onClick={handleRefreshAll}>
                 <RefreshCw size={14} className="mr-2" />
                 Refresh All Data
               </Button>
               <Button
-                className="h-10 w-full justify-start rounded-full"
+                className={`${actionClass} w-full justify-start`}
                 onClick={handleGenerateForFarm}
                 disabled={!selectedFarmId || generateRecommendations.isPending}
               >
@@ -1213,7 +1728,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
               </Button>
               <Button
                 variant="outline"
-                className="h-10 w-full justify-start rounded-full sm:col-span-2 lg:col-span-1"
+                className={`${actionClass} w-full justify-start sm:col-span-2 lg:col-span-1`}
                 onClick={() => {
                   setRecommendationTypeFilter('all');
                   setReviewSeverityFilter('all');
@@ -1275,7 +1790,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
                 Showing {Math.min(filteredFarms.length, 10)} of {filteredFarms.length} farms.
               </p>
 
-              <div className="space-y-2 lg:max-h-[430px] lg:overflow-y-auto lg:pr-1 custom-scrollbar">
+              <div className="space-y-2 2xl:max-h-[430px] 2xl:overflow-y-auto 2xl:pr-1 custom-scrollbar">
                 {filteredFarms.slice(0, 10).map((farm) => (
                   <div key={farm.id} className={`${outlineBlockClass} flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between lg:p-3.5`}>
                     <div>
@@ -1333,7 +1848,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
             <LoadingState text="Loading farmer response insights..." size="sm" />
           ) : (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:grid-cols-4">
                 <div className={metricTileClass}>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Recommendations</p>
                   <p className="text-2xl font-bold">{responseHistory?.stats?.total ?? 0}</p>
@@ -1438,7 +1953,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
             />
           ) : (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:grid-cols-5">
                 <div className={metricTileClass}>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">Total</p>
                   <p className="text-2xl font-bold">{sensorHealth?.total ?? 0}</p>
@@ -1618,7 +2133,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
             <LoadingState text="Loading pest control operations..." size="sm" />
           ) : (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:grid-cols-4">
                 <div className={metricTileClass}>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">Scheduled Actions</p>
                   <p className="text-2xl font-bold">{pestControlSchedules.length}</p>
@@ -1860,14 +2375,14 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
         'Track recent cross-farm events and exports as a distinct monitoring stream.',
         'lg:col-span-12'
       )}
-      <Card className="lg:col-span-4 min-w-0 lg:sticky lg:top-24 self-start dash-panel">
+      <Card className="lg:col-span-4 min-w-0 self-start dash-panel">
         <CardHeader className="pb-3">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
               <CardTitle className={sectionTitleClass}>Recent System Activity</CardTitle>
               <CardDescription className={sectionDescriptionClass}>What changed across farms in the selected activity window.</CardDescription>
             </div>
-            <div className="flex w-full flex-wrap gap-2 md:w-auto md:justify-end">
+            <div className="dash-toolbar w-full md:w-auto md:justify-end">
               <select
                 className={`${compactControlClass} min-w-[145px]`}
                 value={activityHours}
@@ -1903,34 +2418,34 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
             </div>
           </div>
         </CardHeader>
-        <CardContent className="lg:max-h-[760px] lg:overflow-y-auto lg:pr-1 custom-scrollbar">
+        <CardContent className="2xl:max-h-[760px] 2xl:overflow-y-auto 2xl:pr-1 custom-scrollbar">
           {recentActivityLoading ? (
             <LoadingState text="Loading recent activity..." size="sm" />
           ) : (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-3 2xl:grid-cols-6">
+              <div className="dash-summary-grid-wide">
                 <div className={metricTileClass}>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Users</p>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide break-words text-balance">Users</p>
                   <p className="text-2xl font-bold">{recentActivity?.summary?.newUsers ?? 0}</p>
                 </div>
                 <div className={metricTileClass}>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Farms</p>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide break-words text-balance">Farms</p>
                   <p className="text-2xl font-bold">{recentActivity?.summary?.newFarms ?? 0}</p>
                 </div>
                 <div className={metricTileClass}>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Readings</p>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide break-words text-balance">Readings</p>
                   <p className="text-2xl font-bold">{recentActivity?.summary?.sensorReadings ?? 0}</p>
                 </div>
                 <div className={metricTileClass}>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Recommendations</p>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide break-words text-balance">Recommendations</p>
                   <p className="text-2xl font-bold">{recentActivity?.summary?.recommendations ?? 0}</p>
                 </div>
                 <div className={metricTileClass}>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Pest Events</p>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide break-words text-balance">Pest Events</p>
                   <p className="text-2xl font-bold">{recentActivity?.summary?.pestDetections ?? 0}</p>
                 </div>
                 <div className={metricTileClass}>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Pest Control</p>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide break-words text-balance">Pest Control</p>
                   <p className="text-2xl font-bold">{recentActivity?.summary?.pestControlActions ?? 0}</p>
                 </div>
               </div>
@@ -2296,7 +2811,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
               }
             />
           ) : (
-            <div className="space-y-3 lg:max-h-[700px] lg:overflow-y-auto lg:pr-2 custom-scrollbar">
+            <div className="space-y-3 2xl:max-h-[700px] 2xl:overflow-y-auto 2xl:pr-2 custom-scrollbar">
               {filteredRecommendations.map((recommendation) => (
                 <div key={recommendation.id} className="dash-detail-card">
                   <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
@@ -2405,7 +2920,7 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
           </div>
           <CardDescription className={sectionDescriptionClass}>Validate AI detections and complete expert adjudication</CardDescription>
         </CardHeader>
-        <CardContent className="lg:max-h-[760px] lg:overflow-y-auto lg:pr-1 custom-scrollbar">
+        <CardContent className="2xl:max-h-[760px] 2xl:overflow-y-auto 2xl:pr-1 custom-scrollbar">
           <div className="mb-3 flex items-center justify-end">
             <select
               className={compactControlClass}
@@ -2667,11 +3182,162 @@ export function ConnectedExpertDashboard({ searchQuery = '', activeTab = 'overvi
         <DistrictAnalyticsPanel />
       )}
 
+      {/* ===== Irrigation Tab ===== */}
+      {isIrrigationTab && (
+        <section className="dash-workspace-section">
+          <ScheduleInsightsPanel
+            resource="irrigation"
+            role="expert"
+            farms={filteredFarms}
+            selectedFarmId={selectedFarmId}
+            title="Assigned Farm Irrigation"
+            description="Water usage is grouped by assigned farm so experts can compare irrigation load across their scope."
+            emptyTitle="No irrigation schedules in scope"
+            emptyMessage="No irrigation schedules are available yet across the farms assigned to this expert."
+            maxFarms={24}
+          />
+        </section>
+      )}
+
+      {/* ===== Fertilization Tab ===== */}
+      {isFertilizationTab && (
+        <section className="dash-workspace-section">
+          <ScheduleInsightsPanel
+            resource="fertilization"
+            role="expert"
+            farms={filteredFarms}
+            selectedFarmId={selectedFarmId}
+            title="Assigned Farm Fertilization"
+            description="Nutrient usage is grouped by assigned farm so experts can compare fertilizer activity across their scope."
+            emptyTitle="No fertilization schedules in scope"
+            emptyMessage="No fertilization schedules are available yet across the farms assigned to this expert."
+            maxFarms={24}
+          />
+        </section>
+      )}
+
+      {/* ===== Map View Tab ===== */}
+      {isMapViewTab && (
+        <ExpertMapViewPanel
+          farms={districtScopedFarms}
+          selectedFarm={selectedFarm}
+          onSelectFarm={(farmId) => setSelectedFarmId(farmId)}
+          farmMarkers={expertMapFarmMarkers}
+          districtLabel={expertMapDistrictLabel}
+        />
+      )}
+
       {/* ===== AI Advice Tab ===== */}
       {isAiAdviceTab && (
         <ExpertAiAdvicePanel />
       )}
     </div>
+  );
+}
+
+function ExpertMapViewPanel({
+  farms,
+  selectedFarm,
+  onSelectFarm,
+  farmMarkers,
+  districtLabel,
+}: {
+  farms: Farm[];
+  selectedFarm: Farm | null;
+  onSelectFarm: (farmId: string) => void;
+  farmMarkers: MapboxMarkerData[];
+  districtLabel: string;
+}) {
+  const mappedFarmCount = farmMarkers.length;
+
+  return (
+    <section className="dash-workspace-section">
+      <div className="dash-workspace-grid-lg">
+        <Card className="dash-panel dash-workspace-main-lg">
+          <CardHeader>
+            <CardTitle className="text-lg font-extrabold tracking-tight">District Farm Map</CardTitle>
+            <CardDescription>Review all mapped farms in the current expert district and pick a farm to coordinate.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <MapboxMap
+              markers={farmMarkers}
+              selectedMarkerId={selectedFarm ? `farm-${selectedFarm.id}` : null}
+              onSelectMarker={(markerId) => {
+                if (markerId.startsWith('farm-')) {
+                  onSelectFarm(markerId.replace('farm-', ''));
+                }
+              }}
+              center={
+                (() => {
+                  const focusCoordinates = getFarmMapCoordinates(selectedFarm);
+                  return typeof focusCoordinates?.lat === 'number' && typeof focusCoordinates?.lng === 'number'
+                    ? { lat: focusCoordinates.lat, lng: focusCoordinates.lng }
+                    : undefined;
+                })()
+              }
+              fitToMarkers={farmMarkers.length > 0}
+              mapClassName="h-[460px]"
+              emptyTitle="No mapped district farms yet"
+              emptyMessage="Add coordinates to district farms to unlock the expert map workspace."
+              tokenMissingMessage="Add VITE_MAPBOX_ACCESS_TOKEN to enable the expert map workspace."
+            />
+          </CardContent>
+        </Card>
+
+        <div className="lg:col-span-4 min-w-0 space-y-4 self-start">
+          <Card className="dash-panel">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-extrabold tracking-tight">Map Context</CardTitle>
+              <CardDescription>Current district coverage and selected farm focus</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="dash-outline-block">
+                <p className="text-xs text-muted-foreground uppercase">District scope</p>
+                <p className="font-semibold">{districtLabel}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {mappedFarmCount > 0
+                    ? 'Markers represent farmers in the same district as the current expert scope'
+                    : 'No district farm coordinates are available yet'}
+                </p>
+              </div>
+              <div className="dash-outline-block">
+                <p className="text-xs text-muted-foreground uppercase">Focused farm</p>
+                <p className="font-semibold">{selectedFarm?.name || 'No farm selected'}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {selectedFarm?.locationName || selectedFarm?.district?.name || 'Choose a farm marker to focus it'}
+                </p>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="dash-outline-block">
+                  <p className="text-xs text-muted-foreground uppercase">Mapped farms</p>
+                  <p className="text-lg font-semibold">{mappedFarmCount}</p>
+                </div>
+                <div className="dash-outline-block">
+                  <p className="text-xs text-muted-foreground uppercase">Unmapped farms</p>
+                  <p className="text-lg font-semibold">{Math.max(farms.length - mappedFarmCount, 0)}</p>
+                </div>
+                <div className="dash-outline-block">
+                  <p className="text-xs text-muted-foreground uppercase">Focus crop</p>
+                  <p className="text-lg font-semibold">{selectedFarm?.cropVariety || 'Not set'}</p>
+                </div>
+                <div className="dash-outline-block">
+                  <p className="text-xs text-muted-foreground uppercase">Growth stage</p>
+                  <p className="text-lg font-semibold capitalize">
+                    {selectedFarm?.currentGrowthStage?.replace(/_/g, ' ') || 'Not set'}
+                  </p>
+                </div>
+              </div>
+              <div className="dash-outline-block">
+                <p className="text-xs text-muted-foreground uppercase">Map interaction</p>
+                <p className="text-sm text-muted-foreground">
+                  Select any farm marker to sync the coordination workspace with that farmer record.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -2704,8 +3370,6 @@ function DistrictAnalyticsPanel() {
     refetch: refetchCoordinateWeather,
   } = useWeatherByCoordinates(submittedCoords?.lat, submittedCoords?.lon, !!submittedCoords);
 
-  if (isLoading) return <LoadingState text="Loading districts..." />;
-
   const d = districtData as any;
   const districtWeatherData = districtWeather as any;
   const coordinateWeatherData = coordinateWeather as any;
@@ -2713,6 +3377,47 @@ function DistrictAnalyticsPanel() {
   const districtSevereSignals = selectedDistrictOutbreak
     ? Number(selectedDistrictOutbreak.severity?.high || 0) + Number(selectedDistrictOutbreak.severity?.severe || 0)
     : 0;
+  const outbreakMarkers = useMemo<MapboxMarkerData[]>(
+    () =>
+      (outbreakMap?.detections || []).flatMap((detection: any) => {
+        const latitude = detection.coordinates?.lat;
+        const longitude = detection.coordinates?.lng;
+
+        if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+          return [];
+        }
+
+        const severity = String(detection.severity || 'low');
+        const tone: MapboxMarkerTone =
+          severity === 'severe' || severity === 'high'
+            ? 'danger'
+            : severity === 'medium'
+              ? 'warning'
+              : 'success';
+
+        return [{
+          id: detection.id,
+          latitude,
+          longitude,
+          label: detection.pestType || 'Pest detection',
+          badge: `${severity} severity`,
+          description: `${detection.farm?.name || detection.locationDescription || 'Unknown location'} • ${new Date(detection.createdAt).toLocaleDateString()}`,
+          tone,
+        }];
+      }),
+    [outbreakMap?.detections]
+  );
+  const coordinateLookupMarkers = submittedCoords
+    ? [{
+        id: 'coordinate-weather-lookup',
+        latitude: submittedCoords.lat,
+        longitude: submittedCoords.lon,
+        label: 'Weather lookup point',
+        badge: 'Selected coordinates',
+        description: 'Current weather will be fetched for this point.',
+        tone: 'info' as const,
+      }]
+    : [];
 
   const handleCoordinateLookup = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -2722,6 +3427,13 @@ function DistrictAnalyticsPanel() {
     if (Number.isNaN(lat) || Number.isNaN(lon)) return;
     setSubmittedCoords({ lat, lon });
   };
+  const handleCoordinateMapPick = ({ lat, lng }: { lat: number; lng: number }) => {
+    setLookupLatInput(String(lat));
+    setLookupLonInput(String(lng));
+    setSubmittedCoords({ lat, lon: lng });
+  };
+
+  if (isLoading) return <LoadingState text="Loading districts..." />;
 
   return (
     <div className="dash-section-stack">
@@ -2747,7 +3459,7 @@ function DistrictAnalyticsPanel() {
           {districtLoading ? (
             <LoadingState text="Loading district data..." size="sm" />
           ) : d ? (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
               {[
                 { label: 'Farms', value: d.farmCount ?? '--' },
                 { label: 'Sensors', value: d.sensorCount ?? '--' },
@@ -2779,7 +3491,7 @@ function DistrictAnalyticsPanel() {
             <LoadingState text="Loading outbreak map..." size="sm" />
           ) : outbreakMap ? (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:grid-cols-4">
                 <div className={centeredMetricTileClass}>
                   <p className="text-xl font-bold">{outbreakMap.detections?.length ?? 0}</p>
                   <p className="text-xs text-muted-foreground">Detections in Window</p>
@@ -2797,6 +3509,14 @@ function DistrictAnalyticsPanel() {
                   <p className="text-xs text-muted-foreground">High + Severe Signals</p>
                 </div>
               </div>
+
+              <MapboxMap
+                markers={outbreakMarkers}
+                mapClassName="h-[320px]"
+                emptyTitle="No mapped outbreak detections"
+                emptyMessage="Outbreak detections need coordinates before they can be plotted on the district map."
+                tokenMissingMessage="Add VITE_MAPBOX_ACCESS_TOKEN to render the expert outbreak map."
+              />
 
               {outbreakMap.byDistrict?.length ? (
                 <div className="space-y-2">
@@ -2840,7 +3560,7 @@ function DistrictAnalyticsPanel() {
           {districtWeatherLoading ? (
             <LoadingState text="Loading district weather..." size="sm" />
           ) : districtWeatherData ? (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
               {[
                 { label: 'Temperature', value: districtWeatherData.temperature != null ? `${Math.round(Number(districtWeatherData.temperature))} C` : '--' },
                 { label: 'Humidity', value: districtWeatherData.humidity != null ? `${districtWeatherData.humidity}%` : '--' },
@@ -2888,6 +3608,15 @@ function DistrictAnalyticsPanel() {
             <Button type="submit">Lookup Weather</Button>
           </form>
 
+          <MapboxMap
+            markers={coordinateLookupMarkers}
+            center={submittedCoords ? { lat: submittedCoords.lat, lng: submittedCoords.lon } : undefined}
+            fitToMarkers={Boolean(submittedCoords)}
+            onCoordinateSelect={handleCoordinateMapPick}
+            mapClassName="h-[280px]"
+            tokenMissingMessage="Add VITE_MAPBOX_ACCESS_TOKEN to enable click-to-select weather lookups."
+          />
+
           {!submittedCoords ? (
             <EmptyState
               title="Enter coordinates"
@@ -2911,7 +3640,7 @@ function DistrictAnalyticsPanel() {
                 </Button>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:grid-cols-4">
                 {[
                   {
                     label: 'Temperature',

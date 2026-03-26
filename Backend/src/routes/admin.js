@@ -764,24 +764,47 @@ router.get('/audit-logs',
   validatePagination,
   handleValidationErrors,
   asyncHandler(async (req, res) => {
-    const { page = 1, limit = 50, action, userId, startDate, endDate } = req.query;
+    const { page = 1, limit = 50, action, userId, entityType, startDate, endDate } = req.query;
     const since = startDate ? Date.parse(String(startDate)) : undefined;
     const until = endDate ? Date.parse(String(endDate)) : undefined;
+    const parsedPage = parseInt(page);
+    const parsedLimit = parseInt(limit);
 
     const opts = {
-      page: parseInt(page),
-      limit: parseInt(limit),
+      page: parsedPage,
+      limit: parsedLimit,
       action: action || undefined,
       userId: userId || undefined,
+      entityType: entityType || undefined,
       since: Number.isFinite(since) ? since : undefined,
       until: Number.isFinite(until) ? until : undefined,
     };
 
-    const result = await db.auditLogs.list(opts);
-    const data = result.data || result;
-    const count = result.count ?? result.total ?? data.length;
+    try {
+      const result = await db.auditLogs.list(opts);
+      const data = result.data || result;
+      const count = result.count ?? result.total ?? data.length;
 
-    return paginatedResponse(res, data, parseInt(page), parseInt(limit), count, 'Audit logs retrieved successfully');
+      return paginatedResponse(res, data, parsedPage, parsedLimit, count, 'Audit logs retrieved successfully');
+    } catch (error) {
+      logger.warn('Audit logs unavailable, returning empty admin audit state:', {
+        message: error?.message,
+        page: parsedPage,
+        limit: parsedLimit,
+        action: action || undefined,
+        userId: userId || undefined,
+        entityType: entityType || undefined,
+      });
+
+      return paginatedResponse(
+        res,
+        [],
+        parsedPage,
+        parsedLimit,
+        0,
+        'Audit logs are temporarily unavailable'
+      );
+    }
   })
 );
 

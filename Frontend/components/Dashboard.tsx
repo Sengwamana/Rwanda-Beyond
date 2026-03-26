@@ -2,7 +2,7 @@ import React, { Suspense, lazy, useState, useEffect } from 'react';
 import { 
   LayoutGrid, Sprout, Settings as SettingsIcon, LogOut, 
   Bell, Search, Menu, Activity, Server, Sun, Moon, Users, FileClock, Cpu, SlidersHorizontal, RadioTower, FileSpreadsheet, Send, CheckCheck, X, Trash2, PanelLeftClose, PanelLeftOpen,
-  BarChart2, Bot, Wifi, BookOpen, MessageSquare, Droplets, Bug
+  BarChart2, Bot, Wifi, BookOpen, MessageSquare, Droplets, Bug, Map as MapIcon
 } from 'lucide-react';
 import { useMarkAllMessagesRead, useMarkMessageRead, useMyMessages, useSystemHealth } from '../hooks/useApi';
 import { Message, UserRole } from '../types';
@@ -65,6 +65,13 @@ interface DashboardProps {
   toggleTheme?: () => void;
 }
 
+interface NavItemConfig {
+  id: string;
+  label: string;
+  icon: any;
+  section: string;
+}
+
 const DASHBOARD_TAB_STORAGE_KEY = 'dashboard-active-tab';
 
 export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, language = 'en', setLanguage, theme, toggleTheme }) => {
@@ -113,48 +120,56 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
   }, [userRole]);
 
   // Define Navigation Items based on Role
-  const getNavItems = (role: UserRole) => {
+  const getNavItems = (role: UserRole): NavItemConfig[] => {
     const common = [
-      { id: 'settings', label: t.settings, icon: SettingsIcon },
+      { id: 'settings', label: t.settings, icon: SettingsIcon, section: 'Account' },
     ];
 
     switch (role) {
       case 'farmer':
         return [
-          { id: 'overview', label: t.fieldView, icon: LayoutGrid },
-          { id: 'sensors', label: 'Sensors', icon: Wifi },
-          { id: 'fertilization', label: 'Fertilization', icon: Droplets },
-          { id: 'pest-history', label: 'Pest History', icon: Bug },
-          { id: 'analytics', label: 'District Analytics', icon: BarChart2 },
-          { id: 'ai-chat', label: 'AI Advice', icon: Bot },
+          { id: 'overview', label: t.fieldView, icon: LayoutGrid, section: 'Workspace' },
+          { id: 'irrigation', label: 'Irrigation', icon: Droplets, section: 'Workspace' },
+          { id: 'fertilization', label: 'Fertilization', icon: Sprout, section: 'Workspace' },
+          { id: 'sensors', label: 'Sensors', icon: Wifi, section: 'Workspace' },
+          { id: 'pest-history', label: 'Pest History', icon: Bug, section: 'Planning' },
+          { id: 'analytics', label: 'District Analytics', icon: BarChart2, section: 'Insights' },
+          { id: 'map-view', label: 'Map View', icon: MapIcon, section: 'Insights' },
+          { id: 'ai-chat', label: 'AI Advice', icon: Bot, section: 'Insights' },
           ...common,
         ];
       case 'expert':
         return [
-          { id: 'overview', label: 'Expert Snapshot', icon: Activity },
-          { id: 'farm-coordination', label: 'Farm Coordination', icon: Sprout },
-          { id: 'field-support', label: 'Field Support', icon: Bug },
-          { id: 'expert-guidance', label: 'Expert Guidance', icon: Send },
-          { id: 'issue-oversight', label: 'Issue Oversight', icon: MessageSquare },
-          { id: 'review-lanes', label: 'Review Lanes', icon: CheckCheck },
-          { id: 'district-analytics', label: 'District Analytics', icon: BarChart2 },
-          { id: 'ai-advice', label: 'AI Advice', icon: Bot },
+          { id: 'overview', label: 'Expert Snapshot', icon: Activity, section: 'Core Operations' },
+          { id: 'farm-coordination', label: 'Farm Coordination', icon: Sprout, section: 'Core Operations' },
+          { id: 'field-support', label: 'Field Support', icon: Bug, section: 'Core Operations' },
+          { id: 'irrigation', label: 'Irrigation', icon: Droplets, section: 'Decision Support' },
+          { id: 'fertilization', label: 'Fertilization', icon: Sprout, section: 'Decision Support' },
+          { id: 'expert-guidance', label: 'Expert Guidance', icon: Send, section: 'Decision Support' },
+          { id: 'issue-oversight', label: 'Issue Oversight', icon: MessageSquare, section: 'Decision Support' },
+          { id: 'review-lanes', label: 'Review Lanes', icon: CheckCheck, section: 'Decision Support' },
+          { id: 'district-analytics', label: 'District Analytics', icon: BarChart2, section: 'Insights' },
+          { id: 'map-view', label: 'Map View', icon: MapIcon, section: 'Insights' },
+          { id: 'ai-advice', label: 'AI Advice', icon: Bot, section: 'Insights' },
           ...common
         ];
       case 'admin':
         return [
-          { id: 'overview', label: t.systemView, icon: Server },
-          { id: 'users', label: 'Users', icon: Users },
-          { id: 'farms', label: 'Farms', icon: Sprout },
-          { id: 'audit', label: 'Audit Logs', icon: FileClock },
-          { id: 'devices', label: 'Devices', icon: Cpu },
-          { id: 'config', label: 'Configuration', icon: SlidersHorizontal },
-          { id: 'monitoring', label: 'Monitoring', icon: RadioTower },
-          { id: 'analytics', label: 'Analytics', icon: BarChart2 },
-          { id: 'content', label: 'Content', icon: BookOpen },
-          { id: 'ussd', label: 'USSD Monitor', icon: MessageSquare },
-          { id: 'reports', label: 'Reports', icon: FileSpreadsheet },
-          { id: 'broadcast', label: 'Broadcast', icon: Send },
+          { id: 'overview', label: t.systemView, icon: Server, section: 'Core Control' },
+          { id: 'users', label: 'Users', icon: Users, section: 'Core Control' },
+          { id: 'farms', label: 'Farms', icon: Sprout, section: 'Core Control' },
+          { id: 'devices', label: 'Devices', icon: Cpu, section: 'Core Control' },
+          { id: 'audit', label: 'Audit Logs', icon: FileClock, section: 'Operations' },
+          { id: 'irrigation', label: 'Irrigation', icon: Droplets, section: 'Operations' },
+          { id: 'fertilization', label: 'Fertilization', icon: Sprout, section: 'Operations' },
+          { id: 'config', label: 'Configuration', icon: SlidersHorizontal, section: 'Operations' },
+          { id: 'monitoring', label: 'Monitoring', icon: RadioTower, section: 'Operations' },
+          { id: 'analytics', label: 'Analytics', icon: BarChart2, section: 'Platform' },
+          { id: 'map-view', label: 'Map View', icon: MapIcon, section: 'Platform' },
+          { id: 'content', label: 'Content', icon: BookOpen, section: 'Platform' },
+          { id: 'ussd', label: 'USSD Monitor', icon: MessageSquare, section: 'Platform' },
+          { id: 'reports', label: 'Reports', icon: FileSpreadsheet, section: 'Platform' },
+          { id: 'broadcast', label: 'Broadcast', icon: Send, section: 'Platform' },
           ...common
         ];
       default:
@@ -163,13 +178,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
   };
 
   const navItems = getNavItems(userRole);
-  const farmerShortcutItems = userRole === 'farmer'
-    ? navItems.filter((item) => ['analytics', 'ai-chat', 'settings'].includes(item.id))
-    : [];
-  const primaryNavItems =
-    userRole === 'farmer'
-      ? navItems.filter((item) => !['analytics', 'ai-chat', 'settings'].includes(item.id))
-      : navItems;
+  const navSections = navItems.reduce<Array<{ section: string; items: NavItemConfig[] }>>((acc, item) => {
+    const existing = acc.find((entry) => entry.section === item.section);
+    if (existing) {
+      existing.items.push(item);
+      return acc;
+    }
+    acc.push({ section: item.section, items: [item] });
+    return acc;
+  }, []);
 
   useEffect(() => {
     if (!navItems.some((item) => item.id === activeTab)) {
@@ -208,14 +225,50 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
     const active = navItems.find((item) => item.id === tabId);
     return active?.label || tabId;
   };
+  const getSearchPlaceholder = (role: UserRole, tabId: string) => {
+    if (role === 'admin') {
+      if (tabId === 'users') return 'Search users, roles, districts, or status';
+      if (tabId === 'farms') return 'Search farms, farmers, districts, or growth stages';
+      if (tabId === 'devices') return 'Search devices, farms, IDs, or health status';
+      if (tabId === 'irrigation') return 'Search irrigation schedules, water usage, and execution status';
+      if (tabId === 'fertilization') return 'Search fertilization schedules, quantities, and execution status';
+      if (tabId === 'monitoring') return 'Search services, alerts, sensors, or health signals';
+      if (tabId === 'map-view') return 'Search mapped farms, outbreaks, and system coverage';
+      if (tabId === 'content') return 'Search resources, FAQ entries, and content categories';
+      return 'Search system users, farms, reports, or alerts';
+    }
+
+    if (role === 'expert') {
+      if (tabId === 'farm-coordination') return 'Search farms, recommendations, or farmer activity';
+      if (tabId === 'field-support') return 'Search pest schedules, scans, or field actions';
+      if (tabId === 'irrigation') return 'Search irrigation schedules, water usage, or assigned farms';
+      if (tabId === 'fertilization') return 'Search nutrient plans, quantities, or assigned farms';
+      if (tabId === 'review-lanes') return 'Search pending reviews, detections, or issue severity';
+      if (tabId === 'district-analytics') return 'Search districts, outbreaks, or weather insights';
+      if (tabId === 'map-view') return 'Search mapped farms, field coverage, or outbreak points';
+      return 'Search farms, guidance, pest reviews, or issue updates';
+    }
+
+    if (tabId === 'sensors') return 'Search sensors, readings, and farm devices';
+    if (tabId === 'irrigation') return 'Search irrigation plans, water volume, and schedule timing';
+    if (tabId === 'fertilization') return 'Search fertilization plans and execution history';
+    if (tabId === 'pest-history') return 'Search scans, treatments, and pest detections';
+    if (tabId === 'analytics') return 'Search trends, weather, and farm performance';
+    if (tabId === 'map-view') return 'Search mapped farms, selected fields, and location coverage';
+    if (tabId === 'ai-chat') return 'Search chat topics, advice, and AI tools';
+    return 'Search recommendations, schedules, alerts, and farm records';
+  };
   const expertTabSubtitleMap: Record<string, string> = {
     overview: 'Review your live workload and jump into the right expert lane.',
     'farm-coordination': 'Select a farm, monitor farmer response, and inspect farm history.',
     'field-support': 'Track field execution and pest-control follow-through for active farms.',
+    irrigation: 'Review irrigation schedules and water usage across your assigned farm scope.',
+    fertilization: 'Track nutrient plans and fertilizer usage across your assigned farm scope.',
     'expert-guidance': 'Create direct advice and monitor recent system activity.',
     'issue-oversight': 'Handle reported farm issues in a focused support workspace.',
     'review-lanes': 'Process recommendation and pest-review decisions in separate lanes.',
     'district-analytics': 'Inspect district performance, outbreak signals, and weather conditions.',
+    'map-view': 'Navigate assigned farms and outbreak activity on an interactive map.',
     'ai-advice': 'Use the AI expert system for focused agricultural guidance.',
     settings: 'Manage your expert profile and dashboard preferences.',
   };
@@ -228,6 +281,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
     month: 'short',
     day: 'numeric',
   });
+  const searchPlaceholder = getSearchPlaceholder(userRole, activeTab);
+  const searchContextLabel =
+    userRole === 'admin'
+      ? 'Searching across platform operations'
+      : userRole === 'expert'
+        ? 'Searching across expert workflows'
+        : 'Searching across selected farm workspaces';
   const pageTitle =
     userRole === 'farmer'
       ? selectedFarm?.name || 'My Farm Dashboard'
@@ -248,48 +308,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
         : 'Live data connected';
   const activeNavItem = navItems.find((item) => item.id === activeTab);
   const ActiveTabIcon = activeNavItem?.icon || LayoutGrid;
-  const roleTheme =
-    userRole === 'admin'
-      ? {
-          surface: 'from-emerald-500/10 via-green-500/5 to-transparent dark:from-emerald-500/20 dark:via-green-500/10',
-          chip: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/20',
-          dot: 'bg-emerald-500',
-        }
-      : userRole === 'expert'
-        ? {
-            surface: 'from-green-500/10 via-green-500/5 to-transparent dark:from-green-500/20 dark:via-green-500/10',
-            chip: 'bg-green-500/15 text-green-700 dark:text-green-300 border-green-500/20',
-            dot: 'bg-green-500',
-          }
-        : {
-            surface: 'from-emerald-500/10 via-green-500/5 to-transparent dark:from-emerald-500/20 dark:via-green-500/10',
-            chip: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/20',
-            dot: 'bg-emerald-500',
-          };
+  const roleTheme = userRole === 'expert' ? { dot: 'bg-green-500' } : { dot: 'bg-emerald-500' };
   const rolePillClass =
     userRole === 'admin'
       ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/20'
       : userRole === 'expert'
         ? 'bg-green-500/15 text-green-700 dark:text-green-300 border-green-500/20'
         : 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/20';
-  const navAccentClass =
-    userRole === 'admin'
-      ? 'bg-[#0F5132] text-white border-[#0F5132] shadow-[0_12px_28px_-18px_rgba(15,81,50,0.85)]'
-      : userRole === 'expert'
-        ? 'bg-green-600 text-white border-green-600 shadow-[0_12px_28px_-18px_rgba(22,163,74,0.85)]'
-        : 'bg-[#0F5132] text-white border-[#0F5132] shadow-[0_12px_28px_-18px_rgba(15,81,50,0.85)]';
-  const navAccentTextClass =
-    userRole === 'admin'
-      ? 'group-hover:text-[#0F5132]'
-      : userRole === 'expert'
-        ? 'group-hover:text-green-600'
-        : 'group-hover:text-[#0F5132]';
-  const quickActiveTabClass =
-    userRole === 'admin'
-      ? 'bg-[#0F5132] text-white border-[#0F5132] shadow-md'
-      : userRole === 'expert'
-        ? 'bg-green-600 text-white border-green-600 shadow-md'
-        : 'bg-[#0F5132] text-white border-[#0F5132] shadow-md';
   const persistedMessages = notificationsQuery.data?.messages || [];
   const messageUnreadCount = notificationsQuery.data?.unreadCount || 0;
   const totalUnreadCount = unreadCount + messageUnreadCount;
@@ -336,15 +361,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
         setActiveTab(id);
         setIsMobileNavOpen(false);
         setShowMobileSearch(false);
+        setShowAlerts(false);
       }}
       title={compactSidebar ? label : undefined}
       className={`relative w-[calc(100%-20px)] mx-2.5 flex ${compactSidebar ? 'flex-col justify-center px-2 py-3 mt-1.5' : 'items-center gap-3.5 px-4 py-3.5 my-1.5'} rounded-[1.25rem] transition-all duration-200 text-[15px] group ${
         activeTab === id
-          ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#1B6B46] dark:text-emerald-300 font-semibold border border-emerald-100 dark:border-emerald-900/50 shadow-[0_14px_24px_-22px_rgba(27,107,70,0.45)]'
-          : 'text-slate-500 hover:bg-[#F5F6F1] dark:hover:bg-slate-800 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 font-medium border border-transparent'
+          ? 'bg-emerald-50 dark:bg-emerald-950/40 text-primary dark:text-emerald-300 font-semibold border border-emerald-100 dark:border-emerald-900/50 shadow-[0_14px_24px_-22px_rgba(27,107,70,0.45)]'
+          : 'text-slate-500 hover:bg-[hsl(var(--secondary))] dark:hover:bg-slate-800 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 font-medium border border-transparent'
       }`}
     >
-      <Icon size={21} strokeWidth={activeTab === id ? 2.35 : 2} className={`${activeTab === id ? 'text-[#1B6B46] dark:text-emerald-300' : 'text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300'}`} />
+      <Icon size={21} strokeWidth={activeTab === id ? 2.35 : 2} className={`${activeTab === id ? 'text-primary dark:text-emerald-300' : 'text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300'}`} />
       {compactSidebar ? (
         <span className="mt-1 text-[10px] leading-tight text-center font-medium">
           {label}
@@ -378,12 +404,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
   };
 
   return (
-    <div className="relative min-h-screen bg-[hsl(var(--background))] dark:bg-slate-950 font-sans text-slate-800 dark:text-slate-100 flex w-full">
+    <div className="dashboard-shell relative min-h-screen bg-[hsl(var(--background))] dark:bg-slate-950 font-sans text-slate-800 dark:text-slate-100 flex w-full">
 
       
       {/* MOBILE OVERLAY */}
       <div 
-        className={`fixed inset-0 bg-black/20 backdrop-blur-sm z-40 md:hidden transition-opacity duration-300 ${
+        className={`fixed inset-0 bg-slate-950/35 backdrop-blur-[2px] z-40 md:hidden transition-opacity duration-300 ${
           isMobileNavOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
         onClick={() => setIsMobileNavOpen(false)}
@@ -392,7 +418,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
 
       {/* SIDEBAR */}
       <aside className={`
-        fixed md:sticky top-0 left-0 h-screen ${compactSidebar ? 'w-24' : 'w-[286px] shrink-0'} bg-transparent flex flex-col z-50
+        fixed md:sticky top-0 left-0 h-screen ${compactSidebar ? 'w-24' : 'w-[292px] xl:w-[304px] shrink-0'} bg-transparent flex flex-col z-50
         transition-transform duration-300 ease-out
         ${isMobileNavOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0 md:shadow-none'}
       `}>
@@ -402,41 +428,33 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
             type="button"
             onClick={() => setActiveTab('overview')}
             title="RwandaBeyond"
-            className={`w-full rounded-[1.35rem] transition-colors ${compactSidebar ? 'flex justify-center px-0 py-1.5' : 'px-2 py-2 text-left hover:bg-[#F7F8F3] dark:hover:bg-slate-800/80'}`}
+            className={`w-full rounded-[1.35rem] transition-colors ${compactSidebar ? 'flex justify-center px-0 py-1.5' : 'px-2 py-2 text-left hover:bg-[hsl(var(--secondary))] dark:hover:bg-slate-800/80'}`}
           >
             <BrandLogo compact={compactSidebar} variant="sidebar" />
           </button>
         </div>
 
         <nav className="flex-1 px-1 space-y-1.5 overflow-y-auto custom-scrollbar">
-          {!compactSidebar && (
-            <div className="px-4 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-             {userRole === 'admin' ? 'Admin Console' : userRole === 'expert' ? 'Expert Tools' : 'Main Menu'}
+          {navSections.map((section) => (
+            <div key={section.section} className="space-y-1.5">
+              {!compactSidebar && (
+                <div className="px-4 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                  {section.section}
+                </div>
+              )}
+              {section.items.map((item) => (
+                <NavItem key={item.id} id={item.id} label={item.label} icon={item.icon} />
+              ))}
             </div>
-          )}
-          {primaryNavItems.map(item => (
-              <NavItem key={item.id} id={item.id} label={item.label} icon={item.icon} />
           ))}
         </nav>
 
-        {farmerShortcutItems.length > 0 && (
-          <div className={`shrink-0 ${compactSidebar ? 'px-1 py-3' : 'px-1 py-4'} space-y-1.5`}>
-            {!compactSidebar && (
-              <div className="px-4 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                Insights
-              </div>
-            )}
-            {farmerShortcutItems.map((item) => (
-              <NavItem key={item.id} id={item.id} label={item.label} icon={item.icon} />
-            ))}
-          </div>
-        )}
-
         {!compactSidebar && (
           <div className="px-2 pb-3">
-            <div className="rounded-[1.45rem] border border-[hsl(var(--border))] bg-[#F9FAF5] dark:bg-slate-950 px-3.5 py-3.5 flex items-center gap-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)]">
+            <div className="rounded-[1.45rem] border border-[hsl(var(--border))] bg-[hsl(var(--secondary))] dark:bg-slate-950 px-3.5 py-3.5 flex items-center gap-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)]">
               <img
                 src={user?.profileImageUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.email || userRole}`}
+                alt={`${displayName} avatar`}
                 className="w-11 h-11 rounded-full object-cover border border-slate-200 dark:border-slate-700"
               />
               <div className="min-w-0">
@@ -466,10 +484,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
       </aside>
 
       {/* MAIN CONTENT AREA */}
-      <main className="relative flex-1 min-w-0 bg-[hsl(var(--background))] dark:bg-slate-950 flex flex-col h-screen overflow-y-auto">
+      <main className="dashboard-main relative flex-1 min-w-0 bg-[hsl(var(--background))] dark:bg-slate-950 flex flex-col h-screen overflow-y-auto">
         
         {/* HEADER TOP BAR */}
-        <header className="sticky top-0 z-30 bg-[hsl(var(--background))]/95 dark:bg-slate-950/95 backdrop-blur-sm">
+        <header className="sticky top-0 z-30 border-b border-[hsl(var(--border))]/70 bg-[hsl(var(--background))]/90 dark:bg-slate-950/90 backdrop-blur-xl">
           <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between gap-4 px-4 py-4 md:px-6 lg:px-8">
            {/* Left */}
            <div className="flex items-center gap-4 flex-1 min-w-0">
@@ -485,12 +503,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
                </button>
                
                {/* Search */}
-               <div className="hidden md:flex items-center gap-3 bg-white dark:bg-slate-900 px-5 py-3 rounded-full w-[430px] focus-within:ring-2 ring-emerald-200/70 dark:ring-emerald-700/40 transition-all border border-[hsl(var(--border))] shadow-[0_16px_28px_-24px_rgba(15,23,42,0.28)]">
+               <div className="hidden md:flex items-center gap-3 bg-white/95 dark:bg-slate-900 px-5 py-3 rounded-full w-full max-w-[480px] focus-within:ring-2 ring-emerald-200/70 dark:ring-emerald-700/40 transition-all border border-[hsl(var(--border))] shadow-[0_16px_28px_-24px_rgba(15,23,42,0.28)]">
                    <Search size={18} className="text-slate-400" />
                    <input
                      id="dashboard-search-input"
                      type="text"
-                     placeholder="Search task"
+                     placeholder={searchPlaceholder}
                      value={searchQuery}
                      onChange={(event) => setSearchQuery(event.target.value)}
                      className="bg-transparent text-sm w-full outline-none text-slate-700 dark:text-slate-300 placeholder:text-slate-400 font-medium"
@@ -503,8 +521,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
                        <X size={14} />
                      </button>
                    )}
-                   <div className="hidden lg:flex items-center justify-center px-2 py-0.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 text-[10px] font-bold">
-                     Ctrl+F
+                   <div className="hidden lg:flex items-center justify-center gap-1 px-2.5 py-1 rounded-xl bg-[hsl(var(--secondary))] dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 text-[10px] font-bold uppercase tracking-[0.18em]">
+                     <span>/</span>
+                     <span>Focus</span>
                    </div>
                </div>
            </div>
@@ -538,8 +557,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
                </button>
                
                {/* Minimal visible profile for large screens is optional, but reference image has it right top */}
-               <div className="hidden lg:flex items-center gap-3 ml-2 cursor-pointer hover:opacity-90 transition-opacity pl-2 pr-3 py-2 rounded-full border border-[hsl(var(--border))] bg-white dark:bg-slate-900 shadow-[0_14px_26px_-22px_rgba(15,23,42,0.3)]" onClick={() => setActiveTab('settings')}>
-                  <img src={user?.profileImageUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.email || userRole}`} className="w-10 h-10 rounded-full object-cover border border-slate-200 dark:border-slate-700 bg-slate-100" />
+              <div className="hidden lg:flex items-center gap-3 ml-2 cursor-pointer hover:opacity-90 transition-opacity pl-2 pr-3 py-2 rounded-full border border-[hsl(var(--border))] bg-white dark:bg-slate-900 shadow-[0_14px_26px_-22px_rgba(15,23,42,0.3)]" onClick={() => setActiveTab('settings')}>
+                <img src={user?.profileImageUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.email || userRole}`} alt={`${displayName} profile`} className="w-10 h-10 rounded-full object-cover border border-slate-200 dark:border-slate-700 bg-slate-100" />
                   <div className="flex flex-col text-left">
                       <span className="text-sm font-bold text-slate-900 dark:text-white leading-tight">{displayName}</span>
                       <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 leading-tight">{user?.email || 'User'}</span>
@@ -552,12 +571,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
         {showMobileSearch && (
           <div className="md:hidden">
             <div className="mx-auto w-full max-w-[1600px] px-4 pt-3">
-              <div className="flex items-center gap-2 bg-white dark:bg-slate-800 px-4 py-3 rounded-[1.4rem] shadow-[0_14px_26px_-22px_rgba(15,23,42,0.25)] border border-[hsl(var(--border))]">
+              <div className="space-y-2 rounded-[1.5rem] border border-[hsl(var(--border))] bg-white/95 px-4 py-3 shadow-[0_14px_26px_-22px_rgba(15,23,42,0.25)] dark:bg-slate-900">
+                <div className="flex items-center justify-between gap-3 px-1">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                    {searchContextLabel}
+                  </p>
+                  <span className="rounded-full bg-[hsl(var(--secondary))] px-2.5 py-1 text-[10px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+                    Tap outside or press Esc
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
                 <Search size={16} className="text-slate-400" />
                 <input
                   id="dashboard-search-input-mobile"
                   type="text"
-                  placeholder={t.search}
+                  placeholder={searchPlaceholder}
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
                   className="bg-transparent text-sm w-full outline-none text-slate-600 dark:text-slate-300 placeholder:text-slate-400 font-medium"
@@ -571,6 +599,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
                     <X size={14} />
                   </button>
                 )}
+                </div>
               </div>
             </div>
           </div>
@@ -587,13 +616,31 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
                  </div>
                  <h1 className="text-[2.15rem] md:text-[2.7rem] font-extrabold text-slate-900 dark:text-white tracking-tight leading-[1.05] mt-4">{pageTitle}</h1>
                 <p className="text-slate-500 dark:text-slate-400 text-[15px] mt-2.5 max-w-2xl">{pageSubtitle}</p>
+                <div className="mt-4 flex flex-wrap items-center gap-2.5">
+                  <span className="dash-meta-pill">{todayLabel}</span>
+                  <span className="dash-meta-pill">{getTabLabel(activeTab)}</span>
+                  <span className="dash-meta-pill">{searchContextLabel}</span>
+                </div>
              </div>
              
-             <div className="flex items-center gap-3">
-                 <span className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-[#F6F7F1] dark:bg-slate-800 border border-[hsl(var(--border))] text-xs font-semibold text-slate-700 dark:text-slate-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]">
-                   <span className="w-2 h-2 rounded-full bg-[#1B6B46] animate-pulse"></span>
+             <div className="flex flex-col items-stretch gap-3 md:min-w-[250px] md:max-w-[320px]">
+               <div className="dash-soft-block">
+                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                   Live status
+                 </p>
+                 <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-[hsl(var(--border))] bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] dark:bg-slate-900 dark:text-slate-300">
+                   <span className="h-2 w-2 rounded-full bg-primary animate-pulse"></span>
                    {statusLabel}
-                 </span>
+                 </div>
+               </div>
+               <div className="dash-outline-block">
+                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                   Search scope
+                 </p>
+                 <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                   {searchPlaceholder}
+                 </p>
+               </div>
              </div>
           </div>
 
@@ -608,10 +655,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
                     setActiveTab(item.id);
                     setIsMobileNavOpen(false);
                     setShowMobileSearch(false);
+                    setShowAlerts(false);
                   }}
                   className={`shrink-0 inline-flex items-center gap-2 py-2.5 px-4 rounded-full border text-[14px] font-medium transition-all ${
                     isActive
-                      ? 'bg-[#1B6B46] text-white border-[#1B6B46] shadow-[0_18px_28px_-18px_rgba(27,107,70,0.62)]'
+                      ? 'bg-primary text-primary-foreground border-transparent shadow-[0_18px_28px_-18px_rgba(27,107,70,0.62)]'
                       : 'bg-white text-slate-500 border-[hsl(var(--border))] hover:text-slate-800 hover:border-slate-300 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-800 dark:hover:text-slate-200'
                   }`}
                 >
@@ -627,18 +675,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
         {showAlerts && (
           <div className="px-4 md:px-6 lg:px-8 max-w-[1600px] mx-auto w-full pt-4">
             <div className="dash-panel">
-              <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex flex-col gap-4 px-5 py-4 border-b border-slate-200 dark:border-slate-800 md:flex-row md:items-start md:justify-between">
                 <div>
                   <p className="font-semibold text-sm">Notifications & Alerts</p>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
                     {totalUnreadCount > 0 ? `${totalUnreadCount} unread` : 'All caught up'}
                   </p>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                   <button
                     onClick={() => markAllMessagesReadMutation.mutate()}
                     disabled={markAllMessagesReadMutation.isPending || messageUnreadCount === 0}
-                    className="inline-flex items-center gap-1 text-xs font-semibold text-[#0F5132] hover:underline disabled:opacity-50 disabled:no-underline"
+                    className="dash-link-action"
                   >
                     <CheckCheck size={14} />
                     Mark notifications read
@@ -646,7 +694,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
                   <button
                     onClick={() => markAllAsRead()}
                     disabled={unreadCount === 0}
-                    className="inline-flex items-center gap-1 text-xs font-semibold text-[#0F5132] hover:underline"
+                    className="dash-link-action"
                   >
                     <CheckCheck size={14} />
                     Mark alerts read
@@ -702,7 +750,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
                             <button
                               onClick={() => markMessageReadMutation.mutate(message.id)}
                               disabled={markMessageReadMutation.isPending}
-                              className="text-[11px] font-semibold text-[#0F5132] hover:underline"
+                              className="dash-link-action text-[11px]"
                             >
                               Mark read
                             </button>
@@ -739,7 +787,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
                           {!alert.isRead && (
                             <button
                               onClick={() => markAsRead(alert.id)}
-                              className="text-[11px] font-semibold text-[#0F5132] hover:underline"
+                              className="dash-link-action text-[11px]"
                             >
                               Mark read
                             </button>
@@ -769,7 +817,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userRole, onLogout, langua
           >
             <div
               key={`${userRole}-${activeTab}`}
-              className="animate-fade-in [animation-duration:220ms] [animation-fill-mode:both]"
+              className="dashboard-page animate-fade-in [animation-duration:220ms] [animation-fill-mode:both]"
             >
               {renderContent()}
             </div>

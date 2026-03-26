@@ -3,7 +3,9 @@
 // =====================================================
 
 import React from 'react';
+import { AlertTriangle, Inbox } from 'lucide-react';
 import { cn } from '../../utils/cn';
+import { Button } from './Button';
 
 interface SpinnerProps {
   size?: 'sm' | 'md' | 'lg' | 'xl';
@@ -60,9 +62,9 @@ interface LoadingStateProps {
 
 export function LoadingState({ text = 'Loading...', size = 'lg', className }: LoadingStateProps) {
   return (
-    <div className={cn('flex flex-col items-center justify-center py-12 gap-4', className)}>
+    <div className={cn('flex flex-col items-center justify-center gap-4 rounded-[1.5rem] border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--secondary))]/70 px-6 py-10 text-center', className)}>
       <Spinner size={size} />
-      <p className="text-muted-foreground text-sm">{text}</p>
+      <p className="max-w-md text-sm text-muted-foreground">{text}</p>
     </div>
   );
 }
@@ -93,33 +95,18 @@ export function ErrorState({
   onRetry 
 }: ErrorStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center py-12 gap-4 text-center">
-      <div className="bg-destructive/10 p-4 rounded-full">
-        <svg 
-          className="h-8 w-8 text-destructive" 
-          fill="none" 
-          viewBox="0 0 24 24" 
-          stroke="currentColor"
-        >
-          <path 
-            strokeLinecap="round" 
-            strokeLinejoin="round" 
-            strokeWidth={2} 
-            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" 
-          />
-        </svg>
+    <div className="flex flex-col items-center justify-center gap-4 rounded-[1.5rem] border border-destructive/15 bg-destructive/5 px-6 py-10 text-center" role="alert">
+      <div className="rounded-full bg-destructive/10 p-4">
+        <AlertTriangle className="h-8 w-8 text-destructive" />
       </div>
       <div>
         <h3 className="font-semibold text-foreground">{title}</h3>
-        <p className="text-muted-foreground text-sm mt-1">{message}</p>
+        <p className="mt-1 max-w-md text-sm text-muted-foreground">{message}</p>
       </div>
       {onRetry && (
-        <button
-          onClick={onRetry}
-          className="px-4 py-2.5 bg-[#0F5132] text-white rounded-full hover:bg-[#155a3b] transition-colors text-sm font-medium"
-        >
+        <Button onClick={onRetry} variant="outline">
           Try Again
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -139,27 +126,15 @@ export function EmptyState({
   action 
 }: EmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center py-12 gap-4 text-center">
+    <div className="flex flex-col items-center justify-center gap-4 rounded-[1.5rem] border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--secondary))]/70 px-6 py-10 text-center">
       {icon || (
-        <div className="bg-muted p-4 rounded-full">
-          <svg 
-            className="h-8 w-8 text-muted-foreground" 
-            fill="none" 
-            viewBox="0 0 24 24" 
-            stroke="currentColor"
-          >
-            <path 
-              strokeLinecap="round" 
-              strokeLinejoin="round" 
-              strokeWidth={2} 
-              d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" 
-            />
-          </svg>
+        <div className="rounded-full bg-muted p-4">
+          <Inbox className="h-8 w-8 text-muted-foreground" />
         </div>
       )}
       <div>
         <h3 className="font-semibold text-foreground">{title}</h3>
-        <p className="text-muted-foreground text-sm mt-1">{message}</p>
+        <p className="mt-1 max-w-md text-sm text-muted-foreground">{message}</p>
       </div>
       {action}
     </div>

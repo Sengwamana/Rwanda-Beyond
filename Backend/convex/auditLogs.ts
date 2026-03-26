@@ -135,7 +135,15 @@ export const list = query({
     }
 
     const userIds = [...new Set(paginated.map((log) => log.user_id).filter(Boolean))];
-    const users = await Promise.all(userIds.map((userId) => ctx.db.get(userId as any)));
+    const users = await Promise.all(
+      userIds.map(async (userId) => {
+        try {
+          return await ctx.db.get(userId as any);
+        } catch {
+          return null;
+        }
+      })
+    );
     const userById = new Map(
       users
         .filter(Boolean)

@@ -26,6 +26,7 @@ import {
   useUpdateSystemConfig,
 } from '../hooks/useApi';
 import { useAppStore, useAuthStore, useFarmStore } from '../store';
+import { Button } from './ui/Button';
 
 interface SettingsProps {
   language?: Language;
@@ -122,12 +123,14 @@ function ToggleRow({
   onToggle: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between p-4 bg-[#FAFAF9] dark:bg-slate-700 rounded-2xl">
+    <div className="dash-surface-muted flex items-center justify-between">
       <span className="text-sm font-semibold text-slate-700 dark:text-slate-100 ml-1">{label}</span>
       <button
+        type="button"
+        aria-pressed={value}
         onClick={onToggle}
         className={`w-12 h-7 rounded-full p-1 transition-colors duration-200 ${
-          value ? 'bg-[#0F5132]' : 'bg-slate-200 dark:bg-slate-600'
+          value ? 'bg-primary' : 'bg-slate-200 dark:bg-slate-600'
         }`}
       >
         <div
@@ -243,6 +246,31 @@ export const Settings: React.FC<SettingsProps> = ({ language = 'en', setLanguage
     'Account profile';
 
   const activeFarmLocation = activeFarm?.locationName || activeFarm?.name || 'No active farm found';
+  const settingsSummaryItems = useMemo(
+    () => [
+      {
+        label: 'Workspace',
+        value: isAdmin ? 'Admin controls' : 'Profile settings',
+        hint: isAdmin ? 'Live system thresholds and delivery channels' : 'Personal preferences and farm-linked settings',
+      },
+      {
+        label: 'Language',
+        value: preferredLanguage.toUpperCase(),
+        hint: 'Applied to both your account and dashboard experience',
+      },
+      {
+        label: 'Connected devices',
+        value: deviceItems.length ? `${onlineDeviceCount}/${deviceItems.length} online` : 'No devices',
+        hint: isAdmin ? 'Across the platform' : 'For the selected farm',
+      },
+      {
+        label: isAdmin ? 'System health' : 'Active farm',
+        value: isAdmin ? formatStatusLabel(systemHealth?.status) : activeFarm?.name || 'No farm selected',
+        hint: isAdmin ? 'Backend status reported by the live health endpoint' : activeFarmLocation,
+      },
+    ],
+    [activeFarm?.name, activeFarmLocation, deviceItems.length, isAdmin, onlineDeviceCount, preferredLanguage, systemHealth?.status]
+  );
 
   const toggleNotification = (key: keyof NotificationPreferences) => {
     setNotifications((previous) => ({ ...previous, [key]: !previous[key] }));
@@ -317,34 +345,60 @@ export const Settings: React.FC<SettingsProps> = ({ language = 'en', setLanguage
   const isSaving = updateProfileMutation.isPending || updateSystemConfigMutation.isPending;
 
   return (
-    <div className="space-y-8 animate-fade-in">
-      <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
-        <div>
-          <h2 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">{t.title}</h2>
-          <p className="text-slate-500 dark:text-slate-400 mt-1">{t.subtitle}</p>
+    <div className="dashboard-page dash-section-stack animate-fade-in">
+      <div className="dash-hero-panel">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-3xl">
+            <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200/80 bg-emerald-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300">
+              <Shield size={14} />
+              {isAdmin ? 'Control center settings' : 'Account and farm preferences'}
+            </div>
+            <h2 className="mt-4 text-3xl font-bold tracking-tight text-slate-900 dark:text-white md:text-[2.4rem]">
+              {t.title}
+            </h2>
+            <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400 md:text-[15px]">
+              {t.subtitle}
+            </p>
+          </div>
+          <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
+            {saved && (
+              <div className="inline-flex items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300">
+                {t.saved}
+              </div>
+            )}
+            <Button onClick={handleSave} disabled={isSaving} size="lg" className="min-w-[190px]">
+              {isSaving ? (
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <>
+                  <Save size={18} className="mr-2" />
+                  {t.save}
+                </>
+              )}
+            </Button>
+          </div>
         </div>
-        <button
-          onClick={handleSave}
-          disabled={isSaving}
-          className={`px-8 py-3 rounded-full font-bold text-sm flex items-center gap-2 transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 ${
-            saved ? 'bg-emerald-500 text-white' : 'bg-[#0F5132] text-white hover:bg-[#0a3622]'
-          } ${isSaving ? 'opacity-80 cursor-not-allowed' : ''}`}
-        >
-          {isSaving ? (
-            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-          ) : saved ? (
-            <>{t.saved}</>
-          ) : (
-            <>
-              <Save size={18} /> {t.save}
-            </>
-          )}
-        </button>
+
+        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {settingsSummaryItems.map((item) => (
+            <div key={item.label} className="dash-kpi-card">
+              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                {item.label}
+              </p>
+              <p className="mt-2 text-lg font-bold tracking-tight text-slate-900 dark:text-white">
+                {item.value}
+              </p>
+              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                {item.hint}
+              </p>
+            </div>
+          ))}
+        </div>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-8">
+      <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-8">
-          <div className="bg-white dark:bg-slate-800 p-8 rounded-[2.5rem] shadow-sm border border-slate-100 dark:border-slate-700">
+          <div className="dash-panel overflow-hidden p-6 md:p-8">
             <div className="flex items-center gap-3 mb-8">
               <div className="p-3 bg-slate-50 dark:bg-slate-700 rounded-2xl text-slate-600 dark:text-slate-200">
                 <User size={20} />
@@ -380,7 +434,7 @@ export const Settings: React.FC<SettingsProps> = ({ language = 'en', setLanguage
                   type="text"
                   value={firstName}
                   onChange={(event) => setFirstName(event.target.value)}
-                  className="w-full bg-[#FAFAF9] dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-2xl px-5 py-4 text-sm font-semibold text-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                  className="dash-control h-12 rounded-2xl px-5 text-sm font-semibold"
                 />
               </div>
 
@@ -392,7 +446,7 @@ export const Settings: React.FC<SettingsProps> = ({ language = 'en', setLanguage
                   type="text"
                   value={lastName}
                   onChange={(event) => setLastName(event.target.value)}
-                  className="w-full bg-[#FAFAF9] dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-2xl px-5 py-4 text-sm font-semibold text-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                  className="dash-control h-12 rounded-2xl px-5 text-sm font-semibold"
                 />
               </div>
 
@@ -404,7 +458,7 @@ export const Settings: React.FC<SettingsProps> = ({ language = 'en', setLanguage
                   type="text"
                   value={phoneNumber}
                   onChange={(event) => setPhoneNumber(event.target.value)}
-                  className="w-full bg-[#FAFAF9] dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-2xl px-5 py-4 text-sm font-semibold text-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                  className="dash-control h-12 rounded-2xl px-5 text-sm font-semibold"
                 />
               </div>
 
@@ -418,14 +472,14 @@ export const Settings: React.FC<SettingsProps> = ({ language = 'en', setLanguage
                     type="text"
                     value={activeFarmLocation}
                     readOnly
-                    className="w-full bg-[#FAFAF9] dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-2xl pl-12 pr-5 py-4 text-sm font-semibold text-slate-600 dark:text-slate-200"
+                    className="dash-control h-12 rounded-2xl pl-12 pr-5 text-sm font-semibold text-slate-600 dark:text-slate-200"
                   />
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="bg-white dark:bg-slate-800 p-8 rounded-[2.5rem] shadow-sm border border-slate-100 dark:border-slate-700">
+          <div className="dash-panel overflow-hidden p-6 md:p-8">
             <div className="flex items-center gap-3 mb-8">
               <div className="p-3 bg-slate-50 dark:bg-slate-700 rounded-2xl text-slate-600 dark:text-slate-200">
                 <BellRing size={20} />
@@ -448,7 +502,7 @@ export const Settings: React.FC<SettingsProps> = ({ language = 'en', setLanguage
         </div>
 
         <div className="lg:col-span-2 space-y-8">
-          <div className="bg-white dark:bg-slate-800 p-8 rounded-[2.5rem] shadow-sm border border-slate-100 dark:border-slate-700">
+          <div className="dash-panel overflow-hidden p-6 md:p-8">
             <div className="flex items-center gap-3 mb-8">
               <div className="p-3 bg-slate-50 dark:bg-slate-700 rounded-2xl text-slate-600 dark:text-slate-200">
                 <Globe size={20} />
@@ -457,7 +511,7 @@ export const Settings: React.FC<SettingsProps> = ({ language = 'en', setLanguage
             </div>
 
             <div className="grid md:grid-cols-2 gap-4">
-              <div className="flex items-center justify-between p-4 bg-[#FAFAF9] dark:bg-slate-700 rounded-2xl">
+              <div className="dash-surface-muted flex items-center justify-between">
                 <span className="text-sm font-semibold text-slate-700 dark:text-slate-100 ml-1">{t.language}</span>
                 <div className="flex gap-1 bg-white dark:bg-slate-800 p-1 rounded-xl shadow-sm border border-slate-100 dark:border-slate-600">
                   {(['rw', 'en', 'fr'] as Language[]).map((option) => (
@@ -465,7 +519,7 @@ export const Settings: React.FC<SettingsProps> = ({ language = 'en', setLanguage
                       key={option}
                       onClick={() => setPreferredLanguage(option)}
                       className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                        preferredLanguage === option ? 'bg-[#0F5132] text-white shadow-md' : 'bg-transparent text-slate-400'
+                        preferredLanguage === option ? 'bg-primary text-primary-foreground shadow-md' : 'bg-transparent text-slate-400'
                       }`}
                     >
                       {option.toUpperCase()}
@@ -475,8 +529,9 @@ export const Settings: React.FC<SettingsProps> = ({ language = 'en', setLanguage
               </div>
 
               <button
+                type="button"
                 onClick={toggleTheme}
-                className="flex items-center justify-between p-4 bg-[#FAFAF9] dark:bg-slate-700 rounded-2xl text-left"
+                className="dash-surface-muted flex items-center justify-between text-left"
               >
                 <span className="text-sm font-semibold text-slate-700 dark:text-slate-100 ml-1">Theme</span>
                 <span className="inline-flex items-center gap-2 text-xs font-bold text-slate-500 dark:text-slate-300">
@@ -486,8 +541,9 @@ export const Settings: React.FC<SettingsProps> = ({ language = 'en', setLanguage
               </button>
 
               <button
+                type="button"
                 onClick={toggleSidebar}
-                className="flex items-center justify-between p-4 bg-[#FAFAF9] dark:bg-slate-700 rounded-2xl text-left"
+                className="dash-surface-muted flex items-center justify-between text-left"
               >
                 <span className="text-sm font-semibold text-slate-700 dark:text-slate-100 ml-1">Sidebar</span>
                 <span className="inline-flex items-center gap-2 text-xs font-bold text-slate-500 dark:text-slate-300">
@@ -496,7 +552,7 @@ export const Settings: React.FC<SettingsProps> = ({ language = 'en', setLanguage
                 </span>
               </button>
 
-              <div className="flex items-center justify-between p-4 bg-[#FAFAF9] dark:bg-slate-700 rounded-2xl">
+              <div className="dash-surface-muted flex items-center justify-between">
                 <span className="text-sm font-semibold text-slate-700 dark:text-slate-100 ml-1">Current Farm</span>
                 <span className="text-xs font-bold text-slate-500 dark:text-slate-300">
                   {activeFarm?.name || 'No farm selected'}
@@ -506,10 +562,10 @@ export const Settings: React.FC<SettingsProps> = ({ language = 'en', setLanguage
           </div>
 
           {isAdmin ? (
-            <div className="bg-white dark:bg-slate-800 p-8 rounded-[2.5rem] shadow-sm border border-slate-100 dark:border-slate-700">
+            <div className="dash-panel overflow-hidden p-6 md:p-8">
               <div className="flex items-center justify-between mb-8">
                 <div className="flex items-center gap-3">
-                  <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 rounded-2xl text-[#0F5132]">
+                  <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 rounded-2xl text-primary">
                     <Sliders size={20} />
                   </div>
                   <div>
@@ -528,7 +584,7 @@ export const Settings: React.FC<SettingsProps> = ({ language = 'en', setLanguage
                     <label className="text-sm font-bold text-slate-700 dark:text-slate-100 uppercase tracking-wide">
                       {t.threshold}
                     </label>
-                    <span className="text-3xl font-bold text-[#0F5132]">{moistureThreshold}%</span>
+                    <span className="text-3xl font-bold text-primary">{moistureThreshold}%</span>
                   </div>
                   <input
                     type="range"
@@ -536,7 +592,7 @@ export const Settings: React.FC<SettingsProps> = ({ language = 'en', setLanguage
                     max="60"
                     value={moistureThreshold}
                     onChange={(event) => setMoistureThreshold(parseInt(event.target.value, 10))}
-                    className="w-full h-3 bg-slate-100 dark:bg-slate-700 rounded-full appearance-none cursor-pointer accent-[#0F5132]"
+                    className="w-full h-3 bg-slate-100 dark:bg-slate-700 rounded-full appearance-none cursor-pointer accent-[hsl(var(--primary))]"
                   />
                 </div>
 
@@ -545,7 +601,7 @@ export const Settings: React.FC<SettingsProps> = ({ language = 'en', setLanguage
                     <label className="text-sm font-bold text-slate-700 dark:text-slate-100 uppercase tracking-wide">
                       Critical moisture threshold
                     </label>
-                    <span className="text-3xl font-bold text-[#0F5132]">{criticalMoistureThreshold}%</span>
+                    <span className="text-3xl font-bold text-primary">{criticalMoistureThreshold}%</span>
                   </div>
                   <input
                     type="range"
@@ -553,7 +609,7 @@ export const Settings: React.FC<SettingsProps> = ({ language = 'en', setLanguage
                     max="45"
                     value={criticalMoistureThreshold}
                     onChange={(event) => setCriticalMoistureThreshold(parseInt(event.target.value, 10))}
-                    className="w-full h-3 bg-slate-100 dark:bg-slate-700 rounded-full appearance-none cursor-pointer accent-[#0F5132]"
+                    className="w-full h-3 bg-slate-100 dark:bg-slate-700 rounded-full appearance-none cursor-pointer accent-[hsl(var(--primary))]"
                   />
                 </div>
 
@@ -562,7 +618,7 @@ export const Settings: React.FC<SettingsProps> = ({ language = 'en', setLanguage
                     <label className="text-sm font-bold text-slate-700 dark:text-slate-100 uppercase tracking-wide">
                       Pest alert confidence threshold
                     </label>
-                    <span className="text-3xl font-bold text-[#0F5132]">{Math.round(pestConfidenceThreshold * 100)}%</span>
+                    <span className="text-3xl font-bold text-primary">{Math.round(pestConfidenceThreshold * 100)}%</span>
                   </div>
                   <input
                     type="range"
@@ -570,14 +626,15 @@ export const Settings: React.FC<SettingsProps> = ({ language = 'en', setLanguage
                     max="95"
                     value={Math.round(pestConfidenceThreshold * 100)}
                     onChange={(event) => setPestConfidenceThreshold(parseInt(event.target.value, 10) / 100)}
-                    className="w-full h-3 bg-slate-100 dark:bg-slate-700 rounded-full appearance-none cursor-pointer accent-[#0F5132]"
+                    className="w-full h-3 bg-slate-100 dark:bg-slate-700 rounded-full appearance-none cursor-pointer accent-[hsl(var(--primary))]"
                   />
                 </div>
 
                 <div className="grid md:grid-cols-2 gap-4">
                   <button
+                    type="button"
                     onClick={() => setSmsGatewayEnabled((current) => !current)}
-                    className="flex items-center justify-between p-4 bg-[#FAFAF9] dark:bg-slate-700 rounded-2xl text-left"
+                    className="dash-surface-muted flex items-center justify-between text-left"
                   >
                     <span className="inline-flex items-center gap-3 text-sm font-semibold text-slate-700 dark:text-slate-100">
                       <Smartphone size={16} />
@@ -589,8 +646,9 @@ export const Settings: React.FC<SettingsProps> = ({ language = 'en', setLanguage
                   </button>
 
                   <button
+                    type="button"
                     onClick={() => setUssdGatewayEnabled((current) => !current)}
-                    className="flex items-center justify-between p-4 bg-[#FAFAF9] dark:bg-slate-700 rounded-2xl text-left"
+                    className="dash-surface-muted flex items-center justify-between text-left"
                   >
                     <span className="inline-flex items-center gap-3 text-sm font-semibold text-slate-700 dark:text-slate-100">
                       <Wifi size={16} />
@@ -602,7 +660,7 @@ export const Settings: React.FC<SettingsProps> = ({ language = 'en', setLanguage
                   </button>
                 </div>
 
-                <div className="p-5 rounded-[1.5rem] bg-[#FAFAF9] dark:bg-slate-700 border border-slate-100 dark:border-slate-600 text-sm text-slate-600 dark:text-slate-200">
+                <div className="dash-surface-muted p-5 text-sm text-slate-600 dark:text-slate-200">
                   Changes here are saved to the live system configuration and affect dashboard behavior across users.
                   <span className="block mt-3 text-xs uppercase tracking-wider text-slate-400">
                     System health: {systemHealth?.status || 'checking'}
@@ -611,10 +669,10 @@ export const Settings: React.FC<SettingsProps> = ({ language = 'en', setLanguage
               </div>
             </div>
           ) : (
-            <div className="bg-white dark:bg-slate-800 p-8 rounded-[2.5rem] shadow-sm border border-slate-100 dark:border-slate-700">
+            <div className="dash-panel overflow-hidden p-6 md:p-8">
               <div className="flex items-center justify-between mb-8">
                 <div className="flex items-center gap-3">
-                  <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 rounded-2xl text-[#0F5132]">
+                  <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 rounded-2xl text-primary">
                     <Sliders size={20} />
                   </div>
                   <div>
@@ -628,13 +686,13 @@ export const Settings: React.FC<SettingsProps> = ({ language = 'en', setLanguage
               </div>
 
               <div className="grid md:grid-cols-2 gap-4">
-                <div className="p-5 rounded-[1.5rem] bg-[#FAFAF9] dark:bg-slate-700 border border-slate-100 dark:border-slate-600">
+                <div className="dash-surface-muted p-5">
                   <p className="text-xs uppercase tracking-wider text-slate-400">Farm</p>
                   <p className="mt-2 text-lg font-bold text-slate-900 dark:text-white">{activeFarm?.name || 'No farm selected'}</p>
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">{activeFarmLocation}</p>
                 </div>
 
-                <div className="p-5 rounded-[1.5rem] bg-[#FAFAF9] dark:bg-slate-700 border border-slate-100 dark:border-slate-600">
+                <div className="dash-surface-muted p-5">
                   <p className="text-xs uppercase tracking-wider text-slate-400">Growth stage</p>
                   <p className="mt-2 text-lg font-bold text-slate-900 dark:text-white">
                     {activeFarm?.currentGrowthStage ? activeFarm.currentGrowthStage.replace(/_/g, ' ') : 'Not recorded'}
@@ -644,13 +702,13 @@ export const Settings: React.FC<SettingsProps> = ({ language = 'en', setLanguage
                   </p>
                 </div>
 
-                <div className="p-5 rounded-[1.5rem] bg-[#FAFAF9] dark:bg-slate-700 border border-slate-100 dark:border-slate-600">
+                <div className="dash-surface-muted p-5">
                   <p className="text-xs uppercase tracking-wider text-slate-400">Connected sensors</p>
                   <p className="mt-2 text-lg font-bold text-slate-900 dark:text-white">{deviceItems.length}</p>
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">{onlineDeviceCount} currently online</p>
                 </div>
 
-                <div className="p-5 rounded-[1.5rem] bg-[#FAFAF9] dark:bg-slate-700 border border-slate-100 dark:border-slate-600">
+                <div className="dash-surface-muted p-5">
                   <p className="text-xs uppercase tracking-wider text-slate-400">Farm size</p>
                   <p className="mt-2 text-lg font-bold text-slate-900 dark:text-white">
                     {typeof activeFarm?.sizeHectares === 'number' ? `${activeFarm.sizeHectares} ha` : 'Not recorded'}
@@ -663,7 +721,7 @@ export const Settings: React.FC<SettingsProps> = ({ language = 'en', setLanguage
             </div>
           )}
 
-          <div className="bg-white dark:bg-slate-800 p-8 rounded-[2.5rem] shadow-sm border border-slate-100 dark:border-slate-700">
+          <div className="dash-panel overflow-hidden p-6 md:p-8">
             <div className="flex items-center gap-3 mb-8">
               <div className="p-3 bg-slate-50 dark:bg-slate-700 rounded-2xl text-slate-600 dark:text-slate-200">
                 <Wifi size={20} />
@@ -672,7 +730,7 @@ export const Settings: React.FC<SettingsProps> = ({ language = 'en', setLanguage
             </div>
 
             {deviceItems.length === 0 ? (
-              <div className="p-5 rounded-[1.5rem] bg-[#FAFAF9] dark:bg-slate-700 border border-slate-100 dark:border-slate-600 text-sm text-slate-500 dark:text-slate-300">
+              <div className="dash-surface-muted p-5 text-sm text-slate-500 dark:text-slate-300">
                 {isAdmin ? 'No IoT devices registered yet.' : 'No sensors are registered for the selected farm.'}
               </div>
             ) : (
@@ -680,7 +738,7 @@ export const Settings: React.FC<SettingsProps> = ({ language = 'en', setLanguage
                 {deviceItems.map((device) => (
                   <div
                     key={device.id || device.deviceId}
-                    className="flex items-center justify-between p-5 bg-[#FAFAF9] dark:bg-slate-700 border border-slate-100 dark:border-slate-600 rounded-[1.5rem]"
+                    className="dash-surface-muted flex items-center justify-between p-5"
                   >
                     <div className="flex items-center gap-4 min-w-0">
                       <div
